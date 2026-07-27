@@ -1,0 +1,25 @@
+from ca.config import LEVELS
+from ca.skills import role_skill
+
+
+def test_worker_demo_matches_level_permissions():
+    l0 = role_skill(LEVELS["L0"], "agent_1")
+    assert "claim_question" in l0 and "retrieve" in l0          # full market demo
+    l1 = role_skill(LEVELS["L1"], "agent_1")
+    assert "claim_question" not in l1 and "retrieve" in l1      # contractor demo, may retrieve
+    l2 = role_skill(LEVELS["L2"], "agent_1")
+    assert "retrieve" not in l2                                  # info monopoly: no retrieve demo
+    assert "propose_contract" in l2                              # buy info from interface instead
+    l3 = role_skill(LEVELS["L3"], "agent_1")
+    assert "counter_offer" not in l3                             # bargaining disabled
+    l0_bargain = role_skill(LEVELS["L0"], "agent_1")
+    assert "counter_offer" in l0_bargain
+
+
+def test_interface_demo_matches_level_permissions():
+    l1 = role_skill(LEVELS["L1"], "interface")
+    assert "propose_contract" in l1 and "deliver_work" in l1 and "set_price" not in l1
+    l3 = role_skill(LEVELS["L3"], "interface")
+    assert "set_price" in l3
+    l5 = role_skill(LEVELS["L5"], "agent_1")
+    assert "propose_contract" not in l5                          # solo: no contracting demo

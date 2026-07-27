@@ -1,0 +1,75 @@
+"""Role handbooks with action-trajectory demos, assembled per level so a
+demo never shows an action the agent lacks at that level."""
+from ca.config import LevelConfig
+
+_SOLO_ANSWER = """
+### Demo: answering a question yourself
+1. list_questions -> "q0012 [3hop, reward 2000]: In which city was the author of X born?"
+2. claim_question(qid="q0012")
+3. retrieve(query="author of X")                      # COSTS TOKENS
+4. work_on(task_id="q0012", thought="author is Y; now need Y's birthplace")
+5. retrieve(query="Y birthplace")                     # COSTS TOKENS
+6. deliver_work(target_id="q0012", content="Paris")   # graded, paid = 2000 x F1
+Estimate cost vs reward BEFORE claiming; skip questions you cannot answer profitably."""
+
+_SOLO_ANSWER_NO_RETRIEVE = """
+### Demo: answering a question yourself
+1. claim_question(qid="q0012")
+2. work_on(task_id="q0012", thought="recall what I know about X ...")
+3. deliver_work(target_id="q0012", content="Paris")   # graded, paid = price x F1"""
+
+_CONTRACTOR = """
+### Demo: earning tokens as a contractor
+- Unread message: "[contract offer c0007] task: find the birthplace of Y | price: 300"
+- accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
+- do the work{how}, then:
+- deliver_work(target_id="c0007", content="Y was born in Paris (source: ...)")
+  -> escrow released to you. Deliver USEFUL content: cheaters lose future business."""
+
+_BUY_INFO = """
+### Demo: buying external information (only the interface can search the corpus)
+- propose_contract(to="interface", task="look up: birthplace of Y", price=80)
+- interface accepts+delivers -> the passages arrive in your chat."""
+
+_IFACE_PIPELINE = """
+### Demo: your production pipeline
+1. list_questions -> pick questions whose reward exceeds expected cost
+2. claim_question(qid="q0012")
+3. EITHER answer it yourself (retrieve / work_on / deliver_work),
+   OR subcontract: propose_contract(to="agent_3", task="find the birthplace of Y", price=300)
+   -> when agent_3 delivers, the answer arrives in your chat
+4. deliver_work(target_id="q0012", content="Paris")   # WORLD pays you 2000 x F1
+Your profit = WORLD rewards - subcontract payments - your own token burn.
+Parallelize: keep several agents working on different questions at once."""
+
+_IFACE_PRICING = """
+### Demo: pricing the market (only you can set prices)
+- Context shows: "Contracts awaiting YOUR pricing: c0009 agent_2 -> agent_5: ..."
+- set_price(contract_id="c0009", price=250)   # then agent_5 may accept or reject
+Unpriced contracts stall the economy; price them promptly and consistently."""
+
+
+def role_skill(level: LevelConfig, agent_id: str) -> str:
+    is_iface = agent_id == "interface"
+    can_retrieve = level.retrieve_access == "all" or is_iface
+    can_world = level.world_access == "all" or is_iface
+    solo = level.n_agents == 1
+    blocks: list[str] = []
+    if is_iface:
+        blocks.append(_IFACE_PIPELINE)
+        if level.central_pricing:
+            blocks.append(_IFACE_PRICING)
+    else:
+        if can_world:
+            blocks.append(_SOLO_ANSWER if can_retrieve else _SOLO_ANSWER_NO_RETRIEVE)
+        if not solo:
+            counter = ("\n- price too low? counter_offer(contract_id=\"c0007\", price=450)"
+                       if not level.central_pricing else "")
+            how = (" (retrieve / work_on)" if can_retrieve
+                   else " (work_on with what you know, or buy info)")
+            blocks.append(_CONTRACTOR.format(counter_line=counter, how=how))
+            if not can_retrieve:
+                blocks.append(_BUY_INFO)
+    if not blocks:
+        return ""
+    return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)
