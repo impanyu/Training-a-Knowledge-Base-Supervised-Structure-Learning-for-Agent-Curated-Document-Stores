@@ -40,6 +40,8 @@ class Ledger:
         self.balances[to] += amount
 
     def lock_escrow(self, key: str, frm: str, amount: int) -> None:
+        if amount <= 0:
+            raise ValueError("escrow amount must be positive")
         if self.balances[frm] < amount:
             raise InsufficientFunds(f"{frm} has {self.balances[frm]} < {amount}")
         self.balances[frm] -= amount

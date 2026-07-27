@@ -53,3 +53,18 @@ def test_escrow_refund_and_insufficient():
     led.refund_escrow("c2", "a")
     assert led.balance("a") == 100
     assert led.conservation_ok()
+
+
+def test_negative_burn_and_mint_rejected():
+    led = make()
+    with pytest.raises(ValueError):
+        led.burn("a", -1)
+    with pytest.raises(ValueError):
+        led.mint("a", -1)
+    assert led.conservation_ok()
+
+
+def test_negative_escrow_rejected():
+    led = make()
+    with pytest.raises(ValueError):
+        led.lock_escrow("c1", "a", -5)
