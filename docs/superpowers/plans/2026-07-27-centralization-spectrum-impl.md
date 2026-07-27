@@ -4,9 +4,9 @@
 
 **Goal:** Build the multi-agent economy testbed described in `docs/superpowers/specs/2026-07-27-centralization-spectrum-design.md`: an infrastructure layer (ledger, chat, contracts/escrow, task board, memory, retrieval), LLM agents that act via a filtered action registry, six centralization configs L0–L5, round-robin scheduling, full tracing, and metrics.
 
-**Architecture:** Pure-Python infrastructure (`src/ca/`) with an in-process action registry. Each agent = one Anthropic Messages API tool-use call per round (one action per turn, forced via `tool_choice: any` + `disable_parallel_tool_use`). Config levels differ ONLY in action visibility/permission rules. Deterministic tests use scripted (non-LLM) policies.
+**Architecture:** Pure-Python infrastructure (`src/ca/`) with an in-process action registry. Each agent = one Anthropic Messages API tool-use call per round (one action per turn, forced via `tool_choice: any` + `disable_parallel_tool_use`). Config levels differ ONLY in action visibility/permission rules. Deterministic tests use scripted (non-LLM) policies and a keyword retrieval stub (no model download in unit tests).
 
-**Tech Stack:** Python ≥3.11, `anthropic` SDK, `bm25s` (retrieval), `datasets` (HF, data prep only), `pytest`.
+**Tech Stack:** Python ≥3.11, `anthropic` SDK, `chromadb` (vector DB retrieval, built-in all-MiniLM embedding), `datasets` (HF, data prep only), `pytest`.
 
 ## Global Constraints
 
@@ -16,6 +16,7 @@
 - IDs: agents `interface`, `agent_1`…; questions `q0001`…; contracts `c0001`…. `deliver_work` billability keys off the `q`/`c` prefix.
 - Bankruptcy: balance ≤ 0 → billable actions error; free actions still allowed.
 - Config levels differ only via `LevelConfig` fields — no `if level == "L3"` scattered in handlers.
+- Central pricing (L3+, `central_pricing=True`): non-interface `propose_contract` creates an `unpriced` contract; only `interface` may `set_price`; `counter_offer` is disabled for everyone. `pay` stays unrestricted.
 - All randomness through a seeded `random.Random`; no global `random` calls.
 - Every trace event appended to JSONL immediately (crash-safe).
 
@@ -37,7 +38,7 @@
 name = "centralized-agents"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["anthropic>=0.40", "bm25s>=0.2"]
+dependencies = ["anthropic>=0.40", "chromadb>=0.5"]
 
 [project.optional-dependencies]
 data = ["datasets>=2.19"]
@@ -412,7 +413,7 @@ git commit -m "feat: chat system with unread cursors and pairwise history"
 
 **Interfaces:**
 - Consumes: `Ledger` from Task 2.
-- Produces: `Contract` dataclass (`cid, proposer, contractor, task, price, status, awaiting, deliverable`); `ContractError`; `ContractSystem(ledger)` with `propose(proposer, contractor, task, price)->Contract`, `counter(agent, cid, price)`, `accept(agent, cid)`, `reject(agent, cid)`, `cancel(agent, cid)`, `deliver(agent, cid, content)->Contract`, `get(cid)->Contract`, `pending_for(agent)->list[Contract]`. Statuses: `proposed/accepted/delivered/rejected/cancelled`. `deliver` atomically releases escrow to contractor and stores the deliverable (caller forwards it to proposer's chat).
+- Produces: `Contract` dataclass (`cid, proposer, contractor, task, price, status, awaiting, deliverable`); `ContractError`; `ContractSystem(ledger)` with `propose(proposer, contractor, task, price=None)->Contract` (`price=None` → status `unpriced`, for central-pricing levels), `set_price(cid, price)->Contract` (`unpriced`→`proposed`, awaiting contractor), `counter(agent, cid, price)`, `accept(agent, cid)`, `reject(agent, cid)`, `cancel(agent, cid)`, `deliver(agent, cid, content)->Contract`, `get(cid)->Contract`, `pending_for(agent)->list[Contract]`, `unpriced()->list[Contract]`. Statuses: `unpriced/proposed/accepted/delivered/rejected/cancelled`. `deliver` atomically releases escrow to contractor and stores the deliverable (caller forwards it to proposer's chat). The domain layer is level-agnostic — who may call `set_price` / whether `propose` may omit price is enforced in the actions layer (Task 10).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -483,6 +484,29 @@ def test_pending_for():
     cs.accept("worker", c2.cid)
     pend = cs.pending_for("worker")
     assert {p.cid for p in pend} == {c1.cid, c2.cid}  # one awaiting reply, one to deliver
+
+
+def test_unpriced_flow_with_set_price():
+    led, cs = setup()
+    c = cs.propose("boss", "worker", "t")          # no price -> central pricing path
+    assert c.status == "unpriced" and c.price == 0
+    with pytest.raises(ContractError):
+        cs.accept("worker", c.cid)                  # cannot accept before pricing
+    with pytest.raises(ContractError):
+        cs.set_price(c.cid, 0)                      # price must be positive
+    cs.set_price(c.cid, 25)
+    assert c.status == "proposed" and c.awaiting == "worker" and c.price == 25
+    assert cs.unpriced() == []
+    cs.accept("worker", c.cid)
+    assert led.escrow[c.cid] == 25
+    assert led.conservation_ok()
+
+
+def test_cancel_unpriced():
+    led, cs = setup()
+    c = cs.propose("boss", "worker", "t")
+    cs.cancel("worker", c.cid)
+    assert c.status == "cancelled" and led.conservation_ok()
 ```
 
 - [ ] **Step 2: Run to verify failure** — `python -m pytest tests/test_contracts.py -q` — ImportError.
@@ -528,15 +552,34 @@ class ContractSystem:
             raise ContractError(f"unknown contract {cid}")
         return self.contracts[cid]
 
-    def propose(self, proposer: str, contractor: str, task: str, price: int) -> Contract:
-        if price <= 0:
-            raise ContractError("price must be positive")
+    def propose(self, proposer: str, contractor: str, task: str,
+                price: int | None = None) -> Contract:
         if proposer == contractor:
             raise ContractError("cannot contract with yourself")
-        c = Contract(self._next_id(), proposer, contractor, task, price,
-                     awaiting=contractor)
+        if price is None:  # central pricing: interface will set the price
+            c = Contract(self._next_id(), proposer, contractor, task, 0,
+                         status="unpriced", awaiting="")
+        else:
+            if price <= 0:
+                raise ContractError("price must be positive")
+            c = Contract(self._next_id(), proposer, contractor, task, price,
+                         awaiting=contractor)
         self.contracts[c.cid] = c
         return c
+
+    def set_price(self, cid: str, price: int) -> Contract:
+        c = self.get(cid)
+        if c.status != "unpriced":
+            raise ContractError(f"{c.cid} is {c.status}, not unpriced")
+        if price <= 0:
+            raise ContractError("price must be positive")
+        c.price = price
+        c.status = "proposed"
+        c.awaiting = c.contractor
+        return c
+
+    def unpriced(self) -> list[Contract]:
+        return [c for c in self.contracts.values() if c.status == "unpriced"]
 
     def _require(self, c: Contract, status: str, agent: str | None = None):
         if c.status != status:
@@ -577,7 +620,7 @@ class ContractSystem:
             raise ContractError("not a party to this contract")
         if c.status == "accepted":
             self.ledger.refund_escrow(c.cid, c.proposer)
-        elif c.status != "proposed":
+        elif c.status not in ("proposed", "unpriced"):
             raise ContractError(f"cannot cancel a {c.status} contract")
         c.status = "cancelled"
         c.awaiting = ""
@@ -605,7 +648,7 @@ class ContractSystem:
         return out
 ```
 
-- [ ] **Step 4: Run tests** — `python -m pytest tests/test_contracts.py -q` — 6 passed.
+- [ ] **Step 4: Run tests** — `python -m pytest tests/test_contracts.py -q` — 8 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -879,20 +922,20 @@ git commit -m "feat: FIFO memory, goal stack, keyword long-term memory"
 
 ---
 
-### Task 8: Retrieval backend
+### Task 8: Retrieval backend (vector DB)
 
 **Files:**
 - Create: `src/ca/retrieval.py`
 - Test: `tests/test_retrieval.py`
 
 **Interfaces:**
-- Produces: `Doc` TypedDict-ish dict `{"title": str, "text": str}`; `Bm25Backend(docs: list[dict])` with `search(query, k=5)->list[dict]`; `Bm25Backend.load(index_dir)` classmethod (mmap-load a saved index + docs). Test uses in-memory construction only.
+- Produces: doc dicts `{"title": str, "text": str}`; `KeywordBackend(docs)` (dependency-free stub for unit tests, same interface); `ChromaBackend(docs=None, persist_dir=None)` with `search(query, k=5)->list[dict]` and classmethod `load(persist_dir)`. Chroma uses its built-in default embedding (all-MiniLM ONNX, downloaded on first use, ~80MB, local, no GPU/API key). All other tests in this plan use `KeywordBackend` so the unit suite never needs the model download.
 
 - [ ] **Step 1: Write the failing tests**
 
 `tests/test_retrieval.py`:
 ```python
-from ca.retrieval import Bm25Backend
+from ca.retrieval import ChromaBackend, KeywordBackend
 
 DOCS = [
     {"title": "Paris", "text": "Paris is the capital and largest city of France."},
@@ -901,16 +944,22 @@ DOCS = [
 ]
 
 
-def test_search_ranks_relevant_doc_first():
-    r = Bm25Backend(DOCS)
+def test_keyword_backend_ranks_relevant_doc_first():
+    r = KeywordBackend(DOCS)
     hits = r.search("capital of France", k=2)
     assert hits[0]["title"] == "Paris"
     assert len(hits) == 2
-
-
-def test_k_larger_than_corpus():
-    r = Bm25Backend(DOCS)
     assert len(r.search("capital", k=10)) == 3
+
+
+def test_chroma_backend_semantic_search(tmp_path):
+    # first run downloads the default embedding model (~80MB); allow network
+    r = ChromaBackend(DOCS, persist_dir=str(tmp_path / "idx"))
+    hits = r.search("what city is the French capital?", k=1)
+    assert hits[0]["title"] == "Paris"
+    # reload from disk without docs
+    r2 = ChromaBackend.load(str(tmp_path / "idx"))
+    assert r2.search("Japanese capital", k=1)[0]["title"] == "Tokyo"
 ```
 
 - [ ] **Step 2: Run to verify failure** — `python -m pytest tests/test_retrieval.py -q` — ImportError.
@@ -919,53 +968,60 @@ def test_k_larger_than_corpus():
 
 `src/ca/retrieval.py`:
 ```python
-"""Pluggable retrieval; default backend = bm25s over a paragraph corpus."""
-import json
-from pathlib import Path
-
-import bm25s
+"""Pluggable retrieval. Default: Chroma vector DB (built-in all-MiniLM
+embedding). KeywordBackend is a dependency-free stub for unit tests."""
+import chromadb
 
 
-class Bm25Backend:
-    def __init__(self, docs: list[dict], retriever: "bm25s.BM25 | None" = None):
+class KeywordBackend:
+    def __init__(self, docs: list[dict]):
         self.docs = docs
-        if retriever is None:
-            retriever = bm25s.BM25()
-            retriever.index(bm25s.tokenize([d["text"] for d in docs], show_progress=False))
-        self.retriever = retriever
 
     def search(self, query: str, k: int = 5) -> list[dict]:
-        k = min(k, len(self.docs))
-        idx, _scores = self.retriever.retrieve(
-            bm25s.tokenize([query], show_progress=False), k=k, show_progress=False
-        )
-        return [self.docs[int(i)] for i in idx[0]]
+        q = set(query.lower().split())
+        ranked = sorted(self.docs,
+                        key=lambda d: -len(q & set(d["text"].lower().split())))
+        return ranked[:k]
 
-    def save(self, index_dir: str) -> None:
-        p = Path(index_dir)
-        p.mkdir(parents=True, exist_ok=True)
-        self.retriever.save(str(p / "bm25"))
-        with open(p / "docs.jsonl", "w") as f:
-            for d in self.docs:
-                f.write(json.dumps(d, ensure_ascii=False) + "\n")
+
+class ChromaBackend:
+    COLLECTION = "corpus"
+
+    def __init__(self, docs: list[dict] | None = None, persist_dir: str | None = None):
+        self._client = (chromadb.PersistentClient(path=persist_dir)
+                        if persist_dir else chromadb.EphemeralClient())
+        self.col = self._client.get_or_create_collection(self.COLLECTION)
+        if docs and self.col.count() == 0:
+            for i in range(0, len(docs), 1000):  # stay under chroma batch limits
+                batch = docs[i:i + 1000]
+                self.col.add(
+                    ids=[str(i + j) for j in range(len(batch))],
+                    documents=[d["text"] for d in batch],
+                    metadatas=[{"title": d["title"]} for d in batch],
+                )
+
+    def search(self, query: str, k: int = 5) -> list[dict]:
+        n = min(k, self.col.count())
+        if n == 0:
+            return []
+        res = self.col.query(query_texts=[query], n_results=n)
+        return [{"title": m["title"], "text": doc}
+                for doc, m in zip(res["documents"][0], res["metadatas"][0])]
 
     @classmethod
-    def load(cls, index_dir: str) -> "Bm25Backend":
-        p = Path(index_dir)
-        docs = [json.loads(line) for line in open(p / "docs.jsonl")]
-        retriever = bm25s.BM25.load(str(p / "bm25"), mmap=True)
-        return cls(docs, retriever=retriever)
+    def load(cls, persist_dir: str) -> "ChromaBackend":
+        return cls(docs=None, persist_dir=persist_dir)
 ```
 
-Note: if the `bm25s` API surface differs in the installed version (e.g. tokenize kwargs), fix against the actual library error output — the test corpus is tiny so iteration is fast. Do not switch libraries.
+Note: if the installed `chromadb` version's API differs (client constructors and `query` kwargs occasionally shift between versions), fix against the actual library error output — the test corpus is tiny so iteration is fast. Do not switch libraries.
 
-- [ ] **Step 4: Run tests** — `pip install bm25s && python -m pytest tests/test_retrieval.py -q` — 2 passed.
+- [ ] **Step 4: Run tests** — `pip install chromadb && python -m pytest tests/test_retrieval.py -q` — 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/ca/retrieval.py tests/test_retrieval.py
-git commit -m "feat: bm25s retrieval backend with save/load"
+git commit -m "feat: Chroma vector-DB retrieval backend + keyword test stub"
 ```
 
 ---
@@ -978,7 +1034,7 @@ git commit -m "feat: bm25s retrieval backend with save/load"
 
 **Interfaces:**
 - Produces:
-  - `LevelConfig` frozen dataclass: `level, n_agents, has_interface, world_access ("all"|"interface"), retrieve_access ("all"|"interface"), interface_no_counter (bool), star_comms (bool)`; dict `LEVELS` with keys `L0..L5` per the spec §9 matrix.
+  - `LevelConfig` frozen dataclass: `level, n_agents, has_interface, world_access ("all"|"interface"), retrieve_access ("all"|"interface"), central_pricing (bool), star_comms (bool)`; dict `LEVELS` with keys `L0..L5` per the spec §9 matrix. `central_pricing=True` (L3, L4): interface monopolizes ALL contract pricing via `set_price`; bargaining disabled for everyone.
   - `ExperimentConfig` dataclass: `level: LevelConfig, seed: int, seed_capital_total: int, fifo_k: int = 10, max_rounds: int = 60, model: str = "claude-haiku-4-5", max_tokens_per_turn: int = 1024`.
   - `agent_ids(level)->list[str]`: L0 → `agent_1..agent_8`; L1–L4 → `["interface", "agent_1"..."agent_7"]`; L5 → `["agent_1"]`.
   - `Infra(cfg, questions, retriever)` holding `.ledger .chat .contracts .board .ltm .retriever .scratchpads (dict[agent][task_id]->list[str]) .round .agent_ids .cfg` — seed capital split equally (remainder to first agent).
@@ -995,9 +1051,9 @@ from ca.taskboard import Question
 def test_level_matrix_matches_spec():
     assert LEVELS["L0"].world_access == "all" and not LEVELS["L0"].has_interface
     assert LEVELS["L1"].world_access == "interface" and LEVELS["L1"].retrieve_access == "all"
-    assert LEVELS["L2"].retrieve_access == "interface" and not LEVELS["L2"].interface_no_counter
-    assert LEVELS["L3"].interface_no_counter and not LEVELS["L3"].star_comms
-    assert LEVELS["L4"].star_comms and LEVELS["L4"].interface_no_counter
+    assert LEVELS["L2"].retrieve_access == "interface" and not LEVELS["L2"].central_pricing
+    assert LEVELS["L3"].central_pricing and not LEVELS["L3"].star_comms
+    assert LEVELS["L4"].star_comms and LEVELS["L4"].central_pricing
     assert LEVELS["L5"].n_agents == 1
 
 
@@ -1033,7 +1089,7 @@ class LevelConfig:
     has_interface: bool
     world_access: str        # "all" | "interface"  (list/claim/deliver to WORLD)
     retrieve_access: str     # "all" | "interface"
-    interface_no_counter: bool  # contracts proposed BY interface: no counter_offer
+    central_pricing: bool    # interface sets ALL contract prices; bargaining disabled
     star_comms: bool         # non-interface agents may only interact with interface
 
 
@@ -1117,8 +1173,8 @@ git commit -m "feat: L0-L5 level configs and Infra aggregate"
 - Produces:
   - `ACTION_SPECS: dict[str, dict]` — name → `{description, input_schema}` (Anthropic tool format, `input_schema` with `type:"object"`, `properties`, `required`).
   - `is_billable(name, inp)->bool` — `retrieve`, `work_on`, or `deliver_work` whose `target_id` starts with `"q"`.
-  - `visible_tools(cfg_level, agent_id)->list[dict]` — Anthropic `tools` list, hiding actions the agent can never use at this level (world actions and `retrieve` for non-interface when gated).
-  - `permission_error(infra, agent_id, name, inp)->str|None` — returns error string for statically forbidden calls (world/retrieve gating, star-comms target check, bankruptcy on billable, `counter_offer` on interface-proposed contracts at L3+).
+  - `visible_tools(cfg_level, agent_id)->list[dict]` — Anthropic `tools` list, hiding actions the agent can never use at this level (world actions and `retrieve` for non-interface when gated; `counter_offer` hidden from everyone and `set_price` shown only to interface when `central_pricing`; `set_price` hidden everywhere otherwise).
+  - `permission_error(infra, agent_id, name, inp)->str|None` — returns error string for statically forbidden calls (world/retrieve gating, star-comms target check, bankruptcy on billable, `counter_offer` for anyone at central-pricing levels, `set_price` unless interface at a central-pricing level).
   - `dispatch(infra, agent_id, name, inp)->str` — executes and returns result string; catches domain exceptions into `"ERROR: ..."` strings.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1129,7 +1185,7 @@ import pytest
 from ca.actions import dispatch, is_billable, permission_error, visible_tools, ACTION_SPECS
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
-from ca.retrieval import Bm25Backend
+from ca.retrieval import KeywordBackend
 from ca.taskboard import Question
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
@@ -1138,7 +1194,7 @@ DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
 def make(level="L0", capital=1000):
     cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=capital)
     qs = [Question("q0001", "capital of France?", ["Paris"], "easy", 100)]
-    return Infra(cfg, qs, retriever=Bm25Backend(DOCS))
+    return Infra(cfg, qs, retriever=KeywordBackend(DOCS))
 
 
 def test_billability():
@@ -1167,14 +1223,38 @@ def test_retrieve_gating_and_star_comms():
     assert permission_error(i4, "interface", "send_message", {"to": "agent_2", "text": "hi"}) is None
 
 
-def test_no_counter_on_interface_contracts_at_L3():
+def test_central_pricing_at_L3():
     i3 = make("L3")
+    # counter_offer blocked for EVERYONE (including on agent-agent contracts)
     c = i3.contracts.propose("interface", "agent_1", "solve q0001", 50)
-    err = permission_error(i3, "agent_1", "counter_offer", {"contract_id": c.cid, "price": 80})
-    assert err is not None
-    # agent-to-agent contracts still counterable at L3
-    c2 = i3.contracts.propose("agent_1", "agent_2", "sub", 10)
-    assert permission_error(i3, "agent_2", "counter_offer", {"contract_id": c2.cid, "price": 20}) is None
+    assert permission_error(i3, "agent_1", "counter_offer",
+                            {"contract_id": c.cid, "price": 80}) is not None
+    # non-interface proposals enter unpriced state; interface prices them
+    out = dispatch(i3, "agent_1", "propose_contract",
+                   {"to": "agent_2", "task": "subtask"})
+    assert "pricing" in out
+    c2 = i3.contracts.get("c0002")
+    assert c2.status == "unpriced"
+    assert permission_error(i3, "agent_1", "set_price",
+                            {"contract_id": "c0002", "price": 30}) is not None
+    assert permission_error(i3, "interface", "set_price",
+                            {"contract_id": "c0002", "price": 30}) is None
+    dispatch(i3, "interface", "set_price", {"contract_id": "c0002", "price": 30})
+    dispatch(i3, "agent_2", "accept_contract", {"contract_id": "c0002"})
+    assert i3.ledger.escrow["c0002"] == 30
+    assert i3.ledger.conservation_ok()
+
+
+def test_free_bargaining_below_L3():
+    i0 = make("L0")
+    c = i0.contracts.propose("agent_1", "agent_2", "sub", 10)
+    assert permission_error(i0, "agent_2", "counter_offer",
+                            {"contract_id": c.cid, "price": 20}) is None
+    assert permission_error(i0, "agent_1", "set_price",
+                            {"contract_id": c.cid, "price": 5}) is not None
+    # propose without price is an error outside central pricing
+    out = dispatch(i0, "agent_1", "propose_contract", {"to": "agent_3", "task": "t"})
+    assert out.startswith("ERROR")
 
 
 def test_bankrupt_blocks_billable_only():
@@ -1217,10 +1297,15 @@ def test_dispatch_error_string_not_exception():
 def test_visible_tools_filtered():
     names_l0 = {t["name"] for t in visible_tools(LEVELS["L0"], "agent_1")}
     assert "claim_question" in names_l0 and "retrieve" in names_l0
+    assert "counter_offer" in names_l0 and "set_price" not in names_l0
     names_l2 = {t["name"] for t in visible_tools(LEVELS["L2"], "agent_1")}
     assert "claim_question" not in names_l2 and "retrieve" not in names_l2
     names_l2i = {t["name"] for t in visible_tools(LEVELS["L2"], "interface")}
     assert "claim_question" in names_l2i and "retrieve" in names_l2i
+    names_l3 = {t["name"] for t in visible_tools(LEVELS["L3"], "agent_1")}
+    assert "counter_offer" not in names_l3 and "set_price" not in names_l3
+    names_l3i = {t["name"] for t in visible_tools(LEVELS["L3"], "interface")}
+    assert "set_price" in names_l3i and "counter_offer" not in names_l3i
     assert set(ACTION_SPECS) >= names_l0
 ```
 
@@ -1278,8 +1363,14 @@ ACTION_SPECS: dict[str, dict] = {
         "input_schema": _schema({"with_agent": _S}, ["with_agent"]),
     },
     "propose_contract": {
-        "description": "Offer to PAY another agent `price` tokens to do `task` for you.",
-        "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task", "price"]),
+        "description": ("Offer to PAY another agent to do `task` for you. Include `price` "
+                        "when bargaining is allowed; under central pricing the interface "
+                        "agent sets the price after you propose."),
+        "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task"]),
+    },
+    "set_price": {
+        "description": "INTERFACE ONLY (central pricing): set the final price of an unpriced contract.",
+        "input_schema": _schema({"contract_id": _S, "price": _I}, ["contract_id", "price"]),
     },
     "accept_contract": {
         "description": "Accept a contract offer (price is locked in escrow from the payer).",
@@ -1347,6 +1438,10 @@ def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
             continue
         if level.retrieve_access == "interface" and not is_iface and name == "retrieve":
             continue
+        if name == "counter_offer" and level.central_pricing:
+            continue  # bargaining disabled for everyone
+        if name == "set_price" and not (level.central_pricing and is_iface):
+            continue
         out.append({"name": name, **spec})
     return out
 
@@ -1367,14 +1462,14 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
             return "at this configuration you may only interact with the interface agent"
         if name == "read_chat" and inp.get("with_agent") != "interface":
             return "at this configuration you may only interact with the interface agent"
-    # pricing centralization: no countering interface-proposed contracts
-    if name == "counter_offer" and level.interface_no_counter:
-        try:
-            c = infra.contracts.get(str(inp.get("contract_id", "")))
-        except ContractError:
-            return None  # let dispatch produce the unknown-contract error
-        if c.proposer == "interface":
-            return "the interface agent's contract prices are non-negotiable: accept or reject"
+    # pricing centralization: interface monopolizes ALL contract pricing
+    if level.central_pricing:
+        if name == "counter_offer":
+            return "all contract prices are set by the interface agent; bargaining is disabled"
+        if name == "set_price" and not is_iface:
+            return "only the interface agent may set contract prices"
+    elif name == "set_price":
+        return "set_price does not exist in this configuration (prices are negotiated)"
     # bankruptcy freezes billable actions
     if is_billable(name, inp) and infra.ledger.is_bankrupt(agent_id):
         return "you are bankrupt (balance <= 0): answer-related actions are frozen"
@@ -1437,10 +1532,31 @@ def _h_read_chat(infra, a, inp):
 def _h_propose_contract(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
         return f"ERROR: unknown agent {inp['to']}"
+    central = infra.cfg.level.central_pricing
+    if central and a != "interface":
+        # price (if any) is ignored: the interface will set it
+        c = infra.contracts.propose(a, inp["to"], inp["task"])
+        infra.chat.send(a, "interface",
+                        f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: {c.task}",
+                        infra.round)
+        infra.chat.send(a, inp["to"],
+                        f"[contract offer {c.cid}, price pending interface] task: {c.task}",
+                        infra.round)
+        return f"proposed {c.cid} to {inp['to']}; awaiting interface pricing"
+    if inp.get("price") is None:
+        return "ERROR: price is required (bargaining configuration)"
     c = infra.contracts.propose(a, inp["to"], inp["task"], int(inp["price"]))
     infra.chat.send(a, inp["to"],
                     f"[contract offer {c.cid}] task: {c.task} | price: {c.price}", infra.round)
     return f"proposed {c.cid} to {inp['to']} at {c.price}"
+
+
+def _h_set_price(infra, a, inp):
+    c = infra.contracts.set_price(inp["contract_id"], int(inp["price"]))
+    infra.chat.send(a, c.proposer, f"[{c.cid} priced] {c.price} tokens", infra.round)
+    infra.chat.send(a, c.contractor,
+                    f"[{c.cid} priced] {c.price} tokens; accept or reject", infra.round)
+    return f"priced {c.cid} at {c.price}; awaiting {c.contractor}"
 
 
 def _h_accept_contract(infra, a, inp):
@@ -1508,14 +1624,14 @@ _HANDLERS = {
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,
-    "cancel_contract": _h_cancel_contract, "pay": _h_pay,
+    "cancel_contract": _h_cancel_contract, "set_price": _h_set_price, "pay": _h_pay,
     "push_goal": _h_push_goal, "pop_goal": _h_pop_goal,
     "memory_write": _h_memory_write, "memory_search": _h_memory_search,
     "check_balance": _h_check_balance, "list_agents": _h_list_agents,
 }
 ```
 
-- [ ] **Step 4: Run tests** — `python -m pytest tests/test_actions.py -q` — 9 passed. Also run the full suite: `python -m pytest -q`.
+- [ ] **Step 4: Run tests** — `python -m pytest tests/test_actions.py -q` — 10 passed. Also run the full suite: `python -m pytest -q`.
 
 - [ ] **Step 5: Commit**
 
@@ -1621,8 +1737,10 @@ def _level_rules(level: LevelConfig, is_iface: bool) -> str:
         rules.append("Only the interface agent can list/claim questions and deliver answers to the WORLD.")
     if level.retrieve_access == "interface":
         rules.append("Only the interface agent can retrieve external information; others must ask it via chat/contracts.")
-    if level.interface_no_counter:
-        rules.append("Contract prices set by the interface agent are FINAL (no counter-offers on its contracts).")
+    if level.central_pricing:
+        rules.append("ALL contract prices are set by the interface agent (set_price); bargaining is disabled."
+                     if not is_iface else
+                     "You set the price of EVERY contract in the system via set_price; nobody can bargain.")
     if level.star_comms:
         rules.append("You may only message/contract/pay the interface agent."
                      if not is_iface else
@@ -1655,6 +1773,12 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
                          f"{c.proposer if agent_id != c.proposer else c.contractor}: "
                          f"{c.task} @ {c.price}")
         parts.append("Contracts needing your attention:\n" + "\n".join(lines))
+    if agent_id == "interface" and infra.cfg.level.central_pricing:
+        unp = infra.contracts.unpriced()
+        if unp:
+            parts.append("Contracts awaiting YOUR pricing (use set_price):\n" +
+                         "\n".join(f"- {c.cid} {c.proposer} -> {c.contractor}: {c.task}"
+                                   for c in unp))
     unread = infra.chat.unread(agent_id)
     if unread:
         parts.append("Unread messages:\n" +
@@ -1697,7 +1821,7 @@ git commit -m "feat: system prompt template and per-turn context rendering"
 from ca.agent import Agent, ScriptedPolicy, Decision
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
-from ca.retrieval import Bm25Backend
+from ca.retrieval import KeywordBackend
 from ca.taskboard import Question
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
@@ -1706,7 +1830,7 @@ DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
 def make(level="L0"):
     cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=1000)
     infra = Infra(cfg, [Question("q0001", "capital of France?", ["Paris"], "easy", 100)],
-                  retriever=Bm25Backend(DOCS))
+                  retriever=KeywordBackend(DOCS))
     return cfg, infra
 
 
@@ -1909,7 +2033,7 @@ from ca.agent import Agent, ScriptedPolicy
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
 from ca.recorder import Recorder
-from ca.retrieval import Bm25Backend
+from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
 from ca.taskboard import Question
 
@@ -1920,7 +2044,7 @@ def build(level, scripts, tmp_path, n_questions=1):
     cfg = ExperimentConfig(level=LEVELS[level], seed=7, seed_capital_total=1000, max_rounds=10)
     qs = [Question(f"q{i:04d}", "capital of France?", ["Paris"], "easy", 100)
           for i in range(1, n_questions + 1)]
-    infra = Infra(cfg, qs, retriever=Bm25Backend(DOCS))
+    infra = Infra(cfg, qs, retriever=KeywordBackend(DOCS))
     agents = [Agent(a, cfg, infra, ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
     rec = Recorder(str(tmp_path))
@@ -2193,7 +2317,7 @@ git commit -m "feat: metrics (accuracy-per-ktok, coordination overhead, gini)"
 - Produces:
   - `load_questions(path)->list[Question]` — JSONL with fields `qid,text,answers,difficulty,price`.
   - `python -m ca.runner --level L0 --questions data/pool.jsonl --index data/index --seed 0 --capital 200000 --max-rounds 60 --model claude-haiku-4-5 --out runs/L0_s0` — builds everything with `LLMPolicy`, runs, prints `compute_metrics` result.
-  - `scripts/prepare_data.py --hotpot-n 150 --musique-n 50 --out data/` — builds `pool.jsonl`, pooled paragraph corpus, and a saved bm25s index.
+  - `scripts/prepare_data.py --hotpot-n 150 --musique-n 50 --out data/` — builds `pool.jsonl`, pooled paragraph corpus, and a persisted Chroma index.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2230,7 +2354,7 @@ from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
 from ca.metrics import compute_metrics
 from ca.recorder import Recorder
-from ca.retrieval import Bm25Backend
+from ca.retrieval import ChromaBackend
 from ca.scheduler import Scheduler
 from ca.taskboard import Question
 
@@ -2249,7 +2373,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--level", required=True, choices=list(LEVELS))
     ap.add_argument("--questions", required=True)
-    ap.add_argument("--index", required=True, help="bm25s index dir from prepare_data")
+    ap.add_argument("--index", required=True, help="chroma persist dir from prepare_data")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--capital", type=int, default=200_000)
     ap.add_argument("--max-rounds", type=int, default=60)
@@ -2261,7 +2385,7 @@ def main() -> None:
                            seed_capital_total=args.capital,
                            max_rounds=args.max_rounds, model=args.model)
     infra = Infra(cfg, load_questions(args.questions),
-                  retriever=Bm25Backend.load(args.index))
+                  retriever=ChromaBackend.load(args.index))
     agents = [Agent(a, cfg, infra, LLMPolicy(cfg.model, cfg.max_tokens_per_turn))
               for a in infra.agent_ids]
     sched = Scheduler(infra, agents, cfg, Recorder(args.out), random.Random(args.seed))
@@ -2280,7 +2404,7 @@ if __name__ == "__main__":
 
 `scripts/prepare_data.py`:
 ```python
-"""Build the mixed HotpotQA+MuSiQue pool, pooled paragraph corpus, bm25s index.
+"""Build the mixed HotpotQA+MuSiQue pool, pooled paragraph corpus, Chroma index.
 
 Corpus strategy (standard open-retrieval practice, cf. IRCoT): pool the
 per-question paragraph sets (gold + distractors) across all sampled questions
@@ -2295,7 +2419,7 @@ from pathlib import Path
 from datasets import load_dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from ca.retrieval import Bm25Backend  # noqa: E402
+from ca.retrieval import ChromaBackend  # noqa: E402
 
 PRICES = {"2hop": 1000, "3hop": 2000, "4hop": 3000}
 
@@ -2350,8 +2474,8 @@ def main():
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     print(f"pool: {len(pool)} questions; corpus: {len(corpus)} paragraphs")
 
-    Bm25Backend(corpus).save(str(out / "index"))
-    print(f"index saved to {out}/index")
+    ChromaBackend(corpus, persist_dir=str(out / "index"))  # builds + persists embeddings
+    print(f"chroma index saved to {out}/index")
 
 
 if __name__ == "__main__":
@@ -2418,7 +2542,7 @@ git commit -m "chore: live smoke test script"
 ## Out of Plan (deliberate)
 
 - Pilot calibration of `capital`, prices, `max_rounds`, `fifo_k` — experiment-phase work using the runner, not code work.
-- Prompt caching (Haiku 4.5 min cacheable prefix is 4096 tokens; revisit if system prompt grows), FanOutQA arm, dense retrieval, memory-centralization config, GAIA-class tasks — all spec §16.
+- Prompt caching (Haiku 4.5 min cacheable prefix is 4096 tokens; revisit if system prompt grows), FanOutQA arm, BM25 sparse-retrieval ablation, memory-centralization config, GAIA-class tasks — all spec §16.
 - Experiment sweep orchestration (6 levels × seeds) — a 10-line shell loop over `ca.runner` once pilot params are fixed.
 
 ## Self-Review Notes

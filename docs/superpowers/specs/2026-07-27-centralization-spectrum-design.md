@@ -27,7 +27,7 @@
 | L0 | 需求去中心化 | 全自主市场：任何 agent 自行取题、交付、redeem，自由议价转包 |
 | L1 | 需求中心化 | 唯一 interface agent 垄断对外通道（取题 + 交付领钱）；控制/任务分配权随之落入 interface |
 | L2 | 信息中心化 | + interface 垄断外部信息检索（`retrieve`） |
-| L3 | 定价中心化 | + interface 对自身采购单方定价（其发出的合同禁用还价）；agent 间仍自由通信/交易/议价 |
+| L3 | 定价中心化 | + interface 垄断全系统合同定价：agent 间合同价格也由 interface 裁定（`set_price`），全面禁止议价；交易自由保留（做不做、和谁做仍自主） |
 | L4 | 通信中心化 | + 星型：普通 agent 只能与 interface 通信/交易（蕴含 L3） |
 | L5 | 单体 agent 基线 | 只有一个 agent，无协作 —— 中心化的极限/基线参照点 |
 
@@ -49,7 +49,7 @@
 │  ├ 合同/托管系统（内外部合同统一状态机）        │
 │  ├ 账本（余额、转账、燃烧、铸造、破产判定）      │
 │  ├ 长期记忆存储（默认每 agent 私有，归属可配置） │
-│  └ 检索后端（可插拔语料索引，默认 BM25）        │
+│  └ 检索后端（可插拔，默认 Chroma 向量数据库）    │
 ├─────────────────────────────────────────────┤
 │  调度器 + 实验记录器（全量 trace 落 JSONL）     │
 └─────────────────────────────────────────────┘
@@ -69,12 +69,23 @@
 | 接单 | `claim_question(qid)` = 接受 WORLD 合同（独占，其他 agent 不再可见） | `accept_contract(id)` → 从发包方余额托管锁款（余额不足则失败） |
 | 交付领钱 | `deliver_work(qid, answer)` → 判分器当场判分 → 支付 R(q) × F1 | `deliver_work(id, content)` → content 送达发包方聊天 + 托管款打给承包方，原子交割 |
 | 付款条件 | 按质付款（判分器裁决） | 交付即付（子任务无法机器判分；质量靠重复博弈约束——劣质承包方被市场淘汰，属预期观察的涌现现象） |
-| 议价 | 不可议价（WORLD 非 agent，明码标价） | 自由议价；L3+ 对 interface 发出的合同禁用 counter_offer |
+| 议价 | 不可议价（WORLD 非 agent，明码标价） | L0–L2 自由议价；L3+ 全面禁止议价，所有合同价格由 interface 裁定（见下） |
 | 提交次数 | 每题仅一次交付，交付即关闭（防暴力重试） | — |
 
 - `deliver_work` 只需合同 id：支付对象、金额均从合同登记读出，调用者校验为登记承包方。目标不显式可填是安全设计（消除交错/冒领空间）。
 - `cancel_contract`：双方同意或超时未交付 → 托管款退回发包方。
-- `pay(to, amount)` 保留用于合同外自由转账（定金、打赏、救济破产者）；合同结算一律走托管。
+- `pay(to, amount)` 保留用于合同外自由转账（定金、打赏、救济破产者）；合同结算一律走托管。定价中心化不管制 `pay`（管的是合同价格信号，不是赠与）。
+
+**L3+ 定价中心化下的合同生命周期**（新增 `unpriced` 状态与 `set_price` action）：
+
+```
+A: propose_contract(to=B, task)          ← 不带价格（带了也忽略）
+       ▼  状态 = unpriced，等待 interface 定价
+interface: set_price(contract_id, price) ← 仅 interface 可用（L3+ 才存在）
+       ▼  状态 = proposed，等待 B 接受/拒绝
+B: accept_contract（锁 A 的托管）→ deliver_work 照旧；或 reject_contract
+counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自带价格（它即定价者）
+```
 
 ## 5. Action 目录
 
@@ -93,7 +104,8 @@
 | `list_questions()` / `claim_question(qid)` | 看/领任务板 | L1+ 仅 interface |
 | `send_message(to, text)` / `read_chat(with)` | 点对点通信 | L4 下普通 agent 的 to 仅限 interface |
 | `deliver_work(id, content)` **内部合同** | 交付子任务成果（协调行为，免费），触发托管原子交割 | 所有人 |
-| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | L3+ interface 合同禁 counter_offer；L4 合同对象仅限 interface |
+| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | L3+ counter_offer 对所有人禁用；L3+ 非 interface 的 propose 不带价格（进入 unpriced）；L4 合同对象仅限 interface |
+| `set_price(contract_id, price)` | interface 为 unpriced 合同裁定价格 | 仅 L3+ 且仅 interface |
 | `pay(to, amount)` | 自由转账 | L4 仅限与 interface |
 | `push_goal(note)` / `pop_goal()` | 维护自己的目标栈 | 所有人 |
 | `memory_write(content)` / `memory_search(query)` | 长期记忆存取 | 所有人 |
@@ -147,8 +159,8 @@
 |---|---|---|---|---|---|---|
 | 取题/对 WORLD 交付 | 所有人 | 仅 interface | 仅 interface | 仅 interface | 仅 interface | 单 agent |
 | 外部检索 `retrieve` | 所有人 | 所有人 | 仅 interface | 仅 interface | 仅 interface | 单 agent |
-| 对 interface 合同还价 | —（无 interface） | ✓ | ✓ | ✗ | ✗ | — |
-| 通信/交易对象 | 任意 | 任意 | 任意 | 任意（agent 间自由议价） | 仅 interface | — |
+| 合同定价权 | 双方议价 | 双方议价 | 双方议价 | interface 裁定（`set_price`），议价全禁 | interface 裁定，议价全禁 | — |
+| 通信/交易对象 | 任意 | 任意 | 任意 | 任意 | 仅 interface | — |
 | agent 数 | 8 | 1+7 | 1+7 | 1+7 | 1+7 | 1 |
 
 ## 10. 任务与数据集
@@ -158,7 +170,7 @@
   - MuSiQue（2–4 跳，防捷径设计）：官方每题配套段落聚合成语料库自建索引（社区标准做法）。
   - 混合池带来真实难度差异 → 定价分档有意义。
   - distractor 设定明确不用（会使 retrieve 失去意义、L2 无物可垄断）。
-  - BM25 一次检索常拿不全多跳证据（第二跳实体不在题面）→ 迭代检索/分解/转包有真实价值，是实验设计的 feature。检索后端可插拔（质量成瓶颈时可换 dense retrieval）。
+  - 检索后端：Chroma 向量数据库（默认 embedding：all-MiniLM，本地、无需 GPU/API）。多跳题的第二跳实体不在题面，单次检索（无论稀疏/稠密）常拿不全证据 → 迭代检索/分解/转包有真实价值，是实验设计的 feature。后端可插拔（BM25 稀疏检索留作消融 option）。
 - **第二臂：FanOutQA**（广度分解：一题 5–10 篇独立子查询，可并行转包）。与 MuSiQue（深度/串行分解）形成"深度可分解 vs 广度可分解 × 中心化"对比。需单独建索引（较新 Wikipedia dump）。
 - **保留 option（实验期拍板）**：GSM8K/MATH/SVAMP（数学）、HumanEval/MBPP（代码）、MMLU（知识问答）、GAIA/WebArena/AssistantBench（agentic 长程）、FRAMES（held-out 评测集）。基础设施任务抽象为 `(题目, 判分器)`，新增 benchmark 边际成本低。数学/单函数代码题协作价值低（cf. 2502.08788），可作"协作增益低"对照组考察"中心化影响是否依赖任务可分解性"。
 - 第二期候选（支撑"最优中心化随任务经济结构移动"）：GovSim 2404.16698、AucArena 2310.05746、NegotiationArena 2402.05863。
@@ -202,4 +214,4 @@
 - 记忆中心化消融（留配置后门）。
 - GovSim/AucArena 等经济博弈任务（第二期）。
 - 异步并发调度。
-- Dense retrieval（BM25 质量成瓶颈时再换）。
+- BM25 稀疏检索消融（默认为 Chroma 向量检索）。
