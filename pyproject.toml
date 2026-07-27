@@ -1,0 +1,13 @@
+[project]
+name = "centralized-agents"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["anthropic>=0.40", "chromadb>=0.5"]
+
+[project.optional-dependencies]
+data = ["datasets>=2.19"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
