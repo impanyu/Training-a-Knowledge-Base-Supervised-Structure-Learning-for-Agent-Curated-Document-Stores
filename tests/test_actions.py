@@ -1,0 +1,126 @@
+import pytest
+from ca.actions import dispatch, is_billable, permission_error, visible_tools, ACTION_SPECS
+from ca.config import LEVELS, ExperimentConfig
+from ca.infra import Infra
+from ca.retrieval import KeywordBackend
+from ca.taskboard import Question
+
+DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
+
+
+def make(level="L0", capital=1000):
+    cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=capital)
+    qs = [Question("q0001", "capital of France?", ["Paris"], "easy", 100)]
+    return Infra(cfg, qs, retriever=KeywordBackend(DOCS))
+
+
+def test_billability():
+    assert is_billable("retrieve", {"query": "x"})
+    assert is_billable("work_on", {"task_id": "q0001", "thought": "t"})
+    assert is_billable("deliver_work", {"target_id": "q0001", "content": "Paris"})
+    assert not is_billable("deliver_work", {"target_id": "c0001", "content": "x"})
+    assert not is_billable("send_message", {"to": "a", "text": "x"})
+
+
+def test_world_gating_by_level():
+    i0 = make("L0")
+    assert permission_error(i0, "agent_1", "claim_question", {"qid": "q0001"}) is None
+    i1 = make("L1")
+    assert permission_error(i1, "agent_1", "claim_question", {"qid": "q0001"}) is not None
+    assert permission_error(i1, "interface", "claim_question", {"qid": "q0001"}) is None
+
+
+def test_retrieve_gating_and_star_comms():
+    i2 = make("L2")
+    assert permission_error(i2, "agent_1", "retrieve", {"query": "x"}) is not None
+    assert permission_error(i2, "interface", "retrieve", {"query": "x"}) is None
+    i4 = make("L4")
+    assert permission_error(i4, "agent_1", "send_message", {"to": "agent_2", "text": "hi"}) is not None
+    assert permission_error(i4, "agent_1", "send_message", {"to": "interface", "text": "hi"}) is None
+    assert permission_error(i4, "interface", "send_message", {"to": "agent_2", "text": "hi"}) is None
+
+
+def test_central_pricing_at_L3():
+    i3 = make("L3")
+    # counter_offer blocked for EVERYONE (including on agent-agent contracts)
+    c = i3.contracts.propose("interface", "agent_1", "solve q0001", 50)
+    assert permission_error(i3, "agent_1", "counter_offer",
+                            {"contract_id": c.cid, "price": 80}) is not None
+    # non-interface proposals enter unpriced state; interface prices them
+    out = dispatch(i3, "agent_1", "propose_contract",
+                   {"to": "agent_2", "task": "subtask"})
+    assert "pricing" in out
+    c2 = i3.contracts.get("c0002")
+    assert c2.status == "unpriced"
+    assert permission_error(i3, "agent_1", "set_price",
+                            {"contract_id": "c0002", "price": 30}) is not None
+    assert permission_error(i3, "interface", "set_price",
+                            {"contract_id": "c0002", "price": 30}) is None
+    dispatch(i3, "interface", "set_price", {"contract_id": "c0002", "price": 30})
+    dispatch(i3, "agent_2", "accept_contract", {"contract_id": "c0002"})
+    assert i3.ledger.escrow["c0002"] == 30
+    assert i3.ledger.conservation_ok()
+
+
+def test_free_bargaining_below_L3():
+    i0 = make("L0")
+    c = i0.contracts.propose("agent_1", "agent_2", "sub", 10)
+    assert permission_error(i0, "agent_2", "counter_offer",
+                            {"contract_id": c.cid, "price": 20}) is None
+    assert permission_error(i0, "agent_1", "set_price",
+                            {"contract_id": c.cid, "price": 5}) is not None
+    # propose without price is an error outside central pricing
+    out = dispatch(i0, "agent_1", "propose_contract", {"to": "agent_3", "task": "t"})
+    assert out.startswith("ERROR")
+
+
+def test_bankrupt_blocks_billable_only():
+    i0 = make("L0", capital=8)  # 1 token each
+    i0.ledger.burn("agent_1", 5)
+    assert permission_error(i0, "agent_1", "retrieve", {"query": "x"}) is not None
+    assert permission_error(i0, "agent_1", "send_message", {"to": "agent_2", "text": "s"}) is None
+
+
+def test_dispatch_full_answer_flow():
+    i0 = make("L0")
+    out = dispatch(i0, "agent_1", "list_questions", {})
+    assert "q0001" in out
+    dispatch(i0, "agent_1", "claim_question", {"qid": "q0001"})
+    out = dispatch(i0, "agent_1", "retrieve", {"query": "capital of France"})
+    assert "Paris" in out
+    dispatch(i0, "agent_1", "work_on", {"task_id": "q0001", "thought": "answer is Paris"})
+    out = dispatch(i0, "agent_1", "deliver_work", {"target_id": "q0001", "content": "Paris"})
+    assert "100" in out  # payout mentioned
+    assert i0.ledger.balance("agent_1") > 125  # 125 seed + 100 payout
+    assert i0.ledger.conservation_ok()
+
+
+def test_dispatch_contract_flow_delivers_to_chat():
+    i0 = make("L0")
+    dispatch(i0, "agent_1", "propose_contract", {"to": "agent_2", "task": "find capital", "price": 30})
+    dispatch(i0, "agent_2", "accept_contract", {"contract_id": "c0001"})
+    dispatch(i0, "agent_2", "deliver_work", {"target_id": "c0001", "content": "it is Paris"})
+    unread = i0.chat.unread("agent_1")
+    assert any("Paris" in m.text for m in unread)
+    assert i0.ledger.conservation_ok()
+
+
+def test_dispatch_error_string_not_exception():
+    i0 = make("L0")
+    out = dispatch(i0, "agent_1", "claim_question", {"qid": "q9999"})
+    assert out.startswith("ERROR")
+
+
+def test_visible_tools_filtered():
+    names_l0 = {t["name"] for t in visible_tools(LEVELS["L0"], "agent_1")}
+    assert "claim_question" in names_l0 and "retrieve" in names_l0
+    assert "counter_offer" in names_l0 and "set_price" not in names_l0
+    names_l2 = {t["name"] for t in visible_tools(LEVELS["L2"], "agent_1")}
+    assert "claim_question" not in names_l2 and "retrieve" not in names_l2
+    names_l2i = {t["name"] for t in visible_tools(LEVELS["L2"], "interface")}
+    assert "claim_question" in names_l2i and "retrieve" in names_l2i
+    names_l3 = {t["name"] for t in visible_tools(LEVELS["L3"], "agent_1")}
+    assert "counter_offer" not in names_l3 and "set_price" not in names_l3
+    names_l3i = {t["name"] for t in visible_tools(LEVELS["L3"], "interface")}
+    assert "set_price" in names_l3i and "counter_offer" not in names_l3i
+    assert set(ACTION_SPECS) >= names_l0
