@@ -28,3 +28,10 @@ def test_compute_metrics():
     assert m["coordination_overhead"] == pytest.approx(1000 / 2000)
     assert m["bankrupt_rate"] == 0.5
     assert m["mean_contract_price"] == 40
+
+
+def test_compute_metrics_empty_balances():
+    summary = {"questions": [], "balances": {}, "tokens": {}, "bankrupt": [],
+               "rounds_used": 0, "n_contracts": 0, "contract_prices": []}
+    m = compute_metrics(summary)
+    assert m["bankrupt_rate"] == 0.0 and m["total_f1"] == 0.0

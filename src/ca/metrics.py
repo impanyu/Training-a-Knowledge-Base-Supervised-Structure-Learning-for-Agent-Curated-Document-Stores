@@ -1,7 +1,7 @@
 """Headline and auxiliary metrics computed from a run summary."""
 
 
-def gini(values) -> float:
+def gini(values: list[int | float]) -> float:
     vals = sorted(values)
     n = len(vals)
     total = sum(vals)
@@ -30,7 +30,8 @@ def compute_metrics(summary: dict) -> dict:
         "accuracy_per_ktok_all": total_f1 / (all_tok / 1000) if all_tok else 0.0,
         "coordination_overhead": free / all_tok if all_tok else 0.0,
         "rounds_used": summary["rounds_used"],
-        "bankrupt_rate": len(summary["bankrupt"]) / len(summary["balances"]),
+        "bankrupt_rate": (len(summary["bankrupt"]) / len(summary["balances"])
+                          if summary["balances"] else 0.0),
         "gini_final": gini([max(b, 0) for b in summary["balances"].values()]),
         "n_contracts": summary["n_contracts"],
         "mean_contract_price": sum(prices) / len(prices) if prices else 0.0,
