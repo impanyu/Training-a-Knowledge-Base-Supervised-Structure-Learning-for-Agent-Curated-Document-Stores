@@ -1,6 +1,7 @@
 """Action registry: specs (tool schemas), permission gating, dispatch."""
 from ca.config import LevelConfig
 from ca.contracts import ContractError
+from ca.economy import InsufficientFunds
 from ca.infra import Infra
 from ca.taskboard import BoardError
 
@@ -222,9 +223,10 @@ def _h_propose_contract(infra, a, inp):
         infra.chat.send(a, "interface",
                         f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: {c.task}",
                         infra.round)
-        infra.chat.send(a, inp["to"],
-                        f"[contract offer {c.cid}, price pending interface] task: {c.task}",
-                        infra.round)
+        if inp["to"] != "interface":
+            infra.chat.send(a, inp["to"],
+                            f"[contract offer {c.cid}, price pending interface] task: {c.task}",
+                            infra.round)
         return f"proposed {c.cid} to {inp['to']}; awaiting interface pricing"
     if inp.get("price") is None:
         return "ERROR: price is required (bargaining configuration)"
@@ -270,7 +272,10 @@ def _h_cancel_contract(infra, a, inp):
 
 
 def _h_pay(infra, a, inp):
-    infra.ledger.transfer(a, inp["to"], int(inp["amount"]))
+    try:
+        infra.ledger.transfer(a, inp["to"], int(inp["amount"]))
+    except InsufficientFunds as e:
+        return f"ERROR: {e}"
     infra.chat.send(a, inp["to"], f"[payment] {inp['amount']} tokens", infra.round)
     return f"paid {inp['amount']} to {inp['to']}"
 

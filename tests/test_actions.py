@@ -124,3 +124,10 @@ def test_visible_tools_filtered():
     names_l3i = {t["name"] for t in visible_tools(LEVELS["L3"], "interface")}
     assert "set_price" in names_l3i and "counter_offer" not in names_l3i
     assert set(ACTION_SPECS) >= names_l0
+
+
+def test_pay_insufficient_returns_error_string():
+    i0 = make("L0")
+    out = dispatch(i0, "agent_1", "pay", {"to": "agent_2", "amount": 10_000_000})
+    assert out.startswith("ERROR")
+    assert i0.ledger.conservation_ok()
