@@ -1642,17 +1642,133 @@ git commit -m "feat: action registry with billing rule, level gating, dispatch"
 
 ---
 
-### Task 11: Context rendering (system prompt + per-turn view)
+### Task 11: Context rendering (role skills + system prompt + per-turn view)
 
 **Files:**
-- Create: `src/ca/context.py`
-- Test: `tests/test_context.py`
+- Create: `src/ca/skills.py`, `src/ca/context.py`
+- Test: `tests/test_skills.py`, `tests/test_context.py`
 
 **Interfaces:**
-- Consumes: `Infra`, `FifoMemory`, `GoalStack`.
-- Produces: `system_prompt(cfg_level, agent_id, all_agent_ids)->str` (stable per agent per run); `render_turn(infra, agent_id, fifo, goals)->str` (balance, full goal stack, pending contracts, unread messages, FIFO). `render_turn` does NOT mark messages read — the Agent does that after a successful render (Task 12).
+- Consumes: `Infra`, `FifoMemory`, `GoalStack`, `LevelConfig`.
+- Produces:
+  - `skills.py`: `role_skill(level, agent_id)->str` — a role handbook with worked action-trajectory demos, assembled from modular blocks gated by level flags so a demo NEVER shows an action the agent lacks at that level (no `retrieve` in worker demos at L2+, no `counter_offer` at central-pricing levels, `set_price` demo only for interface at central-pricing levels, no world actions in worker demos at L1+).
+  - `context.py`: `system_prompt(cfg_level, agent_id, all_agent_ids)->str` (stable per agent per run; appends the role skill); `render_turn(infra, agent_id, fifo, goals)->str` (balance, full goal stack, pending contracts, unpriced-contract queue for interface under central pricing, unread messages, FIFO). `render_turn` does NOT mark messages read — the Agent does that after a successful render (Task 12).
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing skill tests**
+
+`tests/test_skills.py`:
+```python
+from ca.config import LEVELS
+from ca.skills import role_skill
+
+
+def test_worker_demo_matches_level_permissions():
+    l0 = role_skill(LEVELS["L0"], "agent_1")
+    assert "claim_question" in l0 and "retrieve" in l0          # full market demo
+    l1 = role_skill(LEVELS["L1"], "agent_1")
+    assert "claim_question" not in l1 and "retrieve" in l1      # contractor demo, may retrieve
+    l2 = role_skill(LEVELS["L2"], "agent_1")
+    assert "retrieve" not in l2                                  # info monopoly: no retrieve demo
+    assert "propose_contract" in l2                              # buy info from interface instead
+    l3 = role_skill(LEVELS["L3"], "agent_1")
+    assert "counter_offer" not in l3                             # bargaining disabled
+    l0_bargain = role_skill(LEVELS["L0"], "agent_1")
+    assert "counter_offer" in l0_bargain
+
+
+def test_interface_demo_matches_level_permissions():
+    l1 = role_skill(LEVELS["L1"], "interface")
+    assert "propose_contract" in l1 and "deliver_work" in l1 and "set_price" not in l1
+    l3 = role_skill(LEVELS["L3"], "interface")
+    assert "set_price" in l3
+    l5 = role_skill(LEVELS["L5"], "agent_1")
+    assert "propose_contract" not in l5                          # solo: no contracting demo
+```
+
+- [ ] **Step 2: Implement skills**
+
+`src/ca/skills.py`:
+```python
+"""Role handbooks with action-trajectory demos, assembled per level so a
+demo never shows an action the agent lacks at that level."""
+from ca.config import LevelConfig
+
+_SOLO_ANSWER = """
+### Demo: answering a question yourself
+1. list_questions -> "q0012 [3hop, reward 2000]: In which city was the author of X born?"
+2. claim_question(qid="q0012")
+3. retrieve(query="author of X")                      # COSTS TOKENS
+4. work_on(task_id="q0012", thought="author is Y; now need Y's birthplace")
+5. retrieve(query="Y birthplace")                     # COSTS TOKENS
+6. deliver_work(target_id="q0012", content="Paris")   # graded, paid = 2000 x F1
+Estimate cost vs reward BEFORE claiming; skip questions you cannot answer profitably."""
+
+_SOLO_ANSWER_NO_RETRIEVE = """
+### Demo: answering a question yourself
+1. claim_question(qid="q0012")
+2. work_on(task_id="q0012", thought="recall what I know about X ...")
+3. deliver_work(target_id="q0012", content="Paris")   # graded, paid = price x F1"""
+
+_CONTRACTOR = """
+### Demo: earning tokens as a contractor
+- Unread message: "[contract offer c0007] task: find the birthplace of Y | price: 300"
+- accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
+- do the work{how}, then:
+- deliver_work(target_id="c0007", content="Y was born in Paris (source: ...)")
+  -> escrow released to you. Deliver USEFUL content: cheaters lose future business."""
+
+_BUY_INFO = """
+### Demo: buying external information (only the interface can search the corpus)
+- propose_contract(to="interface", task="look up: birthplace of Y", price=80)
+- interface accepts+delivers -> the passages arrive in your chat."""
+
+_IFACE_PIPELINE = """
+### Demo: your production pipeline
+1. list_questions -> pick questions whose reward exceeds expected cost
+2. claim_question(qid="q0012")
+3. EITHER answer it yourself (retrieve / work_on / deliver_work),
+   OR subcontract: propose_contract(to="agent_3", task="find the birthplace of Y", price=300)
+   -> when agent_3 delivers, the answer arrives in your chat
+4. deliver_work(target_id="q0012", content="Paris")   # WORLD pays you 2000 x F1
+Your profit = WORLD rewards - subcontract payments - your own token burn.
+Parallelize: keep several agents working on different questions at once."""
+
+_IFACE_PRICING = """
+### Demo: pricing the market (only you can set prices)
+- Context shows: "Contracts awaiting YOUR pricing: c0009 agent_2 -> agent_5: ..."
+- set_price(contract_id="c0009", price=250)   # then agent_5 may accept or reject
+Unpriced contracts stall the economy; price them promptly and consistently."""
+
+
+def role_skill(level: LevelConfig, agent_id: str) -> str:
+    is_iface = agent_id == "interface"
+    can_retrieve = level.retrieve_access == "all" or is_iface
+    can_world = level.world_access == "all" or is_iface
+    solo = level.n_agents == 1
+    blocks: list[str] = []
+    if is_iface:
+        blocks.append(_IFACE_PIPELINE)
+        if level.central_pricing:
+            blocks.append(_IFACE_PRICING)
+    else:
+        if can_world:
+            blocks.append(_SOLO_ANSWER if can_retrieve else _SOLO_ANSWER_NO_RETRIEVE)
+        if not solo:
+            counter = ("\n- price too low? counter_offer(contract_id=\"c0007\", price=450)"
+                       if not level.central_pricing else "")
+            how = (" (retrieve / work_on)" if can_retrieve
+                   else " (work_on with what you know, or buy info)")
+            blocks.append(_CONTRACTOR.format(counter_line=counter, how=how))
+            if not can_retrieve:
+                blocks.append(_BUY_INFO)
+    if not blocks:
+        return ""
+    return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)
+```
+
+Run: `python -m pytest tests/test_skills.py -q` — 2 passed.
+
+- [ ] **Step 3: Write the failing context tests**
 
 `tests/test_context.py`:
 ```python
@@ -1695,9 +1811,9 @@ def test_render_turn_contains_state():
     assert infra.chat.unread("agent_1")
 ```
 
-- [ ] **Step 2: Run to verify failure** — `python -m pytest tests/test_context.py -q` — ImportError.
+- [ ] **Step 4: Run context tests to verify failure** — `python -m pytest tests/test_context.py -q` — ImportError.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 5: Implement context**
 
 `src/ca/context.py`:
 ```python
@@ -1705,6 +1821,7 @@ def test_render_turn_contains_state():
 from ca.config import LevelConfig
 from ca.infra import Infra
 from ca.memory import FifoMemory, GoalStack
+from ca.skills import role_skill
 
 _BASE = """You are {agent_id}, an autonomous agent in a multi-agent economy.
 Agents in the system: {peers}.
@@ -1757,6 +1874,7 @@ def system_prompt(level: LevelConfig, agent_id: str, all_ids: list[str]) -> str:
                       level_rules=_level_rules(level, is_iface))
     if is_iface:
         sp += _INTERFACE_EXTRA
+    sp += role_skill(level, agent_id)
     return sp
 
 
@@ -1788,13 +1906,13 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     return "\n\n".join(parts)
 ```
 
-- [ ] **Step 4: Run tests** — `python -m pytest tests/test_context.py -q` — 2 passed.
+- [ ] **Step 6: Run tests** — `python -m pytest tests/test_skills.py tests/test_context.py -q` — 4 passed. Full suite once.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/ca/context.py tests/test_context.py
-git commit -m "feat: system prompt template and per-turn context rendering"
+git add src/ca/skills.py src/ca/context.py tests/test_skills.py tests/test_context.py
+git commit -m "feat: role skills with trajectory demos, system prompt, turn rendering"
 ```
 
 ---

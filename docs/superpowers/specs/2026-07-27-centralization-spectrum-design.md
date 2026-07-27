@@ -136,6 +136,7 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 - 目标栈全量渲染（实践 2–5 层，不截断）；仅 FIFO 滚动淘汰。
 - 栈根由系统自动压入且不可 pop；其余层 agent 自维护，备注留痕（预期收益、来源合同 id），兼作决策理由 trace。
 - 所有 agent（含 interface）共用同一 system prompt 模板，仅按配置替换"你能做什么"段落。
+- **角色 skill（轨迹示范）**：system prompt 末尾附加角色手册——worker 与 interface 各一套 action 轨迹 demo（如 worker：claim→retrieve→work_on→deliver；interface：claim→转包→set_price→对 WORLD 交付），demo 片段按配置裁剪，绝不展示该配置下不可用的 action。注意：skill 增加计费回合的 input 成本，且两角色 skill 长度不同（属角色复杂度的真实成本，六配置内部保持对称）。
 
 ## 7. 调度
 
