@@ -23,3 +23,10 @@ def test_interface_demo_matches_level_permissions():
     assert "set_price" in l3
     l5 = role_skill(LEVELS["L5"], "agent_1")
     assert "propose_contract" not in l5                          # solo: no contracting demo
+
+
+def test_buy_info_demo_omits_price_under_central_pricing():
+    l2 = role_skill(LEVELS["L2"], "agent_1")
+    assert "price=80" in l2
+    l3 = role_skill(LEVELS["L3"], "agent_1")
+    assert "price=80" not in l3

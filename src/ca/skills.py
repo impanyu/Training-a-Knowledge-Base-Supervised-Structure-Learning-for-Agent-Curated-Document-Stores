@@ -28,7 +28,7 @@ _CONTRACTOR = """
 
 _BUY_INFO = """
 ### Demo: buying external information (only the interface can search the corpus)
-- propose_contract(to="interface", task="look up: birthplace of Y", price=80)
+- propose_contract(to="interface", task="look up: birthplace of Y"{price_arg})
 - interface accepts+delivers -> the passages arrive in your chat."""
 
 _IFACE_PIPELINE = """
@@ -69,7 +69,8 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
                    else " (work_on with what you know, or buy info)")
             blocks.append(_CONTRACTOR.format(counter_line=counter, how=how))
             if not can_retrieve:
-                blocks.append(_BUY_INFO)
+                price_arg = "" if level.central_pricing else ", price=80"
+                blocks.append(_BUY_INFO.format(price_arg=price_arg))
     if not blocks:
         return ""
     return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)
