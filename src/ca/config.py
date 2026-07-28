@@ -35,6 +35,10 @@ class ExperimentConfig:
     seed: int
     seed_capital_total: int
     fifo_k: int = 10
+    result_cap_recent: int = 4000   # render budget for the newest FIFO entries
+    result_cap_old: int = 300       # render budget once an entry ages out
+    fifo_recent_n: int = 2          # how many entries count as "recent"
+    list_top_n: int = 20            # open questions shown by list_questions
     max_rounds: int = 60
     model: str = "claude-haiku-4-5"
     max_tokens_per_turn: int = 1024

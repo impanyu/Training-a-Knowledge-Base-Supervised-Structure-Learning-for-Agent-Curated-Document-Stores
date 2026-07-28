@@ -67,7 +67,8 @@ class Agent:
         self.cfg = cfg
         self.infra = infra
         self.policy = policy
-        self.fifo = FifoMemory(cfg.fifo_k)
+        self.fifo = FifoMemory(cfg.fifo_k, cfg.result_cap_recent,
+                               cfg.result_cap_old, cfg.fifo_recent_n)
         self.goals = GoalStack("maximize token balance")
         self._system = system_prompt(cfg.level, agent_id, infra.agent_ids)
         self._tools = visible_tools(cfg.level, agent_id)
@@ -96,7 +97,8 @@ class Agent:
         if billable:
             self.infra.ledger.burn(self.id, d.in_tokens + d.out_tokens)
         self.infra.chat.mark_read(self.id)  # rendered messages are now "seen"
-        self.fifo.add(f"{d.name}({json.dumps(d.inp, ensure_ascii=False)[:120]})", result[:300])
+        # store the FULL result; FifoMemory.render() applies the display budget
+        self.fifo.add(f"{d.name}({json.dumps(d.inp, ensure_ascii=False)[:120]})", result)
         return {
             "round": self.infra.round, "agent": self.id,
             "action": d.name, "input": d.inp, "result": result,

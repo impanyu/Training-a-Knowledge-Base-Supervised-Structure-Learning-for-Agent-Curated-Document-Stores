@@ -190,10 +190,14 @@ def _h_deliver_work(infra, a, inp):
 
 
 def _h_list_questions(infra, a, inp):
-    qs = infra.board.list_open()
+    qs = sorted(infra.board.list_open(), key=lambda q: -q.price)
     if not qs:
         return "(no open questions)"
-    return "\n".join(f"{q.qid} [{q.difficulty}, reward {q.price}]: {q.text}" for q in qs)
+    top = infra.cfg.list_top_n
+    lines = [f"{q.qid} [{q.difficulty}, reward {q.price}]: {q.text}" for q in qs[:top]]
+    if len(qs) > top:
+        lines.append(f"... and {len(qs) - top} more open questions")
+    return "\n".join(lines)
 
 
 def _h_claim_question(infra, a, inp):

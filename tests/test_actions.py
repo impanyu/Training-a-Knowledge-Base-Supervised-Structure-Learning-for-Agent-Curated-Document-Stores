@@ -105,6 +105,18 @@ def test_dispatch_contract_flow_delivers_to_chat():
     assert i0.ledger.conservation_ok()
 
 
+def test_list_questions_shows_top_n_by_price_with_overflow_note():
+    cfg = ExperimentConfig(level=LEVELS["L0"], seed=0, seed_capital_total=1000)
+    qs = [Question(f"q{i:04d}", f"question {i}", ["x"], "easy", i) for i in range(1, 26)]
+    infra = Infra(cfg, qs, retriever=None)
+    out = dispatch(infra, "agent_1", "list_questions", {})
+    lines = out.splitlines()
+    assert len(lines) == 21                          # 20 questions + overflow note
+    assert lines[0].startswith("q0025")              # most valuable first
+    assert lines[-1] == "... and 5 more open questions"
+    assert "q0001 " not in out                       # the 5 cheapest are dropped
+
+
 def test_dispatch_error_string_not_exception():
     i0 = make("L0")
     out = dispatch(i0, "agent_1", "claim_question", {"qid": "q9999"})
