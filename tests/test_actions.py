@@ -62,6 +62,18 @@ def test_central_pricing_at_L3():
     assert i3.ledger.conservation_ok()
 
 
+def test_propose_to_interface_under_central_pricing_is_not_double_notified():
+    i3 = make("L3")
+    dispatch(i3, "agent_1", "propose_contract", {"to": "interface", "task": "look up X"})
+    iface = i3.chat.unread("interface")
+    assert len(iface) == 1                       # pricing + offer notice, not two copies
+    assert "c0001" in iface[0].text
+    # a proposal to a peer still notifies BOTH the interface and that peer
+    dispatch(i3, "agent_1", "propose_contract", {"to": "agent_2", "task": "sub"})
+    assert len(i3.chat.unread("interface")) == 2
+    assert len(i3.chat.unread("agent_2")) == 1
+
+
 def test_free_bargaining_below_L3():
     i0 = make("L0")
     c = i0.contracts.propose("agent_1", "agent_2", "sub", 10)

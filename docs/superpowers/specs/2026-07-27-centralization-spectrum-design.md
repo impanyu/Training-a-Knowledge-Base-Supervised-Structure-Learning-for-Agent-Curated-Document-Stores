@@ -176,12 +176,24 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 - **保留 option（实验期拍板）**：GSM8K/MATH/SVAMP（数学）、HumanEval/MBPP（代码）、MMLU（知识问答）、GAIA/WebArena/AssistantBench（agentic 长程）、FRAMES（held-out 评测集）。基础设施任务抽象为 `(题目, 判分器)`，新增 benchmark 边际成本低。数学/单函数代码题协作价值低（cf. 2502.08788），可作"协作增益低"对照组考察"中心化影响是否依赖任务可分解性"。
 - 第二期候选（支撑"最优中心化随任务经济结构移动"）：GovSim 2404.16698、AucArena 2310.05746、NegotiationArena 2402.05863。
 
+> **Pilot 语料现状（与上文主实验设定的偏差，必须记录）**：`scripts/prepare_data.py`
+> 当前构建的**不是** HotpotQA 官方约 500 万篇 fullwiki dump，而是把每题自带的段落集
+> （HotpotQA `distractor` 配置的 gold + distractor 段落，加 MuSiQue 每题配套段落）
+> 跨全部抽样题**汇总去重成一个共享语料库**（IRCoT 等工作的常见做法）。gold 段落
+> 100% 在库，题目可答，pilot 可跑通。
+> - **有效性 caveat**：该语料仅数千段且已按题裁剪，检索显著比 fullwiki 容易 →
+>   retrieve 的边际价值被低估，**L2 的信息垄断操纵被削弱**（agent 更容易一次命中，
+>   少了迭代检索/转包的压力）。因此 pilot 的 L2 效应量应视为下界，不可直接外推。
+> - **主实验升级项**：正式跑前改为 fullwiki dump 建索引（HotpotQA 官方 processed
+>   dump + MuSiQue 语料），届时上文 §10 设定与实现一致，L2 操纵才具备完整强度。
+
 ## 11. 指标体系（因变量）
 
 - **主指标 accuracy-per-token** = 题池总得分 ÷ 系统消耗 token。分母两个版本：
   - (a) 仅计费 token（经济内效率）
   - (b) 全部 token 含协调回合（真实成本效率）
-  - **两者之差 = 协调开销**——中心化如何改变协调开销是高价值结果。
+  - **协调开销 = 免费回合 token / 全部 token**（实现口径，见 `metrics.compute_metrics`）；
+    两个 accuracy-per-token 之差可由上述两指标导出，中心化如何改变协调开销是高价值结果。
 - **辅助**：总正确率（EM/F1）、清池轮数（吞吐）、破产率与存活比例、期末余额 Gini、转包量与成交价分布、每题检索次数、gold 段落命中率。
 - 全量 trace（每回合每 agent 的 prompt/action/result/账变）落 JSONL，离线可重放。
 
