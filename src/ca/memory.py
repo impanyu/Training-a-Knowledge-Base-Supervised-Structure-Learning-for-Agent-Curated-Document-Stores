@@ -3,16 +3,11 @@ from collections import defaultdict, deque
 
 
 class FifoMemory:
-    """Recent-action buffer. Results are stored in FULL; only the *rendering*
-    is budgeted, so a large retrieve payload stays usable while it is fresh
-    and shrinks to a reminder once it ages out of the recent window."""
+    """Recent-action buffer. K is the pair budget — when maxlen is reached,
+    the oldest (action, result) pair is evicted. All pairs are rendered in full."""
 
-    def __init__(self, k: int = 10, cap_recent: int = 4000, cap_old: int = 300,
-                 recent_n: int = 2):
+    def __init__(self, k: int = 10):
         self.items: deque[tuple[str, str]] = deque(maxlen=k)
-        self.cap_recent = cap_recent
-        self.cap_old = cap_old
-        self.recent_n = recent_n
 
     def add(self, action: str, result: str) -> None:
         self.items.append((action, result))
@@ -20,11 +15,9 @@ class FifoMemory:
     def render(self) -> str:
         if not self.items:
             return "(no recent actions)"
-        n = len(self.items)
         lines = []
-        for i, (a, r) in enumerate(self.items):
-            cap = self.cap_recent if i >= n - self.recent_n else self.cap_old
-            lines.append(f"- {a} -> {r[:cap]}")
+        for a, r in self.items:
+            lines.append(f"- {a} -> {r}")
         return "\n".join(lines)
 
 

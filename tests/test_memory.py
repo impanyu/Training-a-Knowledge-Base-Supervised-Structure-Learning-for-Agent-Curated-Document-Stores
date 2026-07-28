@@ -9,18 +9,31 @@ def test_fifo_rolls_over():
     assert "a1" not in out and "a2" in out and "a3" in out
 
 
-def test_fifo_keeps_recent_results_intact_and_truncates_aged_ones():
-    m = FifoMemory(k=5, cap_recent=4000, cap_old=300, recent_n=2)
-    big = "x" * 2000
-    m.add("retrieve", big)
-    assert big in m.render()          # newest entry: full result survives
-    m.add("a2", "r2")
-    assert big in m.render()          # still inside the recent_n window
-    m.add("a3", "r3")
+def test_fifo_pair_based_keeps_results_full():
+    """K is the pair budget: 4 pairs added to k=3, oldest evicted, 3 remain IN FULL."""
+    m = FifoMemory(k=3)
+    # Create 4 results, each >2000 chars with a unique marker at the end
+    big1 = "x" * 2000 + " MARKER_1"
+    big2 = "y" * 2000 + " MARKER_2"
+    big3 = "z" * 2000 + " MARKER_3"
+    big4 = "w" * 2000 + " MARKER_4"
+
+    m.add("act1", big1)
+    m.add("act2", big2)
+    m.add("act3", big3)
+    m.add("act4", big4)  # oldest (big1) should be evicted
+
     out = m.render()
-    assert big not in out             # aged out -> truncated
-    assert "x" * 300 in out           # ... to cap_old
-    assert m.items[0][1] == big       # but stored FULL, never lossy
+    # Oldest pair (act1, big1) is gone
+    assert "MARKER_1" not in out
+    # Remaining 3 pairs are rendered in FULL
+    assert "MARKER_2" in out
+    assert "MARKER_3" in out
+    assert "MARKER_4" in out
+    # Verify storage is indeed full (no truncation)
+    assert m.items[0][1] == big2
+    assert m.items[1][1] == big3
+    assert m.items[2][1] == big4
 
 
 def test_goal_stack_root_protected():
