@@ -52,7 +52,14 @@ _IFACE_PIPELINE = """
    -> when agent_3 delivers, the answer arrives in your chat
 4. deliver_work(target_id="q0012", content="Paris")   # WORLD pays you 2000 x F1
 Your profit = WORLD rewards - subcontract payments - your own token burn.
-Parallelize: keep several agents working on different questions at once."""
+Parallelize: keep several agents working on different questions at once.
+YOUR TURN IS THE SCARCEST RESOURCE IN THE SYSTEM: never spend it on greetings
+or per-worker small talk. Priority every turn:
+(1) deliver finished answers to the WORLD (this is the only income),
+(2) respond to pending contracts and collect deliverables,
+(3) claim new questions and subcontract them,
+(4) only if nothing above is pending: messaging.
+Workers do not need replies to work - contracts speak for themselves."""
 
 _IFACE_PRICING = """
 ### Demo: pricing the market (only you can set prices)

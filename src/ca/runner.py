@@ -32,13 +32,19 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--capital", type=int, default=400_000)
     ap.add_argument("--max-rounds", type=int, default=60)
+    ap.add_argument("--turns", type=int, default=None,
+                    help="total agent-turn budget; overrides --max-rounds with turns//n_agents")
     ap.add_argument("--model", default="claude-haiku-4-5")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    from ca.config import agent_ids
+    max_rounds = args.max_rounds
+    if args.turns is not None:
+        max_rounds = max(1, args.turns // len(agent_ids(LEVELS[args.level])))
     cfg = ExperimentConfig(level=LEVELS[args.level], seed=args.seed,
                            seed_capital_total=args.capital,
-                           max_rounds=args.max_rounds, model=args.model)
+                           max_rounds=max_rounds, model=args.model)
     infra = Infra(cfg, load_questions(args.questions),
                   retriever=ChromaBackend.load(args.index))
     agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn))
