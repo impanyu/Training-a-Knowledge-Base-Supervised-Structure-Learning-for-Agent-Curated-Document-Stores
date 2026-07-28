@@ -34,7 +34,8 @@ class ExperimentConfig:
     level: LevelConfig
     seed: int
     seed_capital_total: int
-    fifo_k: int = 10
+    fifo_k: int = 6
+    retrieve_k: int = 3          # passages per retrieve call (billable-cost knob)
     list_top_n: int = 20            # open questions shown by list_questions
     claim_ttl: int = 8              # rounds before an undelivered claim reopens
     max_rounds: int = 60

@@ -29,7 +29,9 @@ ACTION_SPECS: dict[str, dict] = {
                         "token-overlap F1 against a short gold answer: content MUST be ONLY the short "
                         "answer itself (a name / date / phrase, e.g. 'Richard Strauss'), never a full "
                         "sentence or explanation. target_id starting with 'c' = deliver an accepted "
-                        "contract (escrow released to you, free)."),
+                        "contract (escrow released to you, free) — only the CONTRACTOR (the agent "
+                        "hired to do the work) delivers a contract; if you are the payer, wait for "
+                        "the deliverable to arrive in your chat instead."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
     # -------- free (coordination) --------
@@ -183,7 +185,7 @@ def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
 # ---------------- handlers ----------------
 
 def _h_retrieve(infra, a, inp):
-    hits = infra.retriever.search(inp["query"], k=5)
+    hits = infra.retriever.search(inp["query"], k=infra.cfg.retrieve_k)
     return "\n\n".join(f"[{d['title']}] {d['text']}" for d in hits) or "(no results)"
 
 

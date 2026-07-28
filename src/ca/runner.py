@@ -30,7 +30,7 @@ def main() -> None:
     ap.add_argument("--questions", required=True)
     ap.add_argument("--index", required=True, help="chroma persist dir from prepare_data")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--capital", type=int, default=200_000)
+    ap.add_argument("--capital", type=int, default=400_000)
     ap.add_argument("--max-rounds", type=int, default=60)
     ap.add_argument("--model", default="claude-haiku-4-5")
     ap.add_argument("--out", required=True)

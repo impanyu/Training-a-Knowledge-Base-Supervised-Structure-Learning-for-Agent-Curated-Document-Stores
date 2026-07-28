@@ -16,10 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ca.retrieval import ChromaBackend  # noqa: E402
 
 # Pricing rule (spec §8): R(q) ~= 1.5x the average billable token burn to solve a
-# question of that tier, so solving is profitable. Placeholder estimates assume a
-# billable turn burns ~3-4k tokens and 2/3/4-hop questions take ~2-3/4/5-6 billable
-# turns. Recalibrate from pilot measurements (spec §13).
-PRICES = {"2hop": 12000, "3hop": 20000, "4hop": 30000}
+# question of that tier, so solving is profitable. Calibrated from pilot round 1
+# (2026-07: clean 2-hop solve ~11-15k billable tokens incl. context growth).
+PRICES = {"2hop": 18000, "3hop": 30000, "4hop": 45000}
 
 
 def main():
