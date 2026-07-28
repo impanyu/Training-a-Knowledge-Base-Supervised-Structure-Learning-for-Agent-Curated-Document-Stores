@@ -1,6 +1,8 @@
 from ca.config import LEVELS
 from ca.skills import role_skill
 
+_HIRE_HEADING = "### Demo: hiring another agent"
+
 
 def test_worker_demo_matches_level_permissions():
     l0 = role_skill(LEVELS["L0"], "agent_1")
@@ -23,6 +25,18 @@ def test_interface_demo_matches_level_permissions():
     assert "set_price" in l3
     l5 = role_skill(LEVELS["L5"], "agent_1")
     assert "propose_contract" not in l5                          # solo: no contracting demo
+
+
+def test_l0_and_l1_workers_are_shown_how_to_hire():
+    # without this, decentralised workers only ever see themselves as sellers
+    for lvl in ("L0", "L1"):
+        s = role_skill(LEVELS[lvl], "agent_1")
+        assert "propose_contract" in s
+        assert s.count(_HIRE_HEADING) == 1
+    # L2/L3 workers already learn hiring from the buy-info demo: do not double up
+    for lvl in ("L2", "L3", "L4"):
+        assert role_skill(LEVELS[lvl], "agent_1").count(_HIRE_HEADING) == 0
+    assert "propose_contract" not in role_skill(LEVELS["L5"], "agent_1")
 
 
 def test_buy_info_demo_omits_price_under_central_pricing():

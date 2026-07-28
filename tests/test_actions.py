@@ -138,6 +138,15 @@ def test_visible_tools_filtered():
     assert set(ACTION_SPECS) >= names_l0
 
 
+def test_L5_hides_multi_agent_tool_schemas():
+    # a solo agent has nobody to message, contract or pay: billing it for those
+    # schemas on every turn is pure waste
+    names = {t["name"] for t in visible_tools(LEVELS["L5"], "agent_1")}
+    assert names == {"retrieve", "work_on", "deliver_work", "list_questions",
+                     "claim_question", "push_goal", "pop_goal",
+                     "memory_write", "memory_search", "check_balance"}
+
+
 def test_pay_insufficient_returns_error_string():
     i0 = make("L0")
     out = dispatch(i0, "agent_1", "pay", {"to": "agent_2", "amount": 10_000_000})

@@ -40,19 +40,25 @@ class ScriptedPolicy:
 
 class LLMPolicy:
     def __init__(self, model: str, max_tokens: int = 1024):
-        self.client = anthropic.Anthropic()
+        self.client = anthropic.Anthropic(max_retries=5)
         self.model = model
         self.max_tokens = max_tokens
 
     def decide(self, system, context, tools) -> Decision:
-        resp = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": context}],
-            tools=tools,
-            tool_choice={"type": "any", "disable_parallel_tool_use": True},
-        )
+        try:
+            resp = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": context}],
+                tools=tools,
+                tool_choice={"type": "any", "disable_parallel_tool_use": True},
+            )
+        except Exception:
+            # Deliberately broad: the SDK already retried: whatever still failed
+            # must cost this agent one turn, not the whole multi-hour run.
+            # Nothing is billed, so a dead API cannot bankrupt anyone either.
+            return Decision("__noop__", {}, 0, 0)
         usage = resp.usage
         for block in resp.content:
             if block.type == "tool_use":

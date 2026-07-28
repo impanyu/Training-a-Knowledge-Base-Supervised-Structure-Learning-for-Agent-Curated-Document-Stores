@@ -1,6 +1,8 @@
 import json
 import random
 
+import pytest
+
 from ca.agent import Agent, ScriptedPolicy
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
@@ -72,3 +74,18 @@ def test_stops_at_max_rounds(tmp_path):
     summary = sched.run()
     assert summary["rounds_used"] == 10
     assert summary["questions"][0]["status"] != "closed"
+
+
+def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
+    """A crash mid-run must not cost us the whole run's data."""
+    class BoomPolicy:
+        def decide(self, system, context, tools):
+            raise RuntimeError("policy exploded")
+
+    infra, sched = build("L5", {}, tmp_path)
+    sched.agents[0].policy = BoomPolicy()
+    with pytest.raises(RuntimeError):
+        sched.run()
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["level"] == "L5"
+    assert summary["conservation_ok"] is True

@@ -1,4 +1,5 @@
-from ca.agent import Agent, ScriptedPolicy, Decision
+import ca.agent as agent_mod
+from ca.agent import Agent, ScriptedPolicy, Decision, LLMPolicy
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
 from ca.retrieval import KeywordBackend
@@ -55,6 +56,26 @@ def test_goal_actions_update_local_stack():
     assert "solve q0001" in ag.goals.render()
     ag.take_turn()
     assert "solve q0001" not in ag.goals.render()
+
+
+def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):
+    captured = {}
+
+    class FakeMessages:
+        def create(self, **kw):
+            raise RuntimeError("503 overloaded_error")
+
+    class FakeClient:
+        def __init__(self, **kw):
+            captured.update(kw)
+            self.messages = FakeMessages()
+
+    monkeypatch.setattr(agent_mod.anthropic, "Anthropic", FakeClient)
+    policy = LLMPolicy("claude-haiku-4-5")
+    assert captured["max_retries"] == 5          # SDK-level retries for transient errors
+    d = policy.decide("sys", "ctx", [])          # a hard failure must not kill the run
+    assert d.name == "__noop__"
+    assert d.in_tokens == 0 and d.out_tokens == 0
 
 
 def test_turn_marks_chat_read():

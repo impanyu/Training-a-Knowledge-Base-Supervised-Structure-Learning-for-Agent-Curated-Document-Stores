@@ -31,6 +31,15 @@ _BUY_INFO = """
 - propose_contract(to="interface", task="look up: birthplace of Y"{price_arg})
 - interface accepts+delivers -> the passages arrive in your chat."""
 
+_HIRE_PEER = """
+### Demo: hiring another agent (you can be the payer, not only the worker)
+- A task is worth more to you than what a peer would charge to do it:
+- propose_contract(to="agent_5", task="find the birthplace of Y"{price_arg})
+- agent_5 accepts -> your tokens move into escrow; keep taking your own turns
+- when agent_5 delivers, the content lands in your chat and escrow is released
+Delegating costs tokens but frees your turns: offer less than the work is
+worth to you, and check the deliverable before relying on it."""
+
 _IFACE_PIPELINE = """
 ### Demo: your production pipeline
 1. list_questions -> pick questions whose reward exceeds expected cost
@@ -71,6 +80,11 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
             if not can_retrieve:
                 price_arg = "" if level.central_pricing else ", price=80"
                 blocks.append(_BUY_INFO.format(price_arg=price_arg))
+            elif not level.star_comms:
+                # workers who CAN retrieve never see _BUY_INFO, so without this
+                # they are only ever shown how to be hired, never how to hire
+                price_arg = "" if level.central_pricing else ", price=120"
+                blocks.append(_HIRE_PEER.format(price_arg=price_arg))
     if not blocks:
         return ""
     return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)

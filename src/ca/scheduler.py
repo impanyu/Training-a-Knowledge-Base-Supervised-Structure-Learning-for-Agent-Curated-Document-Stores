@@ -18,18 +18,22 @@ class Scheduler:
 
     def run(self) -> dict:
         rounds_used = 0
-        for r in range(1, self.cfg.max_rounds + 1):
-            self.infra.round = r
-            rounds_used = r
-            self.infra.board.expire_claims(r, self.cfg.claim_ttl)
-            order = list(self.agents)
-            self.rng.shuffle(order)
-            for agent in order:
-                event = agent.take_turn()
-                self.recorder.log(event)
-            assert self.infra.ledger.conservation_ok(), f"conservation violated in round {r}"
-            if self.infra.board.all_done():
-                break
-        summary = self.recorder.write_summary(self.infra, rounds_used)
-        self.recorder.close()
+        try:
+            for r in range(1, self.cfg.max_rounds + 1):
+                self.infra.round = r
+                rounds_used = r
+                self.infra.board.expire_claims(r, self.cfg.claim_ttl)
+                order = list(self.agents)
+                self.rng.shuffle(order)
+                for agent in order:
+                    event = agent.take_turn()
+                    self.recorder.log(event)
+                assert self.infra.ledger.conservation_ok(), \
+                    f"conservation violated in round {r}"
+                if self.infra.board.all_done():
+                    break
+        finally:
+            # a crash (or a tripped invariant) must not cost us the run's data
+            summary = self.recorder.write_summary(self.infra, rounds_used)
+            self.recorder.close()
         return summary

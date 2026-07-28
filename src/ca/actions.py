@@ -104,6 +104,10 @@ ACTION_SPECS: dict[str, dict] = {
 
 _WORLD_ACTIONS = {"list_questions", "claim_question"}
 _TARGETED = {"send_message", "propose_contract", "pay"}  # star-comms checked actions
+# meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
+_MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
+                     "reject_contract", "counter_offer", "cancel_contract", "set_price",
+                     "pay", "list_agents"}
 
 
 def is_billable(name: str, inp: dict) -> bool:
@@ -118,6 +122,8 @@ def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
     is_iface = agent_id == "interface"
     out = []
     for name, spec in ACTION_SPECS.items():
+        if level.n_agents == 1 and name in _MULTI_AGENT_ONLY:
+            continue  # solo agent: never bill it for schemas it can never use
         if level.world_access == "interface" and not is_iface and name in _WORLD_ACTIONS:
             continue
         if level.retrieve_access == "interface" and not is_iface and name == "retrieve":
