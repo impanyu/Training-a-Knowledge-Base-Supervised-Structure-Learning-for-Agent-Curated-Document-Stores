@@ -24,7 +24,7 @@ def resolve_endpoint(model: str) -> tuple[str | None, str]:
 class OpenAICompatPolicy:
     """One tool call per turn against any OpenAI-compatible chat API."""
 
-    def __init__(self, model: str, max_tokens: int = 1024):
+    def __init__(self, model: str, max_tokens: int = 1024, temperature: float = 0.3):
         import os
 
         from openai import OpenAI
@@ -33,6 +33,7 @@ class OpenAICompatPolicy:
                              max_retries=5)
         self.model = model
         self.max_tokens = max_tokens
+        self.temperature = temperature
 
     def decide(self, system: str, context: str, tools: list[dict]) -> Decision:
         kwargs = dict(
@@ -41,6 +42,7 @@ class OpenAICompatPolicy:
                       {"role": "user", "content": context}],
             tools=to_openai_tools(tools),
             tool_choice="required",
+            temperature=self.temperature,
         )
         # Newer GPT models (gpt-5*, o*) reject max_tokens in favor of
         # max_completion_tokens; other OpenAI-compatible endpoints (DeepSeek,
@@ -78,7 +80,7 @@ class OpenAICompatPolicy:
         return Decision(call.function.name, args, in_tok, out_tok)
 
 
-def make_policy(model: str, max_tokens: int = 1024):
+def make_policy(model: str, max_tokens: int = 1024, temperature: float = 0.3):
     if model.startswith("claude"):
-        return LLMPolicy(model, max_tokens)
-    return OpenAICompatPolicy(model, max_tokens)
+        return LLMPolicy(model, max_tokens, temperature)
+    return OpenAICompatPolicy(model, max_tokens, temperature)

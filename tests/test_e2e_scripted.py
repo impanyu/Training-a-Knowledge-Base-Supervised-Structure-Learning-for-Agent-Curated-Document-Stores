@@ -178,3 +178,12 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert summary["level"] == "L5"
     assert summary["conservation_ok"] is True
+
+
+def test_run_terminates_when_all_bankrupt(tmp_path):
+    infra, sched = build("L5", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
+    infra.ledger.burn("agent_1", 115)  # 125 seed - 115 = 10; next billable turn (15) sinks it
+    # scripted policy bills 15/turn; after a few turns agent is bankrupt -> early stop
+    summary = sched.run()
+    assert summary["rounds_used"] <= 2
+    assert summary["bankrupt"] == ["agent_1"]

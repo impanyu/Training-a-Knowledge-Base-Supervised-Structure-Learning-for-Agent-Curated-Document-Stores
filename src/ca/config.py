@@ -41,3 +41,4 @@ class ExperimentConfig:
     max_rounds: int = 60
     model: str = "claude-haiku-4-5"
     max_tokens_per_turn: int = 1024
+    temperature: float = 0.3     # low variance for stable agent policies

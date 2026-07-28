@@ -47,7 +47,7 @@ def main() -> None:
                            max_rounds=max_rounds, model=args.model)
     infra = Infra(cfg, load_questions(args.questions),
                   retriever=ChromaBackend.load(args.index))
-    agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn))
+    agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn, cfg.temperature))
               for a in infra.agent_ids]
     sched = Scheduler(infra, agents, cfg, Recorder(args.out), random.Random(args.seed))
     summary = sched.run()

@@ -40,10 +40,11 @@ class ScriptedPolicy:
 
 
 class LLMPolicy:
-    def __init__(self, model: str, max_tokens: int = 1024):
+    def __init__(self, model: str, max_tokens: int = 1024, temperature: float = 0.3):
         self.client = anthropic.Anthropic(max_retries=5)
         self.model = model
         self.max_tokens = max_tokens
+        self.temperature = temperature
 
     def decide(self, system, context, tools) -> Decision:
         try:
@@ -54,6 +55,7 @@ class LLMPolicy:
                 messages=[{"role": "user", "content": context}],
                 tools=tools,
                 tool_choice={"type": "any", "disable_parallel_tool_use": True},
+            temperature=self.temperature,
             )
         except Exception as e:
             # Deliberately broad: the SDK already retried: whatever still failed
