@@ -26,6 +26,7 @@ class Scheduler:
             for agent in order:
                 event = agent.take_turn()
                 self.recorder.log(event)
+            assert self.infra.ledger.conservation_ok(), f"conservation violated in round {r}"
             if self.infra.board.all_done():
                 break
         summary = self.recorder.write_summary(self.infra, rounds_used)

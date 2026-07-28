@@ -272,6 +272,8 @@ def _h_cancel_contract(infra, a, inp):
 
 
 def _h_pay(infra, a, inp):
+    if inp["to"] not in infra.agent_ids:
+        return f"ERROR: unknown agent {inp['to']}"
     try:
         infra.ledger.transfer(a, inp["to"], int(inp["amount"]))
     except InsufficientFunds as e:

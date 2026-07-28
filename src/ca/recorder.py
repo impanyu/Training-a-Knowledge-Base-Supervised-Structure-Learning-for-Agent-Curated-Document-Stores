@@ -8,7 +8,7 @@ class Recorder:
     def __init__(self, out_dir: str):
         self.dir = Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self._f = open(self.dir / "trace.jsonl", "a")
+        self._f = open(self.dir / "trace.jsonl", "w")  # fresh trace per run
         self._tokens = defaultdict(lambda: {"billable": 0, "free": 0})
 
     def log(self, event: dict) -> None:

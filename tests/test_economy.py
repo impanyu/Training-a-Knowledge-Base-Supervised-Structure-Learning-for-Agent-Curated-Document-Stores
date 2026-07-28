@@ -68,3 +68,28 @@ def test_negative_escrow_rejected():
     led = make()
     with pytest.raises(ValueError):
         led.lock_escrow("c1", "a", -5)
+
+
+def test_transfer_to_unknown_agent_raises_without_debiting():
+    led = make()
+    with pytest.raises(ValueError):
+        led.transfer("a", "ghost", 20)
+    assert led.balance("a") == 100          # no partial mutation
+    assert "ghost" not in led.balances
+    assert led.conservation_ok()
+
+
+def test_transfer_from_unknown_agent_raises():
+    led = make()
+    with pytest.raises(ValueError):
+        led.transfer("ghost", "a", 20)
+    assert led.balance("a") == 100
+    assert led.conservation_ok()
+
+
+def test_lock_escrow_unknown_payer_raises_without_mutation():
+    led = make()
+    with pytest.raises(ValueError):
+        led.lock_escrow("c1", "ghost", 10)
+    assert "c1" not in led.escrow
+    assert led.conservation_ok()

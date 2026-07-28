@@ -131,3 +131,12 @@ def test_pay_insufficient_returns_error_string():
     out = dispatch(i0, "agent_1", "pay", {"to": "agent_2", "amount": 10_000_000})
     assert out.startswith("ERROR")
     assert i0.ledger.conservation_ok()
+
+
+def test_pay_unknown_recipient_destroys_nothing():
+    i0 = make("L0")
+    before = i0.ledger.balance("agent_1")
+    out = dispatch(i0, "agent_1", "pay", {"to": "agent_99", "amount": 10})
+    assert out.startswith("ERROR") and "agent_99" in out
+    assert i0.ledger.balance("agent_1") == before   # tokens not destroyed
+    assert i0.ledger.conservation_ok()

@@ -32,6 +32,10 @@ class Ledger:
         self.minted += amount
 
     def transfer(self, frm: str, to: str, amount: int) -> None:
+        # validate BOTH keys before any mutation: a missing recipient must never
+        # leave the payer debited (that would destroy tokens, breaking conservation)
+        if frm not in self.balances or to not in self.balances:
+            raise ValueError(f"unknown agent in transfer {frm} -> {to}")
         if amount <= 0:
             raise ValueError("transfer amount must be positive")
         if self.balances[frm] < amount:
@@ -40,6 +44,8 @@ class Ledger:
         self.balances[to] += amount
 
     def lock_escrow(self, key: str, frm: str, amount: int) -> None:
+        if frm not in self.balances:
+            raise ValueError(f"unknown agent {frm}")
         if amount <= 0:
             raise ValueError("escrow amount must be positive")
         if self.balances[frm] < amount:
