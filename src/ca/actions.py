@@ -25,8 +25,11 @@ ACTION_SPECS: dict[str, dict] = {
     },
     "deliver_work": {
         "description": ("Deliver work. target_id starting with 'q' = submit final answer to the WORLD "
-                        "(graded, paid by quality, one shot, COSTS TOKENS). target_id starting with 'c' "
-                        "= deliver an accepted contract (escrow released to you, free)."),
+                        "(graded, paid by quality, one shot, COSTS TOKENS). WORLD answers are graded by "
+                        "token-overlap F1 against a short gold answer: content MUST be ONLY the short "
+                        "answer itself (a name / date / phrase, e.g. 'Richard Strauss'), never a full "
+                        "sentence or explanation. target_id starting with 'c' = deliver an accepted "
+                        "contract (escrow released to you, free)."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
     # -------- free (coordination) --------
