@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] && set -a && . ./.env && set +a
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 MODEL="${1:-deepseek-v4-flash}"
 python3 scripts/prepare_data.py --hotpot-n 3 --musique-n 0 --out data/smoke
 python3 -m ca.runner --level L5 --questions data/smoke/pool.jsonl \

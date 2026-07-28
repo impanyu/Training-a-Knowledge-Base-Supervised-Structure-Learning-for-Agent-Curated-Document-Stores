@@ -54,6 +54,11 @@ class OpenAICompatPolicy:
         # call per turn anyway, so just omit it for deepseek.
         if not self.model.startswith("deepseek"):
             kwargs["parallel_tool_calls"] = False
+        else:
+            # DeepSeek V4 defaults to thinking mode, which rejects
+            # tool_choice="required"; the forced-single-action turn needs
+            # thinking off (symmetric with the no-thinking Anthropic setup).
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         try:
             resp = self.client.chat.completions.create(**kwargs)
         except Exception as e:

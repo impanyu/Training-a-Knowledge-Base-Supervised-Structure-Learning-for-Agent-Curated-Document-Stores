@@ -42,8 +42,7 @@ def main():
             corpus.append({"title": title, "text": text})
 
     # ---- HotpotQA (distractor config: paragraphs travel with the question) ----
-    hp = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation",
-                      trust_remote_code=True)
+    hp = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation")
     idxs = rng.sample(range(len(hp)), args.hotpot_n)
     for n, i in enumerate(idxs):
         ex = hp[i]
