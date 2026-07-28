@@ -42,8 +42,10 @@ class OpenAICompatPolicy:
                       {"role": "user", "content": context}],
             tools=to_openai_tools(tools),
             tool_choice="required",
-            temperature=self.temperature,
         )
+        # gpt-5*/o* reasoning models reject non-default temperature; others accept it.
+        if not (self.model.startswith("gpt-5") or self.model.startswith("o")):
+            kwargs["temperature"] = self.temperature
         # Newer GPT models (gpt-5*, o*) reject max_tokens in favor of
         # max_completion_tokens; other OpenAI-compatible endpoints (DeepSeek,
         # older GPT) still expect max_tokens.

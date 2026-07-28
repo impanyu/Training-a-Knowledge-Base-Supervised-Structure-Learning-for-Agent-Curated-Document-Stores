@@ -79,6 +79,16 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
         pad_lines += [f"  - {t}" for t in thoughts[-5:]]
     if pad_lines:
         parts.append("Your scratchpad (latest thoughts per task):\n" + "\n".join(pad_lines))
+    mine = [q for q in infra.board.questions.values()
+            if q.status == "claimed" and q.claimed_by == agent_id]
+    if mine:
+        ttl = infra.cfg.claim_ttl
+        lines = []
+        for q in mine:
+            left = q.claimed_round + ttl - infra.round
+            lines.append(f"- {q.qid} (reward {q.price}): {q.text}  "
+                         f"[claim EXPIRES in {max(left,0)} round(s) - deliver before then!]")
+        parts.append("Your ACTIVE CLAIMS (deliver these first):\n" + "\n".join(lines))
     pend = infra.contracts.pending_for(agent_id)
     if pend:
         lines = []
