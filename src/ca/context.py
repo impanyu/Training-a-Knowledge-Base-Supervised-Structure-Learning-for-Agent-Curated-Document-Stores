@@ -20,7 +20,7 @@ questions (paid = price x answer quality F1, one attempt per question), or
 
 Each turn you must choose EXACTLY ONE action (tool call). Think about
 profitability: estimate what a question will cost to answer vs its reward.
-You may subcontract work to other agents via contracts and negotiate prices.
+You may subcontract work to other agents via contracts.
 {level_rules}"""
 
 _INTERFACE_EXTRA = """
@@ -43,8 +43,13 @@ def _level_rules(level: LevelConfig, is_iface: bool) -> str:
         rules.append("You may only message/contract/pay the interface agent."
                      if not is_iface else
                      "Other agents can only interact with you, not with each other.")
+    negotiable = not level.central_pricing and level.n_agents > 1
     if not rules:
-        return "\nThis is a fully decentralized configuration: every agent has equal access to everything."
+        base = ("\nThis is a fully decentralized configuration: "
+                "every agent has equal access to everything.")
+        return base + ("\nPrices are freely negotiable." if negotiable else "")
+    if negotiable:
+        rules.append("Prices are freely negotiable.")
     return "\nConfiguration rules:\n" + "\n".join(f"- {r}" for r in rules)
 
 
@@ -63,6 +68,15 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     parts = [f"== ROUND {infra.round} ==",
              f"Balance: {infra.ledger.balance(agent_id)} tokens"]
     parts.append("Goal stack (bottom -> top):\n" + goals.render())
+    pad = infra.scratchpads.get(agent_id) or {}
+    pad_lines = []
+    for task_id, thoughts in pad.items():
+        if not thoughts:
+            continue
+        pad_lines.append(f"[{task_id}]")
+        pad_lines += [f"  - {t}" for t in thoughts[-5:]]
+    if pad_lines:
+        parts.append("Your scratchpad (latest thoughts per task):\n" + "\n".join(pad_lines))
     pend = infra.contracts.pending_for(agent_id)
     if pend:
         lines = []
@@ -81,7 +95,7 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     unread = infra.chat.unread(agent_id)
     if unread:
         parts.append("Unread messages:\n" +
-                     "\n".join(f"- from {m.sender}: {m.text}" for m in unread[-10:]))
+                     "\n".join(f"- from {m.sender}: {m.text}" for m in unread))
     parts.append("Your recent actions:\n" + fifo.render())
     parts.append("Choose exactly one action now.")
     return "\n\n".join(parts)
