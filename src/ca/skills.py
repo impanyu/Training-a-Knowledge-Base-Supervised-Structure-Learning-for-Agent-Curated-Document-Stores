@@ -10,7 +10,10 @@ _SOLO_ANSWER = """
 4. work_on(task_id="q0012", thought="author is Y; now need Y's birthplace")
 5. retrieve(query="Y birthplace")                     # COSTS TOKENS
 6. deliver_work(target_id="q0012", content="Paris")   # graded, paid = 2000 x F1
-Estimate cost vs reward BEFORE claiming; skip questions you cannot answer profitably."""
+Estimate cost vs reward BEFORE claiming; skip questions you cannot answer profitably.
+CUT LOSSES: if a question is not converging after 2-3 retrieves, deliver your best
+guess (partial F1 still pays something) and move to another question - never sink
+unlimited tokens into one question."""
 
 _SOLO_ANSWER_NO_RETRIEVE = """
 ### Demo: answering a question yourself

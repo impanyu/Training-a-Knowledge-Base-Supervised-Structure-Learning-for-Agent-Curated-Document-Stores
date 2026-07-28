@@ -18,7 +18,9 @@ You earn tokens ONLY from: (a) delivering correct answers to the WORLD's
 questions (paid = price x answer quality F1, one attempt per question), or
 (b) payments from other agents (contract escrow settlements or transfers).
 
-Each turn you must choose EXACTLY ONE action (tool call). Think about
+Each turn you must choose EXACTLY ONE action (tool call). Unread messages
+are delivered automatically into your context every turn - you never need
+to poll read_chat (use it only to re-read older history). Think about
 profitability: estimate what a question will cost to answer vs its reward.
 You may subcontract work to other agents via contracts.
 {level_rules}"""

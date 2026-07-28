@@ -125,7 +125,7 @@ def test_list_questions_shows_top_n_by_price_with_overflow_note():
     lines = out.splitlines()
     assert len(lines) == 21                          # 20 questions + overflow note
     assert lines[0].startswith("q0025")              # most valuable first
-    assert lines[-1] == "... and 5 more open questions"
+    assert lines[-1] == "... and 5 more (call list_questions with offset=20 to see them)"
     assert "q0001 " not in out                       # the 5 cheapest are dropped
 
 
@@ -181,3 +181,15 @@ def test_unknown_agent_error_lists_roster():
     assert out.startswith("ERROR") and "valid agents" in out and "agent_2" in out
     out2 = dispatch(i0, "agent_1", "send_message", {"to": "agent_99", "text": "x"})
     assert "valid agents" in out2
+
+
+def test_list_questions_pagination_offset():
+    cfg = ExperimentConfig(level=LEVELS["L0"], seed=0, seed_capital_total=1000)
+    qs = [Question(f"q{i:04d}", f"t{i}", ["x"], "2hop", 100 + i) for i in range(1, 26)]
+    infra = Infra(cfg, qs, retriever=KeywordBackend(DOCS))
+    first = dispatch(infra, "agent_1", "list_questions", {})
+    assert "offset=20" in first          # 25 open, page size 20 -> pointer to next page
+    second = dispatch(infra, "agent_1", "list_questions", {"offset": 20})
+    assert second.count("q0") == 5 and "more" not in second
+    empty = dispatch(infra, "agent_1", "list_questions", {"offset": 99})
+    assert "25 open in total" in empty

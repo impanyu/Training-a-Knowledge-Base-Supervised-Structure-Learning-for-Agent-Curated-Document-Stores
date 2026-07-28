@@ -36,8 +36,9 @@ ACTION_SPECS: dict[str, dict] = {
     },
     # -------- free (coordination) --------
     "list_questions": {
-        "description": "List open questions on the task board with prices.",
-        "input_schema": _schema({}, []),
+        "description": ("List open questions on the task board with prices, sorted by reward "
+                        "(highest first). Shows one page; pass `offset` to see further pages."),
+        "input_schema": _schema({"offset": _I}, []),
     },
     "claim_question": {
         "description": "Exclusively claim an open question (others can no longer see it).",
@@ -209,9 +210,15 @@ def _h_list_questions(infra, a, inp):
     if not qs:
         return "(no open questions)"
     top = infra.cfg.list_top_n
-    lines = [f"{q.qid} [{q.difficulty}, reward {q.price}]: {q.text}" for q in qs[:top]]
-    if len(qs) > top:
-        lines.append(f"... and {len(qs) - top} more open questions")
+    offset = max(0, int(inp.get("offset") or 0))
+    page = qs[offset:offset + top]
+    if not page:
+        return f"(no open questions at offset {offset}; {len(qs)} open in total)"
+    lines = [f"{q.qid} [{q.difficulty}, reward {q.price}]: {q.text}" for q in page]
+    remaining = len(qs) - (offset + len(page))
+    if remaining > 0:
+        lines.append(f"... and {remaining} more (call list_questions with "
+                     f"offset={offset + len(page)} to see them)")
     return "\n".join(lines)
 
 
