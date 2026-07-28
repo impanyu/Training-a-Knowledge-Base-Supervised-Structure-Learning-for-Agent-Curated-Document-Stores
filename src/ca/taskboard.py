@@ -23,6 +23,7 @@ class Question:
     score: float = 0.0              # F1
     em: float = 0.0
     payout: int = 0
+    claim_counts: dict = field(default_factory=dict)  # agent -> times claimed
 
 
 class TaskBoard:
@@ -42,8 +43,12 @@ class TaskBoard:
         q = self.get(qid)
         if q.status != "open":
             raise BoardError(f"{qid} is {q.status}")
+        if q.claim_counts.get(agent, 0) >= 2:
+            raise BoardError(f"you have already claimed and abandoned {qid} twice; "
+                             "it is closed to you - work on something else")
         q.status = "claimed"
         q.claimed_by = agent
+        q.claim_counts[agent] = q.claim_counts.get(agent, 0) + 1
         q.claimed_round = round_no
         return q
 

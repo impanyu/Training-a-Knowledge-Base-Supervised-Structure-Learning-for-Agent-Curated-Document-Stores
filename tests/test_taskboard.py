@@ -64,3 +64,14 @@ def test_wrong_answer_pays_zero_and_all_done():
     tb.claim("a", "q0002")
     tb.deliver("a", "q0002", "4")
     assert tb.all_done()
+
+
+def test_two_strike_claim_limit():
+    led, tb = setup()
+    tb.claim("a", "q0001", round_no=1)
+    tb.expire_claims(20, ttl=8)
+    tb.claim("a", "q0001", round_no=21)
+    tb.expire_claims(40, ttl=8)
+    with pytest.raises(BoardError):
+        tb.claim("a", "q0001", round_no=41)
+    tb.claim("b", "q0001", round_no=41)  # other agents unaffected

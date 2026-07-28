@@ -98,6 +98,11 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     if unread:
         parts.append("Unread messages:\n" +
                      "\n".join(f"- from {m.sender}: {m.text}" for m in unread))
+    items = list(fifo.items)
+    if len(items) >= 3 and len({a for a, _ in items[-3:]}) == 1:
+        parts.append(f"WARNING: you have repeated `{items[-1][0].split('(')[0]}` "
+                     "3+ times in a row with identical results. Repeating it again "
+                     "is pure waste - you MUST choose a different action this turn.")
     parts.append("Your recent actions:\n" + fifo.render())
     parts.append("Choose exactly one action now.")
     return "\n\n".join(parts)

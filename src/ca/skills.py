@@ -13,7 +13,8 @@ _SOLO_ANSWER = """
 Estimate cost vs reward BEFORE claiming; skip questions you cannot answer profitably.
 CUT LOSSES: if a question is not converging after 2-3 retrieves, deliver your best
 guess (partial F1 still pays something) and move to another question - never sink
-unlimited tokens into one question."""
+unlimited tokens into one question. If your claim on a question EXPIRED, that is
+strong evidence it is too hard for you: do NOT re-claim it, pick a different one."""
 
 _SOLO_ANSWER_NO_RETRIEVE = """
 ### Demo: answering a question yourself

@@ -75,3 +75,15 @@ def test_negotiation_hint_only_where_prices_are_negotiable():
     assert "fully decentralized" in sp0                       # L0 framing preserved
     assert "Prices are freely negotiable." not in system_prompt(LEVELS["L3"], "agent_1", ids)
     assert "Prices are freely negotiable." not in system_prompt(LEVELS["L5"], "agent_1", ["agent_1"])
+
+
+def test_repetition_warning_after_three_identical_actions():
+    infra = make("L0")
+    fifo, goals = FifoMemory(6), GoalStack("maximize token balance")
+    for _ in range(3):
+        fifo.add("list_questions({})", "same result")
+    out = render_turn(infra, "agent_1", fifo, goals)
+    assert "MUST choose a different action" in out
+    fifo.add("retrieve({})", "different")
+    out2 = render_turn(infra, "agent_1", fifo, goals)
+    assert "MUST choose a different action" not in out2
