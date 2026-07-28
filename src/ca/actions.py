@@ -136,6 +136,10 @@ def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
     return out
 
 
+def _unknown_agent(infra: Infra, to: str) -> str:
+    return f"ERROR: unknown agent {to}; valid agents: {', '.join(infra.agent_ids)}"
+
+
 def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str | None:
     level = infra.cfg.level
     is_iface = agent_id == "interface"
@@ -213,7 +217,7 @@ def _h_claim_question(infra, a, inp):
 
 def _h_send_message(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
-        return f"ERROR: unknown agent {inp['to']}"
+        return _unknown_agent(infra, inp["to"])
     infra.chat.send(a, inp["to"], inp["text"], infra.round)
     return f"sent to {inp['to']}"
 
@@ -225,7 +229,7 @@ def _h_read_chat(infra, a, inp):
 
 def _h_propose_contract(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
-        return f"ERROR: unknown agent {inp['to']}"
+        return _unknown_agent(infra, inp["to"])
     central = infra.cfg.level.central_pricing
     if central and a != "interface":
         # price (if any) is ignored: the interface will set it
@@ -283,7 +287,7 @@ def _h_cancel_contract(infra, a, inp):
 
 def _h_pay(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
-        return f"ERROR: unknown agent {inp['to']}"
+        return _unknown_agent(infra, inp["to"])
     try:
         infra.ledger.transfer(a, inp["to"], int(inp["amount"]))
     except InsufficientFunds as e:

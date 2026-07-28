@@ -173,3 +173,11 @@ def test_pay_unknown_recipient_destroys_nothing():
     assert out.startswith("ERROR") and "agent_99" in out
     assert i0.ledger.balance("agent_1") == before   # tokens not destroyed
     assert i0.ledger.conservation_ok()
+
+
+def test_unknown_agent_error_lists_roster():
+    i0 = make("L0")
+    out = dispatch(i0, "agent_1", "pay", {"to": "Interface", "amount": 5})
+    assert out.startswith("ERROR") and "valid agents" in out and "agent_2" in out
+    out2 = dispatch(i0, "agent_1", "send_message", {"to": "agent_99", "text": "x"})
+    assert "valid agents" in out2
