@@ -18,6 +18,7 @@ class Question:
     price: int
     status: str = "open"            # open / claimed / closed
     claimed_by: str | None = None
+    claimed_round: int = 0
     submitted: str | None = None
     score: float = 0.0              # F1
     em: float = 0.0
@@ -37,13 +38,26 @@ class TaskBoard:
     def list_open(self) -> list[Question]:
         return [q for q in self.questions.values() if q.status == "open"]
 
-    def claim(self, agent: str, qid: str) -> Question:
+    def claim(self, agent: str, qid: str, round_no: int = 0) -> Question:
         q = self.get(qid)
         if q.status != "open":
             raise BoardError(f"{qid} is {q.status}")
         q.status = "claimed"
         q.claimed_by = agent
+        q.claimed_round = round_no
         return q
+
+    def expire_claims(self, current_round: int, ttl: int) -> list[str]:
+        """Reopen questions claimed more than `ttl` rounds ago and never
+        delivered, so one agent hoarding claims cannot stall the whole pool."""
+        reopened = []
+        for q in self.questions.values():
+            if q.status == "claimed" and current_round - q.claimed_round > ttl:
+                q.status = "open"
+                q.claimed_by = None
+                q.claimed_round = 0
+                reopened.append(q.qid)
+        return reopened
 
     def deliver(self, agent: str, qid: str, answer: str) -> tuple[float, int]:
         q = self.get(qid)

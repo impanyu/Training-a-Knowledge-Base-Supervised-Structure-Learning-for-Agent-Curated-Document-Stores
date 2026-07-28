@@ -201,7 +201,7 @@ def _h_list_questions(infra, a, inp):
 
 
 def _h_claim_question(infra, a, inp):
-    q = infra.board.claim(a, inp["qid"])
+    q = infra.board.claim(a, inp["qid"], infra.round)
     return f"claimed {q.qid}: {q.text} (reward up to {q.price})"
 
 

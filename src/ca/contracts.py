@@ -102,6 +102,11 @@ class ContractSystem:
         if agent not in (c.proposer, c.contractor):
             raise ContractError("not a party to this contract")
         if c.status == "accepted":
+            # the contractor has already committed labor: letting the payer
+            # cancel unilaterally would let them take delivery risk-free
+            if agent != c.contractor:
+                raise ContractError("cannot cancel an accepted contract; "
+                                    "wait for delivery or ask the contractor")
             self.ledger.refund_escrow(c.cid, c.proposer)
         elif c.status not in ("proposed", "unpriced"):
             raise ContractError(f"cannot cancel a {c.status} contract")

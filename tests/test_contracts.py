@@ -47,13 +47,26 @@ def test_accept_fails_if_payer_broke():
     assert c.status == "proposed"
 
 
-def test_cancel_refunds_escrow():
+def test_accepted_contract_cancellable_only_by_contractor():
     led, cs = setup()
     c = cs.propose("boss", "worker", "t", 30)
     cs.accept("worker", c.cid)
-    cs.cancel("boss", c.cid)
+    with pytest.raises(ContractError):
+        cs.cancel("boss", c.cid)      # payer cannot walk away after work started
+    assert c.status == "accepted" and led.escrow[c.cid] == 30
+    cs.cancel("worker", c.cid)        # the contractor may release it
     assert c.status == "cancelled" and led.balance("boss") == 100
     assert led.conservation_ok()
+
+
+def test_proposed_contract_cancellable_by_either_party():
+    led, cs = setup()
+    c1 = cs.propose("boss", "worker", "t", 30)
+    cs.cancel("boss", c1.cid)
+    assert c1.status == "cancelled"
+    c2 = cs.propose("boss", "worker", "t", 30)
+    cs.cancel("worker", c2.cid)
+    assert c2.status == "cancelled" and led.conservation_ok()
 
 
 def test_pending_for():

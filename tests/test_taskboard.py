@@ -36,6 +36,26 @@ def test_deliver_requires_claimer():
         tb.deliver("b", "q0001", "Paris")
 
 
+def test_expire_claims_reopens_stale_undelivered_claims():
+    led, tb = setup()
+    tb.claim("a", "q0001", round_no=1)
+    assert tb.expire_claims(5, ttl=8) == []          # 5 - 1 <= 8: still working
+    assert tb.questions["q0001"].status == "claimed"
+    assert tb.expire_claims(10, ttl=8) == ["q0001"]  # 10 - 1 > 8: abandoned
+    q = tb.questions["q0001"]
+    assert q.status == "open" and q.claimed_by is None and q.claimed_round == 0
+    assert {x.qid for x in tb.list_open()} == {"q0001", "q0002"}
+    tb.claim("b", "q0001", round_no=11)              # someone else can take it now
+
+
+def test_expire_claims_never_reopens_answered_questions():
+    led, tb = setup()
+    tb.claim("a", "q0001", round_no=1)
+    tb.deliver("a", "q0001", "Paris")
+    assert tb.expire_claims(100, ttl=1) == []
+    assert tb.questions["q0001"].status == "closed"
+
+
 def test_wrong_answer_pays_zero_and_all_done():
     led, tb = setup()
     tb.claim("a", "q0001")

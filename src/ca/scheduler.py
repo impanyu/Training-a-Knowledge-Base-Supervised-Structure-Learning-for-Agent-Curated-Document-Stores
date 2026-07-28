@@ -21,6 +21,7 @@ class Scheduler:
         for r in range(1, self.cfg.max_rounds + 1):
             self.infra.round = r
             rounds_used = r
+            self.infra.board.expire_claims(r, self.cfg.claim_ttl)
             order = list(self.agents)
             self.rng.shuffle(order)
             for agent in order:
