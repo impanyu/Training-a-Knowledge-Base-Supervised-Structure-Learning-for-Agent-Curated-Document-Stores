@@ -1,5 +1,6 @@
 """Agent = short-term memory + a policy that picks one action per turn."""
 import json
+import sys
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -54,10 +55,11 @@ class LLMPolicy:
                 tools=tools,
                 tool_choice={"type": "any", "disable_parallel_tool_use": True},
             )
-        except Exception:
+        except Exception as e:
             # Deliberately broad: the SDK already retried: whatever still failed
             # must cost this agent one turn, not the whole multi-hour run.
             # Nothing is billed, so a dead API cannot bankrupt anyone either.
+            print(f"[llm-error] {e}", file=sys.stderr)
             return Decision("__noop__", {}, 0, 0)
         usage = resp.usage
         for block in resp.content:

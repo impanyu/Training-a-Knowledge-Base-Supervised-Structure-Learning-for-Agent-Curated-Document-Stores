@@ -3,10 +3,11 @@ import argparse
 import json
 import random
 
-from ca.agent import Agent, LLMPolicy
+from ca.agent import Agent
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
 from ca.metrics import compute_metrics
+from ca.providers import make_policy
 from ca.recorder import Recorder
 from ca.retrieval import ChromaBackend
 from ca.scheduler import Scheduler
@@ -40,7 +41,7 @@ def main() -> None:
                            max_rounds=args.max_rounds, model=args.model)
     infra = Infra(cfg, load_questions(args.questions),
                   retriever=ChromaBackend.load(args.index))
-    agents = [Agent(a, cfg, infra, LLMPolicy(cfg.model, cfg.max_tokens_per_turn))
+    agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn))
               for a in infra.agent_ids]
     sched = Scheduler(infra, agents, cfg, Recorder(args.out), random.Random(args.seed))
     summary = sched.run()

@@ -6,6 +6,6 @@ pip install -e ".[data,dev]" -q
 python scripts/prepare_data.py --hotpot-n 3 --musique-n 0 --out data/smoke
 python -m ca.runner --level L5 --questions data/smoke/pool.jsonl \
   --index data/smoke/index --seed 0 --capital 30000 --max-rounds 15 \
-  --out runs/smoke_L5
+  --model deepseek-v4-flash --out runs/smoke_L5
 echo "=== metrics ==="
 cat runs/smoke_L5/metrics.json
