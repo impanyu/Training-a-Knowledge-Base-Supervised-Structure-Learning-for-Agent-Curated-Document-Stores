@@ -15,7 +15,11 @@ from datasets import load_dataset
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ca.retrieval import ChromaBackend  # noqa: E402
 
-PRICES = {"2hop": 1000, "3hop": 2000, "4hop": 3000}
+# Pricing rule (spec §8): R(q) ~= 1.5x the average billable token burn to solve a
+# question of that tier, so solving is profitable. Placeholder estimates assume a
+# billable turn burns ~3-4k tokens and 2/3/4-hop questions take ~2-3/4/5-6 billable
+# turns. Recalibrate from pilot measurements (spec §13).
+PRICES = {"2hop": 12000, "3hop": 20000, "4hop": 30000}
 
 
 def main():
