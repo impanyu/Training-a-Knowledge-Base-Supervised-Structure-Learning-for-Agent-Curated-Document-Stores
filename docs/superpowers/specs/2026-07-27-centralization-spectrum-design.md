@@ -205,8 +205,8 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 ## 13. 实验协议
 
 1. **Pilot**：约 30 题、1 seed、L0+L4+L5 三档。校准：种子资本 B₀、R(q) 定价、最大轮数、FIFO 长度 K 等超参。
-2. **主实验**：约 200 题混合池 × 6 配置 × 3 seeds。主实验底模改为 `deepseek-v4-flash`（$0.14/$0.28 每 M token，OpenAI 兼容 API），成本可控、支撑统计显著性。
-3. **模型鲁棒性验证**：差异最大的两档配置用第二家族 `gpt-5-mini` 复跑，确认结论不随模型家族翻转；`claude-haiku-4-5` 保留为可选第三家族。模型按前缀路由（deepseek-*/gpt-*/claude-*），`--model` CLI 注入。
+2. **主实验**：约 200 题混合池 × 6 配置 × 3 seeds。底模 **`gpt-5-mini`**（pilot 7 定版：同题池 L5 单体 gpt-5-mini 29/30 清题无破产，deepseek-v4-flash 仅 6/30 且破产——经济实验要求 agent 具备基本答题与决断能力，弱模型下所有组织结构一同失灵，光谱无从比较）。
+3. **可选消融（暂缓）**：`deepseek-v4-flash` / `claude-haiku-4-5` 保留为"组织收益的模型能力门槛"消融臂——pilot 已给出弱模型全线失灵的初步证据。模型按前缀路由（deepseek-*/gpt-*/claude-*），`--model` CLI 注入。
 4. 第二臂 FanOutQA 及各保留 option：主实验出结果后拍板。
 
 ## 14. 错误处理
