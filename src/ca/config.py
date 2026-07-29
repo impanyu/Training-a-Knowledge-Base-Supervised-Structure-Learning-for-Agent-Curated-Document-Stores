@@ -40,5 +40,5 @@ class ExperimentConfig:
     claim_ttl: int = 8              # rounds before an undelivered claim reopens
     max_rounds: int = 60
     model: str = "claude-haiku-4-5"
-    max_tokens_per_turn: int = 1024
+    max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
