@@ -39,6 +39,6 @@ class ExperimentConfig:
     list_top_n: int = 20            # open questions shown by list_questions
     claim_ttl: int = 8              # rounds before an undelivered claim reopens
     max_rounds: int = 60
-    model: str = "claude-haiku-4-5"
+    model: str = "gpt-5-mini"
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
