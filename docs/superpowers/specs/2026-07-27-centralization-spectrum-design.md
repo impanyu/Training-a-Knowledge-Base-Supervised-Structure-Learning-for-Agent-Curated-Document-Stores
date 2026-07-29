@@ -24,14 +24,15 @@
 
 | 级别 | 配置 | 中心化增量 |
 |---|---|---|
-| L0 | 需求去中心化 | 全自主市场：任何 agent 自行取题、交付、redeem，自由议价转包 |
-| L1 | 需求中心化 | 唯一 interface agent 垄断对外通道（取题 + 交付领钱）；控制/任务分配权随之落入 interface |
+| L0 | 需求去中心化 | 全自主市场：任何 agent 自行领 task、交付、redeem，自由议价转包与借贷 |
+| L1 | 需求中心化 | 唯一 interface agent 垄断对外通道（领 task + 交付领钱）；控制/任务分配权随之落入 interface |
 | L2 | 信息中心化 | + interface 垄断外部信息检索（`retrieve`） |
-| L3 | 定价中心化 | + interface 垄断全系统合同定价：agent 间合同价格也由 interface 裁定（`set_price`），全面禁止议价；交易自由保留（做不做、和谁做仍自主） |
-| L4 | 通信中心化 | + 星型：普通 agent 只能与 interface 通信/交易（蕴含 L3） |
-| L5 | 单体 agent 基线 | 只有一个 agent，无协作 —— 中心化的极限/基线参照点 |
+| L3 | 定价中心化 | + interface 垄断全系统合同定价：agent 间合同价格也由 interface 裁定（`set_price`），全面禁止议价；交易自由保留 |
+| L4 | 信贷中心化 | + 只能向 interface 借钱（agent 间借贷禁止）；利率恒为每轮 1%，不属定价权范畴 |
+| L5 | 通信中心化 | + 星型：普通 agent 只能与 interface 通信/交易/借贷（蕴含 L3、L4） |
+| L6 | 单体 agent 基线 | 只有一个 agent，无协作 —— 中心化的极限/基线参照点 |
 
-排序依据：L4（星型）实现即蕴含 L3（唯一买家 → 定价权自然归 interface），故定价中心化为较弱一级排前。控制/任务分配中心化自 L1 起被"需求垄断"蕴含，不单列。
+排序依据：星型实现即蕴含定价与信贷中心化（唯一交易对手 → 定价权与信贷渠道自然归 interface），故较弱的锁排前。控制/任务分配中心化自 L1 起被"需求垄断"蕴含，不单列。
 
 **保留后门**：长期记忆归属（全局共享 vs 每 agent 私有）实现为可配置项，本期不做消融。
 
@@ -87,31 +88,39 @@ B: accept_contract（锁 A 的托管）→ deliver_work 照旧；或 reject_cont
 counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自带价格（它即定价者）
 ```
 
+**信贷机制（v2 新增）**：
+- `propose_loan(to=出借人, amount)` → 出借人 `accept_loan(loan_id)` → 本金划转借款人。
+- **利率恒为每轮 1%**（系统常数，不参与议价、不属 interface 定价权）。
+- 调度器每轮自动划扣利息（借款人余额不足则欠息滚入本金）；`repay_loan(loan_id, amount)` 随时还本。
+- 借款人破产 = 出借人坏账（信用风险真实存在，属预期观察的涌现现象）。
+- L4+（信贷中心化）：出借人只能是 interface；L5 星型自然蕴含。
+
+**节点绑定合同（v2）**：`propose_contract` 的 task 字段若指认一个 subtask 节点（句子或短 id）→ 合同为节点绑定：承包方 `deliver_work(contract_id, answers_json)` 必须提交覆盖该节点全部叶子的 JSON {qid: answer}，基础设施做覆盖校验（qid 集合齐全才原子交割托管）；答案质量不判分（重复博弈约束）。task 为自由文本 → 自由合同，交付任意文本（信息买卖等涌现交易保留）。
+
 ## 5. Action 目录
 
-**计费 action**（"与答题相关"；该回合 LLM 调用的 input+output token 全额扣除）：
+**计费规则（v2）：全 action 计费**——每回合恰好一次 LLM 调用、选一个 action，该次调用的 input+output token 无条件从余额扣除。原「计费/免费」二分降级为统计标签（解题类 vs 行政类），用于报告行政/解题开销比：
+
+- **解题类**：retrieve、work_on、decompose、deliver_work（对 WORLD 交付 task）
+- **行政类**：其余全部（通信、合同、借贷、转账、目标栈、记忆、查询）
 
 | Action | 说明 | 权限门控 |
 |---|---|---|
-| `retrieve(query)` | 检索语料，返回 top-k 段落 | L2+ 仅 interface |
-| `work_on(task_id, thought)` | 对某任务做一步推理，写入私有草稿区 | 所有人 |
-| `deliver_work(qid, answer)` **对 WORLD** | 对外交付答案即 redeem（答题相关，计费） | L1+ 仅 interface |
+| `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | L1+ 仅 interface |
+| `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | L1+ 仅 interface |
+| `decompose(node)` | 揭示 subtask 的下级子节点（子 subtask 显示一句话总结，叶显示原题）；参数：句子或短 id | 所有人 |
+| `retrieve(query)` | 检索语料，top-k 段落 | L2+ 仅 interface |
+| `work_on(node, thought)` | 对某节点做一步推理，写入私有草稿区 | 所有人 |
+| `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | L1+ 仅 interface |
+| `deliver_work(contract_id, content)` 内部合同 | 交付合同成果，托管原子交割 | 所有人 |
+| `send_message` / `read_chat` | 点对点通信 | L5 下普通 agent 仅限 interface |
+| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | L3+ counter_offer 全禁；L3+ 非 interface propose 进入 unpriced；L5 合同对象仅限 interface |
+| `set_price(contract_id, price)` | interface 裁定合同价 | 仅 L3+ 且仅 interface |
+| `propose_loan(to, amount)` / `accept_loan(loan_id)` / `repay_loan(loan_id, amount)` | 借贷生命周期（利率恒 1%/轮） | L4+ 出借人仅限 interface；L5 借贷对象仅限 interface |
+| `pay(to, amount)` | 自由转账 | L5 仅限与 interface |
+| `push_goal` / `pop_goal`、`memory_write` / `memory_search`、`check_balance` / `list_agents` | 目标栈 / 长期记忆 / 查询 | 所有人 |
 
-**免费 action**（协调类）：
-
-| Action | 说明 | 权限门控 |
-|---|---|---|
-| `list_questions()` / `claim_question(qid)` | 看/领任务板 | L1+ 仅 interface |
-| `send_message(to, text)` / `read_chat(with)` | 点对点通信 | L4 下普通 agent 的 to 仅限 interface |
-| `deliver_work(id, content)` **内部合同** | 交付子任务成果（协调行为，免费），触发托管原子交割 | 所有人 |
-| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | L3+ counter_offer 对所有人禁用；L3+ 非 interface 的 propose 不带价格（进入 unpriced）；L4 合同对象仅限 interface |
-| `set_price(contract_id, price)` | interface 为 unpriced 合同裁定价格 | 仅 L3+ 且仅 interface |
-| `pay(to, amount)` | 自由转账 | L4 仅限与 interface |
-| `push_goal(note)` / `pop_goal()` | 维护自己的目标栈 | 所有人 |
-| `memory_write(content)` / `memory_search(query)` | 长期记忆存取 | 所有人 |
-| `check_balance()` / `list_agents()` | 查余额、通讯录 | 所有人 |
-
-**计费操作化定义**：每 agent 每回合恰好一次 LLM 调用、选一个 action。该回合所选 action 若为计费类，则该次调用 input+output token 全额入账扣除；免费类回合不扣。("答题的思考烧钱，社交谈判免费"的可审计实现。)
+**寻址约定**：task/subtask 节点同时有短 id（t0001）与唯一一句话总结；action 参数二者皆可（句子做规范化+近似匹配，不唯一时报错并列候选）。
 
 ## 6. Agent 运行时
 
@@ -140,52 +149,50 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 
 ## 7. 调度
 
-同步回合制（round-robin）：每轮所有存活 agent 各行动一次；轮内顺序每轮以种子随机打乱（消除先手优势且可复现）。破产 agent 跳过计费行为。回合数即吞吐指标。终止条件：题池清空或达最大轮数。
+同步回合制（round-robin）：每轮所有存活 agent 各行动一次；轮内顺序每轮以种子随机打乱。每轮开始时：1) 过期 claim 自动释放；2) 贷款利息自动划扣（1%/轮）。终止条件：task 池清空、达最大轮数、或全员破产（无收入渠道的终态）。interface_turns_per_round 为配置旋钮（默认 1），留给「单点信息处理能力」独立实验。
 
 选回合制而非异步并发：可复现、六配置公平比较、token 计量无竞态。
 
 ## 8. 经济系统
 
 - **唯一钱源**：WORLD。新钱只通过"答对题"进入系统（`deliver_work` 判分后支付 R(q) × F1）。内部转包/转账严格守恒；计费燃烧是唯一出口。
-- **定价**：R(q) 按难度分档（来源与跳数：HotpotQA 2 跳 < MuSiQue 3 跳 < 4 跳）。难度差异使"评估难度→定价"行为有意义。**定价原则：R(q) ≈ 1.5 × 该难度档答对一题的平均实际 token 燃烧量**（pilot 实测校准）——WORLD 出价必须留出 ~50% 利润空间，agent 才有利可图、内部转包定价才有意义。占位价：2跳 12000 / 3跳 20000 / 4跳 30000。
+- **定价**：R(q) 按难度分档（来源与跳数：HotpotQA 2 跳 < MuSiQue 3 跳 < 4 跳）。难度差异使"评估难度→定价"行为有意义。**定价原则：R(q) ≈ 1.5 × 该难度档答对一题的平均实际 token 燃烧量**（pilot 实测校准）——WORLD 出价必须留出 ~50% 利润空间，agent 才有利可图、内部转包定价才有意义。现行叶价（pilot 校准）：2跳 18000 / 3跳 30000 / 4跳 45000；task 价 = Σ 叶价。全 action 计费后需 v2 pilot 重校。
 - **种子资本 B₀**：每 agent 一次性启动金（解决冷启动：零余额则第一步计费行为都不可行），此后一切净收入仅来自外部奖励。数额 pilot 校准。
-- **破产**：余额 ≤ 0 → 冻结计费 action（不能再答题），免费 action 保留（可聊天/收款，理论上可被救济复活——预期观察的涌现现象）。
+- **破产**：余额 ≤ 0 → 冻结解题类 action；行政类保留（可聊天/收款/借钱翻身——信贷让破产可逆，v2 关键涌现观察点）。
+- **信贷**：借贷是余额的内部转移（本金与利息均在 agent 间流转，守恒律不变）；坏账 = 出借人损失。
 - **账本守恒律**（核心不变量，做成单元测试）：
   `Σ余额 = Σ种子资本 + Σ WORLD 累计支付 − Σ累计燃烧`
 - **公平性**：六配置面对同一题池（同样外部总需求）+ 相同种子资本总额，比谁提取价值多、烧 token 少。
 
 ## 9. 配置差分矩阵（实验有效性核心：配置间只差此表）
 
-| 权限 | L0 | L1 | L2 | L3 | L4 | L5 |
-|---|---|---|---|---|---|---|
-| 取题/对 WORLD 交付 | 所有人 | 仅 interface | 仅 interface | 仅 interface | 仅 interface | 单 agent |
-| 外部检索 `retrieve` | 所有人 | 所有人 | 仅 interface | 仅 interface | 仅 interface | 单 agent |
-| 合同定价权 | 双方议价 | 双方议价 | 双方议价 | interface 裁定（`set_price`），议价全禁 | interface 裁定，议价全禁 | — |
-| 通信/交易对象 | 任意 | 任意 | 任意 | 任意 | 仅 interface | — |
-| agent 数 | 8 | 1+7 | 1+7 | 1+7 | 1+7 | 1 |
+| 权限 | L0 | L1 | L2 | L3 | L4 | L5 | L6 |
+|---|---|---|---|---|---|---|---|
+| 领 task/对 WORLD 交付 | 所有人 | 仅 iface | 仅 iface | 仅 iface | 仅 iface | 仅 iface | 单 agent |
+| 外部检索 `retrieve` | 所有人 | 所有人 | 仅 iface | 仅 iface | 仅 iface | 仅 iface | 单 agent |
+| 合同定价权 | 议价 | 议价 | 议价 | iface 裁定 | iface 裁定 | iface 裁定 | — |
+| 借贷出借人 | 任意 | 任意 | 任意 | 任意 | 仅 iface | 仅 iface | — |
+| 通信/交易对象 | 任意 | 任意 | 任意 | 任意 | 任意 | 仅 iface | — |
+| agent 数 | 8 | 1+7 | 1+7 | 1+7 | 1+7 | 1+7 | 1 |
 
-## 10. 任务与数据集
+## 10. 任务与数据集（v2：层级任务树）
 
-- **主实验：混合难度池 = HotpotQA + MuSiQue**（fullwiki/开放检索设定）。
-  - HotpotQA：官方 processed Wikipedia dump（2017-10-01，约 500 万篇首段）；题目由语料构造，gold 段落 100% 在库；每题官方标注 2 gold 段落与 supporting facts（供"检索命中率"分析）。
-  - MuSiQue（2–4 跳，防捷径设计）：官方每题配套段落聚合成语料库自建索引（社区标准做法）。
-  - 混合池带来真实难度差异 → 定价分档有意义。
-  - distractor 设定明确不用（会使 retrieve 失去意义、L2 无物可垄断）。
-  - 检索后端：Chroma 向量数据库（默认 embedding：all-MiniLM，本地、无需 GPU/API）。多跳题的第二跳实体不在题面，单次检索（无论稀疏/稠密）常拿不全证据 → 迭代检索/分解/转包有真实价值，是实验设计的 feature。后端可插拔（BM25 稀疏检索留作消融 option）。
-- **第二臂：FanOutQA**（广度分解：一题 5–10 篇独立子查询，可并行转包）。与 MuSiQue（深度/串行分解）形成"深度可分解 vs 广度可分解 × 中心化"对比。需单独建索引（较新 Wikipedia dump）。
-- **保留 option（实验期拍板）**：GSM8K/MATH/SVAMP（数学）、HumanEval/MBPP（代码）、MMLU（知识问答）、GAIA/WebArena/AssistantBench（agentic 长程）、FRAMES（held-out 评测集）。基础设施任务抽象为 `(题目, 判分器)`，新增 benchmark 边际成本低。数学/单函数代码题协作价值低（cf. 2502.08788），可作"协作增益低"对照组考察"中心化影响是否依赖任务可分解性"。
-- 第二期候选（支撑"最优中心化随任务经济结构移动"）：GovSim 2404.16698、AucArena 2310.05746、NegotiationArena 2402.05863。
+**问题池**：120 题（90 HotpotQA + 30 MuSiQue，validation 抽样）。语料 = 配套段落池化去重 → Chroma 向量索引（fullwiki 升级项与 validity caveat 同 v1）。
 
-> **Pilot 语料现状（与上文主实验设定的偏差，必须记录）**：`scripts/prepare_data.py`
-> 当前构建的**不是** HotpotQA 官方约 500 万篇 fullwiki dump，而是把每题自带的段落集
-> （HotpotQA `distractor` 配置的 gold + distractor 段落，加 MuSiQue 每题配套段落）
-> 跨全部抽样题**汇总去重成一个共享语料库**（IRCoT 等工作的常见做法）。gold 段落
-> 100% 在库，题目可答，pilot 可跑通。
-> - **有效性 caveat**：该语料仅数千段且已按题裁剪，检索显著比 fullwiki 容易 →
->   retrieve 的边际价值被低估，**L2 的信息垄断操纵被削弱**（agent 更容易一次命中，
->   少了迭代检索/转包的压力）。因此 pilot 的 L2 效应量应视为下界，不可直接外推。
-> - **主实验升级项**：正式跑前改为 fullwiki dump 建索引（HotpotQA 官方 processed
->   dump + MuSiQue 语料），届时上文 §10 设定与实现一致，L2 操纵才具备完整强度。
+**共享 subtask 库（自底向上构建）**：
+1. 全部题面 embedding（与检索同一 all-MiniLM 模型）；
+2. 凝聚式层级聚类：题目 →（每组 ≤3 题）基层 subtask →（≤3 个）中层 subtask →（≤3 个）顶层 subtask；
+3. **每个 subtask 由 LLM（gpt-5-mini）在建库时生成唯一一句话总结**（一次性预处理）；句子即身份，同时配短 id（t0001）；
+4. **语义局部性不变量**（硬保证，建库时校验）：任意内部节点，子树内部平均 embedding 相似度 > 与兄弟子树间相似度——语义越近的 subtask 必在越低层同一子树汇合；
+5. subtask 库全局共享：**task = 库中某内部节点及其子树**，天然嵌套复用（小 task 是大 task 的子问题）；同一 question/subtask 可出现于多个挂牌 task。
+
+**挂牌**：从库中抽 ~30 个节点挂上任务板（深度 2–4、大小混合；树深 ≤4 含根、每节点 ≤3 子 → 单 task ≤27 叶）。task 价 = Σ 叶价，一句话总结即牌面。
+
+**交付与判分**：claim 整棵 task（独占，L1+ 仅 interface）→ `decompose` 逐层揭示 → 打包交付 JSON {qid: answer} 覆盖全部叶 → 逐叶 F1 判分 → Σ R(叶)×F1 一次结清；每 task 一次交付机会。**按 (task, 叶) 重复计价**：同题跨 task 各付各的（专业化红利：第二次遇同类题成本趋零）。
+
+**专业化考察**：叶子/子树跨 task 复用 + 语义局部性 → 可测量 agent 是否演化为特定语义子树的专家（专业化指数：按子树聚类的答题集中度 Herfindahl）。
+
+**保留 option（不变）**：FanOutQA、GSM8K/HumanEval/MMLU、GAIA 类、FRAMES；二期：GovSim/AucArena/NegotiationArena。
 
 ## 11. 指标体系（因变量）
 
@@ -194,7 +201,8 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
   - (b) 全部 token 含协调回合（真实成本效率）
   - **协调开销 = 免费回合 token / 全部 token**（实现口径，见 `metrics.compute_metrics`）；
     两个 accuracy-per-token 之差可由上述两指标导出，中心化如何改变协调开销是高价值结果。
-- **辅助**：总正确率（EM/F1）、清池轮数（吞吐）、破产率与存活比例、期末余额 Gini、转包量与成交价分布、每题检索次数、gold 段落命中率。
+- **辅助**：总正确率（EM/F1）、清池 turns 数（吞吐）、破产率与存活比例、期末余额 Gini、转包量与成交价分布、每题检索次数、gold 段落命中率。
+- **v2 新增**：行政/解题开销比（全计费下按统计标签拆分）、**专业化指数**（每 agent 答题的语义子树集中度 Herfindahl）、task 完成率与深度穿透率、信贷指标（贷款量、利息流、坏账率、破产后借贷翻身次数）。
 - 全量 trace（每回合每 agent 的 prompt/action/result/账变）落 JSONL，离线可重放。
 
 ## 12. Baseline 策略
