@@ -48,7 +48,7 @@ class LongTermMemory:
     def write(self, agent: str, content: str) -> None:
         self._store[agent].append(content)
 
-    def search(self, agent: str, query: str, k: int = 3) -> list[str]:
+    def search(self, agent: str, query: str, k: int = 5) -> list[str]:
         qtok = set(query.lower().split())
         scored = []
         for entry in self._store[agent]:
