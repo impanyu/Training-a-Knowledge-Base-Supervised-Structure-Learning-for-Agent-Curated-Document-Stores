@@ -57,3 +57,27 @@ def test_shared_c2_bucket_is_reflected_per_agent_via_stats(tmp_path):
     # through, so both agents see the one answer that lives in it
     assert summary["solutions"]["agent_1"]["answers"] == 1
     assert summary["solutions"]["agent_2"]["answers"] == 1
+
+
+def test_error_recalls_are_not_hits(tmp_path):
+    """ERROR results from recall_solutions should NOT be counted as hits,
+    even though they are not "(no stored solutions" responses."""
+    infra = demo_infra("C0")
+    rec = Recorder(str(tmp_path))
+    # Log an ERROR result (e.g. bankrupt agent, unresolvable name)
+    rec.log(_event("agent_1", "recall_solutions",
+                   'ERROR: bankrupt: agent_2 has no active balance'))
+    # Log an empty-store result (should not be a hit)
+    rec.log(_event("agent_1", "recall_solutions",
+                   "(no stored solutions under t0001)"))
+    # Log a valid result (should be a hit)
+    rec.log(_event("agent_1", "recall_solutions",
+                   'known 2/3 answers: {"q0001": "42", "q0002": "yes"}'))
+    summary = rec.write_summary(infra, rounds_used=1)
+    rec.close()
+
+    # All three should increment n_recalls
+    assert summary["solutions"]["agent_1"]["n_recalls"] == 3
+    # Only the valid result should increment n_recall_hits
+    # (ERROR and "(no stored solutions" should not)
+    assert summary["solutions"]["agent_1"]["n_recall_hits"] == 1
