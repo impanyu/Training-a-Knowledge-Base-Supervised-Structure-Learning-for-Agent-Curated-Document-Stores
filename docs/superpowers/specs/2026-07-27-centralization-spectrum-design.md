@@ -67,25 +67,25 @@
 | | 外部合同（WORLD 挂单） | 内部合同（agent 间转包） |
 |---|---|---|
 | 发布 | WORLD 把题池挂上任务板，标价 R(q) 公示（按难度分档） | `propose_contract(to, task, price)`，可议价 |
-| 接单 | `claim_question(qid)` = 接受 WORLD 合同（独占，其他 agent 不再可见） | `accept_contract(id)` → 从发包方余额托管锁款（余额不足则失败） |
-| 交付领钱 | `deliver_work(qid, answer)` → 判分器当场判分 → 支付 R(q) × F1 | `deliver_work(id, content)` → content 送达发包方聊天 + 托管款打给承包方，原子交割 |
+| 接单 | `claim_task` = 接受 WORLD 合同（独占，其他 agent 不再可见） | `accept_contract(id)` → 从发包方余额托管锁款（余额不足则失败） |
+| 交付领钱 | `deliver_work(task, answers_json)` → 逐叶判分 → Σ R(叶)×F1 | `deliver_work(id, content)` → content 送达发包方聊天 + 托管款打给承包方，原子交割 |
 | 付款条件 | 按质付款（判分器裁决） | 交付即付（子任务无法机器判分；质量靠重复博弈约束——劣质承包方被市场淘汰，属预期观察的涌现现象） |
-| 议价 | 不可议价（WORLD 非 agent，明码标价） | L0–L2 自由议价；L3+ 全面禁止议价，所有合同价格由 interface 裁定（见下） |
+| 议价 | 不可议价（WORLD 非 agent，明码标价） | 默认自由议价；C3 禁止议价、价格由 interface 裁定（见下） |
 | 提交次数 | 每题仅一次交付，交付即关闭（防暴力重试） | — |
 
 - `deliver_work` 只需合同 id：支付对象、金额均从合同登记读出，调用者校验为登记承包方。目标不显式可填是安全设计（消除交错/冒领空间）。
 - `cancel_contract`：proposed/unpriced 任一方可取消；accepted 后仅承包方可取消（托管退回发包方），发包方不可单方取消已接合同（防白嫖）。
 - `pay(to, amount)` 保留用于合同外自由转账（定金、打赏、救济破产者）；合同结算一律走托管。定价中心化不管制 `pay`（管的是合同价格信号，不是赠与）。
 
-**L3+ 定价中心化下的合同生命周期**（新增 `unpriced` 状态与 `set_price` action）：
+**C3 定价中心化下的合同生命周期**（新增 `unpriced` 状态与 `set_price` action）：
 
 ```
 A: propose_contract(to=B, task)          ← 不带价格（带了也忽略）
        ▼  状态 = unpriced，等待 interface 定价
-interface: set_price(contract_id, price) ← 仅 interface 可用（L3+ 才存在）
+interface: set_price(contract_id, price) ← 仅 interface 可用（C3 才存在）
        ▼  状态 = proposed，等待 B 接受/拒绝
 B: accept_contract（锁 A 的托管）→ deliver_work 照旧；或 reject_contract
-counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自带价格（它即定价者）
+counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自带价格（它即定价者）
 ```
 
 **信贷机制（v2 新增）**：
@@ -93,7 +93,7 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 - **利率恒为每轮 1%**（系统常数，不参与议价、不属 interface 定价权）。
 - 调度器每轮自动划扣利息（借款人余额不足则欠息滚入本金）；`repay_loan(loan_id, amount)` 随时还本。
 - 借款人破产 = 出借人坏账（信用风险真实存在，属预期观察的涌现现象）。
-- L4+（信贷中心化）：出借人只能是 interface；L5 星型自然蕴含。
+- C4（信贷中心化）：出借人只能是 interface。C5 星型下借贷对象因拓扑限制只能是 interface（权利未限，对手唯一）。
 
 **节点绑定合同（v2）**：`propose_contract` 的 task 字段若指认一个 subtask 节点（句子或短 id）→ 合同为节点绑定：承包方 `deliver_work(contract_id, answers_json)` 必须提交覆盖该节点全部叶子的 JSON {qid: answer}，基础设施做覆盖校验（qid 集合齐全才原子交割托管）；答案质量不判分（重复博弈约束）。task 为自由文本 → 自由合同，交付任意文本（信息买卖等涌现交易保留）。
 
@@ -106,18 +106,18 @@ counter_offer 在 L3+ 对所有人禁用；interface 自己发包时 propose 自
 
 | Action | 说明 | 权限门控 |
 |---|---|---|
-| `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | L1+ 仅 interface |
-| `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | L1+ 仅 interface |
+| `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | C1 仅 interface |
+| `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | C1 仅 interface |
 | `decompose(node)` | 揭示 subtask 的下级子节点（子 subtask 显示一句话总结，叶显示原题）；参数：句子或短 id | 所有人 |
-| `retrieve(query)` | 检索语料，top-k 段落 | L2+ 仅 interface |
+| `retrieve(query)` | 检索语料，top-k 段落 | 所有人（信息中心化已删除） |
 | `work_on(node, thought)` | 对某节点做一步推理，写入私有草稿区 | 所有人 |
-| `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | L1+ 仅 interface |
+| `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | C1 仅 interface |
 | `deliver_work(contract_id, content)` 内部合同 | 交付合同成果，托管原子交割 | 所有人 |
-| `send_message` / `read_chat` | 点对点通信 | L5 下普通 agent 仅限 interface |
-| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | L3+ counter_offer 全禁；L3+ 非 interface propose 进入 unpriced；L5 合同对象仅限 interface |
-| `set_price(contract_id, price)` | interface 裁定合同价 | 仅 L3+ 且仅 interface |
-| `propose_loan(to, amount)` / `accept_loan(loan_id)` / `repay_loan(loan_id, amount)` | 借贷生命周期（利率恒 1%/轮） | L4+ 出借人仅限 interface；L5 借贷对象仅限 interface |
-| `pay(to, amount)` | 自由转账 | L5 仅限与 interface |
+| `send_message` / `read_chat` | 点对点通信 | C5 下普通 agent 仅限 interface |
+| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | C3 counter_offer 全禁、非 interface propose 进入 unpriced；C5 合同对象仅限 interface |
+| `set_price(contract_id, price)` | interface 裁定合同价 | 仅 C3 且仅 interface |
+| `propose_loan(to, amount)` / `accept_loan(loan_id)` / `repay_loan(loan_id, amount)` | 借贷生命周期（利率恒 1%/轮） | C4 出借人仅限 interface；C5 借贷对象仅限 interface |
+| `pay(to, amount)` | 自由转账 | C5 仅限与 interface |
 | `push_goal` / `pop_goal`、`memory_write` / `memory_search`、`check_balance` / `list_agents` | 目标栈 / 长期记忆 / 查询 | 所有人 |
 
 **寻址约定**：task/subtask 节点同时有短 id（t0001）与唯一一句话总结；action 参数二者皆可（句子做规范化+近似匹配，不唯一时报错并列候选）。
