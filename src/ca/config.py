@@ -63,3 +63,4 @@ class ExperimentConfig:
     loan_rate: float = 0.01      # interest charged per round on outstanding loan principal
     hub_turns_per_round: int = 1  # extra hub turns/round at has_hub levels
     solo_turns_per_round: int = 1  # solo-agent turns/round at C7 (8 = compute parity with 8-agent configs)
+    checkpoint_every: int = 20   # full-state checkpoint every N rounds (T29)

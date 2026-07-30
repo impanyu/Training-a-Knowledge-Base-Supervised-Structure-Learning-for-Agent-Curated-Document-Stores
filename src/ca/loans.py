@@ -124,6 +124,20 @@ class LoanSystem:
             })
         return events
 
+    def to_state(self) -> dict:
+        return {"n": self._n, "total_interest_paid": self.total_interest_paid,
+                "loans": [{"lid": l.lid, "lender": l.lender, "borrower": l.borrower,
+                           "principal": l.principal, "status": l.status}
+                          for l in self.loans.values()]}
+
+    def from_state(self, state: dict) -> None:
+        self._n = state["n"]
+        self.total_interest_paid = state["total_interest_paid"]
+        self.loans = {}
+        for row in state["loans"]:
+            self.loans[row["lid"]] = Loan(row["lid"], row["lender"], row["borrower"],
+                                          row["principal"], row["status"])
+
     def pending_for(self, agent: str) -> list[Loan]:
         out = []
         for loan in self.loans.values():

@@ -102,6 +102,20 @@ class SolutionMemory:
         walk(str(name).strip())
         return {"known": known, "missing": missing, "unexpanded": unexpanded}
 
+    def to_state(self) -> dict:
+        return {"decomp": {b: {k: list(v) for k, v in d.items()}
+                           for b, d in self._decomp.items()},
+                "answers": {b: {q: dict(rec) for q, rec in d.items()}
+                            for b, d in self._answers.items()}}
+
+    def from_state(self, state: dict) -> None:
+        self._decomp.clear()
+        for b, d in state["decomp"].items():
+            self._decomp[b] = {k: list(v) for k, v in d.items()}
+        self._answers.clear()
+        for b, d in state["answers"].items():
+            self._answers[b] = {q: dict(rec) for q, rec in d.items()}
+
     def stats(self, agent: str) -> dict:
         bucket = self._bucket(agent)
         return {"answers": len(self._answers[bucket]),

@@ -20,6 +20,13 @@ class FifoMemory:
             lines.append(f"- {a} -> {r}")
         return "\n".join(lines)
 
+    def to_state(self) -> list:
+        return [[a, r] for a, r in self.items]
+
+    def from_state(self, state: list) -> None:
+        self.items.clear()
+        self.items.extend((a, r) for a, r in state)
+
 
 class GoalStack:
     def __init__(self, root: str):
@@ -40,6 +47,12 @@ class GoalStack:
         lines[-1] += "   <- current focus"
         return "\n".join(lines)
 
+    def to_state(self) -> list:
+        return list(self._stack)
+
+    def from_state(self, state: list) -> None:
+        self._stack = list(state)
+
 
 class LongTermMemory:
     def __init__(self):
@@ -57,3 +70,11 @@ class LongTermMemory:
                 scored.append((overlap, entry))
         scored.sort(key=lambda t: -t[0])
         return [e for _, e in scored[:k]]
+
+    def to_state(self) -> dict:
+        return {a: list(entries) for a, entries in self._store.items()}
+
+    def from_state(self, state: dict) -> None:
+        self._store.clear()
+        for a, entries in state.items():
+            self._store[a] = list(entries)

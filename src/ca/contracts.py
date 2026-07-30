@@ -130,6 +130,23 @@ class ContractSystem:
         c.status = "delivered"
         return c
 
+    def to_state(self) -> dict:
+        return {"n": self._n, "contracts": [
+            {"cid": c.cid, "proposer": c.proposer, "contractor": c.contractor,
+             "task": c.task, "price": c.price, "status": c.status,
+             "awaiting": c.awaiting, "deliverable": c.deliverable,
+             "node_id": c.node_id}
+            for c in self.contracts.values()]}
+
+    def from_state(self, state: dict) -> None:
+        self._n = state["n"]
+        self.contracts = {}
+        for row in state["contracts"]:
+            self.contracts[row["cid"]] = Contract(
+                row["cid"], row["proposer"], row["contractor"], row["task"],
+                row["price"], row["status"], row["awaiting"], row["deliverable"],
+                row["node_id"])
+
     def pending_for(self, agent: str) -> list[Contract]:
         out = []
         for c in self.contracts.values():

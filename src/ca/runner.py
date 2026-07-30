@@ -3,6 +3,7 @@ import argparse
 import json
 import random
 
+from ca import checkpoint
 from ca.agent import Agent
 from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
@@ -71,6 +72,13 @@ def main() -> None:
                     help="solo-agent turns per round at C7 (8 = compute parity with 8-agent configs)")
     ap.add_argument("--model", default="claude-haiku-4-5")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--checkpoint-every", type=int, default=20,
+                    help="save a full-state checkpoint every N rounds (T29)")
+    ap.add_argument("--resume", default=None,
+                    help="checkpoint_XXXX.json from a previous run: restore its "
+                         "state and continue from the next round to --max-rounds "
+                         "(level and seed must match; trace/timeseries in --out "
+                         "are appended to, not rewritten)")
     args = ap.parse_args()
 
     from ca.config import agent_ids
@@ -78,19 +86,28 @@ def main() -> None:
     cfg = ExperimentConfig(level=level, seed=args.seed,
                            seed_capital_total=args.capital,
                            max_rounds=args.max_rounds, model=args.model,
-                           solo_turns_per_round=args.solo_turns)
+                           solo_turns_per_round=args.solo_turns,
+                           checkpoint_every=args.checkpoint_every)
     if args.turns is not None:
         slots_per_round = len(agent_ids(level)) + (
             cfg.hub_turns_per_round - 1 if level.has_hub else 0) + (
             cfg.solo_turns_per_round - 1 if level.n_agents == 1 else 0)
         cfg.max_rounds = max(1, args.turns // slots_per_round)
     library = load_library(args.library)
+    state = None
+    if args.resume:
+        state = checkpoint.load(args.resume)
+        checkpoint.validate(state, cfg)  # level + seed must match
     infra = Infra(cfg, library, load_posted(library, args.posted),
                   retriever=ChromaBackend.load(args.index))
     agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn, cfg.temperature))
               for a in infra.agent_ids]
-    sched = Scheduler(infra, agents, cfg, Recorder(args.out), random.Random(args.seed))
-    summary = sched.run()
+    recorder = Recorder(args.out, append=state is not None)
+    rng = random.Random(args.seed)
+    if state is not None:
+        checkpoint.restore(state, infra, agents, recorder, rng)
+    sched = Scheduler(infra, agents, cfg, recorder, rng)
+    summary = sched.run(start_round=state["round"] + 1 if state else 1)
     metrics = compute_metrics(summary, library=library)
     print(json.dumps(metrics, indent=2))
     with open(f"{args.out}/metrics.json", "w") as f:

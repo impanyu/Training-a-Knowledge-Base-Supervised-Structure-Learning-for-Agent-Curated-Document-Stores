@@ -1,6 +1,7 @@
 """Synchronous round-robin scheduler with seeded per-round shuffling."""
 import random
 
+from ca import checkpoint
 from ca.agent import Agent
 from ca.config import ExperimentConfig
 from ca.infra import Infra
@@ -16,10 +17,10 @@ class Scheduler:
         self.recorder = recorder
         self.rng = rng
 
-    def run(self) -> dict:
-        rounds_used = 0
+    def run(self, start_round: int = 1) -> dict:
+        rounds_used = start_round - 1
         try:
-            for r in range(1, self.cfg.max_rounds + 1):
+            for r in range(start_round, self.cfg.max_rounds + 1):
                 self.infra.round = r
                 rounds_used = r
                 self.infra.board.expire_claims(r, self.cfg.claim_ttl)
@@ -48,9 +49,22 @@ class Scheduler:
                 # so the final round is captured too); a crash mid-round means
                 # no line for that round, but the finally still writes summary.
                 self.recorder.log_round(self.infra, r)
-                if self.infra.board.all_done():
+                # T29: checkpoint after the round is fully committed (assert +
+                # timeseries line included) -- every N rounds, at max_rounds,
+                # and whenever the run is about to stop, so the last completed
+                # round of ANY finished run is always resumable.
+                done = self.infra.board.all_done()
+                broke = all(self.infra.ledger.is_bankrupt(a)
+                            for a in self.infra.agent_ids)
+                if (r % self.cfg.checkpoint_every == 0 or r == self.cfg.max_rounds
+                        or done or broke):
+                    checkpoint.save(
+                        self.recorder.dir / f"checkpoint_{r:04d}.json",
+                        checkpoint.capture(self.infra, self.agents, self.recorder,
+                                           self.rng, r))
+                if done:
                     break
-                if all(self.infra.ledger.is_bankrupt(a) for a in self.infra.agent_ids):
+                if broke:
                     break  # terminal: solving actions frozen for everyone, no income possible
         finally:
             # a crash (or a tripped invariant) must not cost us the run's data

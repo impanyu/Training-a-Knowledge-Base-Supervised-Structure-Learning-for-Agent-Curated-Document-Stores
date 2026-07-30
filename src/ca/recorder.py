@@ -33,11 +33,12 @@ from pathlib import Path
 
 
 class Recorder:
-    def __init__(self, out_dir: str):
+    def __init__(self, out_dir: str, append: bool = False):
         self.dir = Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self._f = open(self.dir / "trace.jsonl", "w")  # fresh trace per run
-        self._ts = open(self.dir / "timeseries.jsonl", "w")
+        mode = "a" if append else "w"  # append = resumed run (T29)
+        self._f = open(self.dir / "trace.jsonl", mode)  # fresh trace per run
+        self._ts = open(self.dir / "timeseries.jsonl", mode)
         self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
         # T27: solution-reuse tallies, counted live off the event stream so
         # write_summary need not re-scan the trace file.
@@ -188,6 +189,16 @@ class Recorder:
         with open(self.dir / "summary.json", "w") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         return summary
+
+    def to_state(self) -> dict:
+        return {"tokens": {a: dict(v) for a, v in self._tokens.items()},
+                "recalls": {a: dict(v) for a, v in self._recalls.items()}}
+
+    def from_state(self, state: dict) -> None:
+        for a, v in state["tokens"].items():
+            self._tokens[a].update(v)
+        for a, v in state["recalls"].items():
+            self._recalls[a].update(v)
 
     def close(self):
         self._f.close()

@@ -62,3 +62,15 @@ class Ledger:
     def conservation_ok(self) -> bool:
         total = sum(self.balances.values()) + sum(self.escrow.values())
         return total == self.seed_total + self.minted - self.burned
+
+    def to_state(self) -> dict:
+        return {"balances": dict(self.balances), "seed_total": self.seed_total,
+                "minted": self.minted, "burned": self.burned,
+                "escrow": dict(self.escrow)}
+
+    def from_state(self, state: dict) -> None:
+        self.balances = dict(state["balances"])
+        self.seed_total = state["seed_total"]
+        self.minted = state["minted"]
+        self.burned = state["burned"]
+        self.escrow = dict(state["escrow"])

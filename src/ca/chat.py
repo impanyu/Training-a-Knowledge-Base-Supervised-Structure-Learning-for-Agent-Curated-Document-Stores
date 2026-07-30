@@ -32,3 +32,16 @@ class ChatSystem:
         pair = [m for m in self.messages
                 if {m.sender, m.recipient} == {a, b}]
         return pair[-limit:]
+
+    def to_state(self) -> dict:
+        return {"messages": [{"mid": m.mid, "sender": m.sender,
+                              "recipient": m.recipient, "text": m.text,
+                              "round_no": m.round_no} for m in self.messages],
+                "cursor": dict(self._cursor)}
+
+    def from_state(self, state: dict) -> None:
+        self.messages = [ChatMessage(m["mid"], m["sender"], m["recipient"],
+                                     m["text"], m["round_no"])
+                         for m in state["messages"]]
+        self._cursor.clear()
+        self._cursor.update(state["cursor"])

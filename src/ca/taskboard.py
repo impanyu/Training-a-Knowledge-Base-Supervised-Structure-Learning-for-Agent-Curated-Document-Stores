@@ -164,6 +164,27 @@ class TaskBoard:
             self.ledger.mint(agent, total)
         return per_leaf, total
 
+    # ---------- checkpoint (T29) ----------
+
+    def to_state(self) -> dict:
+        return {"tasks": [
+            {"nid": t.nid, "status": t.status, "claimed_by": t.claimed_by,
+             "claimed_round": t.claimed_round, "claim_counts": dict(t.claim_counts),
+             "payout": t.payout,
+             "leaves": [{"qid": l.qid, "submitted": l.submitted, "score": l.score,
+                         "em": l.em, "price": l.price, "payout": l.payout}
+                        for l in t.leaves]}
+            for t in self.tasks.values()]}
+
+    def from_state(self, state: dict) -> None:
+        self.tasks = {}
+        for row in state["tasks"]:
+            leaves = [LeafResult(l["qid"], l["submitted"], l["score"], l["em"],
+                                 l["price"], l["payout"]) for l in row["leaves"]]
+            self.tasks[row["nid"]] = PostedTask(
+                row["nid"], row["status"], row["claimed_by"], row["claimed_round"],
+                dict(row["claim_counts"]), leaves, row["payout"])
+
     # ---------- reporting ----------
 
     def all_done(self) -> bool:
