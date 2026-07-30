@@ -189,3 +189,34 @@ def test_compute_metrics_omits_specialization_when_no_library():
     m = compute_metrics(base_summary())
     assert "specialization" not in m
     assert "mean_specialization" not in m
+
+
+# ---------------- T27 additions: solution-reuse metrics ----------------
+
+def test_solution_reuse_metrics_zero_guarded_when_no_solutions_key():
+    m = compute_metrics(base_summary())      # base_summary carries no "solutions" key
+    assert m["n_recalls"] == 0
+    assert m["solution_reuse_rate"] == 0.0
+    assert m["answers_in_memory_total"] == 0
+
+
+def test_solution_reuse_metrics_aggregate_across_agents():
+    summary = base_summary()
+    summary["solutions"] = {
+        "a": {"answers": 3, "decompositions": 1, "n_recalls": 4, "n_recall_hits": 3},
+        "b": {"answers": 2, "decompositions": 0, "n_recalls": 1, "n_recall_hits": 0},
+    }
+    m = compute_metrics(summary)
+    assert m["n_recalls"] == 5
+    assert m["solution_reuse_rate"] == pytest.approx(3 / 5)
+    assert m["answers_in_memory_total"] == 5
+
+
+def test_solution_reuse_rate_zero_guarded_when_no_recalls_happened():
+    summary = base_summary()
+    summary["solutions"] = {
+        "a": {"answers": 3, "decompositions": 1, "n_recalls": 0, "n_recall_hits": 0},
+    }
+    m = compute_metrics(summary)
+    assert m["solution_reuse_rate"] == 0.0
+    assert m["answers_in_memory_total"] == 3      # answers can be stored with zero recalls

@@ -10,10 +10,20 @@ class Recorder:
         self.dir.mkdir(parents=True, exist_ok=True)
         self._f = open(self.dir / "trace.jsonl", "w")  # fresh trace per run
         self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
+        # T27: solution-reuse tallies, counted live off the event stream so
+        # write_summary need not re-scan the trace file.
+        self._recalls = defaultdict(lambda: {"n_recalls": 0, "n_recall_hits": 0})
 
     def log(self, event: dict) -> None:
         spent = event["tokens_in"] + event["tokens_out"]
         self._tokens[event["agent"]][event["category"]] += spent
+        if event["action"] == "recall_solutions":
+            tally = self._recalls[event["agent"]]
+            tally["n_recalls"] += 1
+            # a "hit" is a recall whose result names at least one known
+            # answer, i.e. anything other than the empty-store response.
+            if not str(event["result"]).startswith("(no stored solutions"):
+                tally["n_recall_hits"] += 1
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
 
@@ -55,6 +65,12 @@ class Recorder:
                 "total_interest_paid": infra.loans.total_interest_paid,
                 "debtors": dict(debtors),
                 "bankrupt_with_debt": [a for a in debtors if infra.ledger.is_bankrupt(a)],
+            },
+            # per-agent solution-memory footprint: what's stored (T26) plus
+            # how much it got reused this run (T27).
+            "solutions": {
+                a: {**infra.solutions.stats(a), **self._recalls[a]}
+                for a in infra.agent_ids
             },
             "minted": infra.ledger.minted,
             "burned": infra.ledger.burned,
