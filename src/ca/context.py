@@ -107,13 +107,20 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
             lines.append(f"- [{t.nid}] «{lib.sentence(t.nid)}» "
                          f"({len(leaves)} questions, reward {lib.price(t.nid)})  "
                          f"[claim EXPIRES in {max(left,0)} round(s) - deliver before then!]")
-            # progress hint: only leaves this agent has already worked on are
-            # named -- undiscovered q-ids stay behind `decompose`
+            # progress hint: leaves this agent has already worked on are named
+            # -- undiscovered q-ids stay behind `decompose`. Notes filed under
+            # the task's own nid (e.g. before decomposing down to leaves)
+            # also count as progress, just not attributable to one leaf.
             noted = [q for q in leaves if pad.get(q)]
+            task_notes = pad.get(t.nid) or []
             if noted:
                 lines.append(f"    progress: notes on {len(noted)}/{len(leaves)} "
                              f"questions ({', '.join(noted)}); deliver ALL "
                              f"{len(leaves)} in one JSON package")
+            elif task_notes:
+                lines.append(f"    progress: {len(task_notes)} note(s) filed under "
+                             f"{t.nid} itself (not yet broken out per question) - "
+                             f"use decompose to reveal its {len(leaves)} question(s)")
             else:
                 lines.append(f"    progress: notes on 0/{len(leaves)} questions - "
                              "use decompose to reveal them")

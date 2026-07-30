@@ -55,6 +55,38 @@ def test_world_gating_by_level():
     assert permission_error(i1, "interface", "claim_task", {"task": "t0001"}) is None
 
 
+def test_contract_routing_uses_id_shape_not_leading_letter():
+    """A task sentence that happens to start with 'c' must NOT be misrouted to
+    the contract branch: classify must call it "solving", and delivering it
+    to the WORLD by sentence must work exactly like any other task."""
+    nodes = [TaskNode("t0001", "compare the premiere years of two operas", ["q0001"])]
+    qs = [Question("q0001", "which opera premiered first, Salome or Elektra?",
+                   ["Salome"], "easy", 100)]
+    lib = TaskLibrary(nodes, qs)
+    cfg0 = ExperimentConfig(level=LEVELS["L0"], seed=0, seed_capital_total=1000)
+    infra0 = Infra(cfg0, lib, ["t0001"], retriever=None)
+
+    assert classify("deliver_work",
+                    {"target_id": "compare the premiere years of two operas",
+                     "content": "{}"}) == "solving"
+
+    dispatch(infra0, "agent_1", "claim_task", {"task": "t0001"})
+    out = dispatch(infra0, "agent_1", "deliver_work",
+                   {"target_id": "compare the premiere years of two operas",
+                    "content": json.dumps({"q0001": "Salome"})})
+    assert not out.startswith("ERROR")
+    assert infra0.board.tasks["t0001"].status == "closed"
+
+    # at L1 a non-interface agent addressing the same sentence hits the world
+    # gate, not the (wrong) contract branch that would report "unknown contract"
+    cfg1 = ExperimentConfig(level=LEVELS["L1"], seed=0, seed_capital_total=1000)
+    infra1 = Infra(cfg1, lib, ["t0001"], retriever=None)
+    err = permission_error(infra1, "agent_1", "deliver_work",
+                           {"target_id": "compare the premiere years of two operas",
+                            "content": "{}"})
+    assert err is not None and "interface" in err
+
+
 def test_world_delivery_gating_covers_sentence_targets():
     i1 = make("L1")
     assert permission_error(i1, "agent_1", "deliver_work",
@@ -322,6 +354,33 @@ def test_propose_contract_binds_a_recognised_subtask_node():
     assert c.node_id == "t0002"
     assert any("t0002" in m.text and "coverage" in m.text
                for m in i0.chat.unread("agent_2"))
+
+
+def test_propose_contract_near_miss_sentence_does_not_bind():
+    """A free-text task that merely RESEMBLES a node sentence (fuzzy match)
+    must not opportunistically bind the contract to that node -- only an
+    exact id or exact normalized-sentence match may bind."""
+    i0 = make("L0")
+    # this typo'd sentence is close enough to t0001 to fuzzy-resolve via
+    # TaskLibrary.resolve (see test_resolve_fuzzy_best_match_above_threshold)
+    out = dispatch(i0, "agent_1", "propose_contract",
+                   {"to": "agent_2", "task": "answer the french geograhy questions",
+                    "price": 30})
+    c = i0.contracts.get("c0001")
+    assert c.node_id is None
+    assert "bound to" not in out
+    dispatch(i0, "agent_2", "accept_contract", {"contract_id": "c0001"})
+    good = dispatch(i0, "agent_2", "deliver_work",
+                    {"target_id": "c0001", "content": "free-text answer, no JSON needed"})
+    assert not good.startswith("ERROR")
+
+
+def test_propose_contract_exact_sentence_binds():
+    i0 = make("L0")
+    out = dispatch(i0, "agent_1", "propose_contract",
+                   {"to": "agent_2", "task": "name the capital and the river", "price": 30})
+    assert "t0002" in out
+    assert i0.contracts.get("c0001").node_id == "t0002"
 
 
 def test_node_bound_contract_requires_full_leaf_coverage():

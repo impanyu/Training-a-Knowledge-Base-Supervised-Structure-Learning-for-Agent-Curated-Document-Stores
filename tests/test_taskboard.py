@@ -3,6 +3,7 @@ from fixtures import demo_library, demo_posted
 
 from ca.economy import Ledger
 from ca.taskboard import BoardError, TaskBoard
+from ca.tasktree import TaskLibrary, TaskNode
 
 FULL_T1 = {"q0001": "Paris", "q0002": "Loire", "q0003": "4"}
 
@@ -10,6 +11,27 @@ FULL_T1 = {"q0001": "Paris", "q0002": "Loire", "q0003": "4"}
 def setup():
     led = Ledger({"a": 10, "b": 10})
     return led, TaskBoard(demo_library(), demo_posted(), led)
+
+
+def test_posting_a_zero_leaf_node_is_rejected():
+    nodes = [TaskNode("t0009", "an empty task with no leaves at all", [])]
+    lib = TaskLibrary(nodes, [])
+    led = Ledger({"a": 10})
+    with pytest.raises(ValueError):
+        TaskBoard(lib, ["t0009"], led)
+
+
+def test_deliver_defends_against_a_dangling_question_ref():
+    """Belt-and-suspenders: even though TaskLibrary now validates dangling
+    refs at construction, deliver() must not corrupt a task's leaves list
+    with a partial settlement if a leaf id has no matching question."""
+    led, tb = setup()
+    tb.claim("a", "t0001")
+    del tb.library.questions["q0002"]           # simulate library corruption
+    with pytest.raises(BoardError):
+        tb.deliver("a", "t0001", FULL_T1)
+    assert tb.tasks["t0001"].status == "claimed"
+    assert tb.tasks["t0001"].leaves == []
 
 
 def test_only_posted_nodes_are_tasks():

@@ -1,6 +1,9 @@
+import json
+
 import pytest
 from fixtures import demo_library
 
+from ca.taskboard import Question
 from ca.tasktree import AmbiguousError, TaskLibrary, TaskNode, UnknownNodeError
 
 
@@ -107,7 +110,64 @@ def test_shared_leaf_belongs_to_two_nodes():
 
 
 def test_cycles_are_rejected_rather_than_hanging():
+    # a cycle is now caught at construction time, not only when walked later
     nodes = [TaskNode("t0001", "a", ["t0002"]), TaskNode("t0002", "b", ["t0001"])]
-    lib = TaskLibrary(nodes, [])
-    with pytest.raises(Exception):
-        lib.leaves("t0001")
+    with pytest.raises(ValueError):
+        TaskLibrary(nodes, [])
+
+
+def test_construction_rejects_dangling_leaf_ref():
+    nodes = [TaskNode("t0001", "a", ["q9999"])]
+    with pytest.raises(ValueError):
+        TaskLibrary(nodes, [])
+
+
+def test_from_json_dangling_leaf_ref_raises_at_load(tmp_path):
+    p = tmp_path / "library.json"
+    payload = {
+        "nodes": [{"nid": "t0001", "sentence": "a", "children": ["q9999"]}],
+        "questions": [],
+    }
+    p.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        TaskLibrary.from_json(str(p))
+
+
+def test_from_json_cyclic_children_raises_at_load(tmp_path):
+    p = tmp_path / "library.json"
+    payload = {
+        "nodes": [
+            {"nid": "t0001", "sentence": "a", "children": ["t0002"]},
+            {"nid": "t0002", "sentence": "b", "children": ["t0001"]},
+        ],
+        "questions": [],
+    }
+    p.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        TaskLibrary.from_json(str(p))
+
+
+def test_construction_rejects_overlapping_node_and_question_ids():
+    nodes = [TaskNode("q0001", "a", [])]
+    qs = [Question("q0001", "x?", ["y"], "easy", 10)]
+    with pytest.raises(ValueError):
+        TaskLibrary(nodes, qs)
+
+
+def test_depth_on_valid_deep_chain():
+    nodes = [TaskNode("t0001", "a", ["t0002"]), TaskNode("t0002", "b", ["t0003"]),
+             TaskNode("t0003", "c", ["q0001"])]
+    qs = [Question("q0001", "x?", ["y"], "easy", 10)]
+    lib = TaskLibrary(nodes, qs)
+    assert lib.depth("t0001") == 4
+
+
+def test_resolve_exact_matches_id_or_exact_sentence_only():
+    lib = demo_library()
+    assert lib.resolve_exact("t0002").nid == "t0002"
+    assert lib.resolve_exact("  Name the Capital, and   the River!  ").nid == "t0002"
+    # a near-miss (fuzzy) sentence that resolve() would happily match is
+    # NOT resolved exactly
+    assert lib.resolve("answer the french geograhy questions").nid == "t0001"
+    assert lib.resolve_exact("answer the french geograhy questions") is None
+    assert lib.resolve_exact("no such task at all") is None

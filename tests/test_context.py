@@ -75,6 +75,18 @@ def test_render_turn_claim_progress_before_any_notes():
     assert "q0003" not in out          # leaf ids stay hidden until decompose
 
 
+def test_render_turn_progress_hint_counts_notes_filed_under_the_task_id_too():
+    """Notes filed under the claimed task's own nid (rather than a specific
+    leaf qid) should not be reported as zero progress."""
+    infra = make("L0")
+    dispatch(infra, "agent_1", "claim_task", {"task": "t0004"})
+    dispatch(infra, "agent_1", "work_on",
+             {"task_id": "t0004", "thought": "general notes before decomposing"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "0/2" not in out
+    assert "t0004" in out
+
+
 def test_render_turn_shows_scratchpad_written_by_work_on():
     infra = make("L0")
     dispatch(infra, "agent_1", "work_on",

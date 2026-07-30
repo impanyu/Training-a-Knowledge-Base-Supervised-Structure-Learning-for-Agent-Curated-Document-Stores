@@ -55,6 +55,8 @@ class TaskBoard:
         self.tasks: dict[str, PostedTask] = {}
         for nid in posted:
             library.get(nid)            # posting an unknown node is a build error
+            if not library.leaves(nid):
+                raise ValueError(f"{nid} has zero leaves and cannot be posted as a task")
             self.tasks[nid] = PostedTask(nid)
 
     # ---------- addressing ----------
@@ -137,6 +139,14 @@ class TaskBoard:
                 f"{t.nid} needs exactly one answer per leaf ({', '.join(wanted)}): "
                 f"{'; '.join(parts)}. Nothing was submitted - your delivery "
                 "attempt is still available.")
+        # belt-and-suspenders: TaskLibrary validates dangling refs at load,
+        # but check again here so a corrupt library cannot half-settle a
+        # delivery (KeyError mid-loop) with some leaves already appended.
+        unknown_qs = [q for q in wanted if q not in self.library.questions]
+        if unknown_qs:
+            raise BoardError(
+                f"{t.nid} references question(s) missing from the library: "
+                f"{', '.join(unknown_qs)}; nothing was submitted")
         per_leaf: list[tuple[str, float, int]] = []
         total = 0
         for qid in wanted:

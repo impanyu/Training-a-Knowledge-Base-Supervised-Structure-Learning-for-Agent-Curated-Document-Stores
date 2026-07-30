@@ -1,5 +1,6 @@
 """Action registry: specs (tool schemas), permission gating, dispatch."""
 import json
+import re
 
 from ca.config import LevelConfig
 from ca.contracts import ContractError
@@ -157,10 +158,16 @@ _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_co
                      "pay", "list_agents", "propose_loan", "accept_loan", "repay_loan"}
 
 
+_CONTRACT_ID_RE = re.compile(r"c\d{4}")
+
+
 def _is_contract_target(target: str) -> bool:
     """Contract ids are the ONE reserved namespace for deliver_work targets;
-    everything else (short task id or its sentence) addresses the WORLD."""
-    return str(target).strip().startswith("c")
+    everything else (short task id or its sentence) addresses the WORLD.
+    Matched by id SHAPE (c#### ), not by a leading letter -- a task sentence
+    that happens to start with "c" (e.g. "compare...", "count...") must still
+    route to the WORLD."""
+    return bool(_CONTRACT_ID_RE.fullmatch(str(target).strip()))
 
 
 def classify(name: str, inp: dict) -> str:
@@ -372,11 +379,17 @@ def _h_read_chat(infra, a, inp):
 
 def _bind_node(infra, c) -> str:
     """A contract whose task text names a library node is bound to it: the
-    deliverable then has to cover that node's leaves. Free text stays free."""
-    try:
-        c.node_id = infra.library.resolve(c.task).nid
-    except TreeError:
+    deliverable then has to cover that node's leaves. Free text stays free.
+    Binding uses ONLY exact resolution (exact node id or exact normalized
+    sentence) -- fuzzy resolution stays reserved for claim/decompose/deliver,
+    where the user is explicitly naming an existing node and an approximate
+    match is what they intend. Here `task` is free text chosen by the
+    PROPOSER, and merely resembling a node sentence is not consent to bind
+    the contract's coverage requirements to it."""
+    node = infra.library.resolve_exact(c.task)
+    if node is None:
         return ""
+    c.node_id = node.nid
     return (f" [bound to {c.node_id}: the deliverable must be a JSON map with "
             f"full leaf coverage of {c.node_id} "
             f"({len(infra.library.leaves(c.node_id))} questions)]")

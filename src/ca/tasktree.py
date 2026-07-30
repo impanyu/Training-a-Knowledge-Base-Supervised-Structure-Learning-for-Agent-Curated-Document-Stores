@@ -48,10 +48,6 @@ def normalize(s: str) -> str:
     return " ".join(s.split())
 
 
-def is_leaf_ref(ref: str) -> bool:
-    return ref.strip().startswith("q")
-
-
 class TaskLibrary:
     def __init__(self, nodes, questions, posted: list[str] | None = None):
         self.nodes: dict[str, TaskNode] = {
@@ -59,10 +55,44 @@ class TaskLibrary:
         self.questions: dict[str, Question] = {
             q.qid: q for q in (questions.values() if isinstance(questions, dict) else questions)}
         self.posted: list[str] = list(posted or [])
+        self._validate()
         self._link_parents()
         self._norm_index = {normalize(n.sentence): n.nid for n in self.nodes.values()}
 
     # ---------- construction ----------
+
+    def _validate(self) -> None:
+        """A malformed library must fail loudly at load time, not crash mid
+        -run and destroy whatever summary was in progress. Checks: node ids
+        and question ids are disjoint namespaces; every child reference
+        resolves to a known node or question (no dangling refs); the
+        children graph has no cycles."""
+        overlap = set(self.nodes) & set(self.questions)
+        if overlap:
+            raise ValueError(
+                f"node ids and question ids must be disjoint: {sorted(overlap)}")
+        for node in self.nodes.values():
+            for child in node.children:
+                if child not in self.nodes and child not in self.questions:
+                    raise ValueError(
+                        f"{node.nid} references unknown child {child!r}")
+        state: dict[str, int] = {}   # 0=unvisited (absent), 1=in progress, 2=done
+
+        def visit(nid: str) -> None:
+            s = state.get(nid, 0)
+            if s == 1:
+                raise ValueError(f"cycle in task tree at {nid}")
+            if s == 2:
+                return
+            state[nid] = 1
+            for child in self.nodes[nid].children:
+                if child in self.nodes:
+                    visit(child)
+            state[nid] = 2
+
+        for nid in self.nodes:
+            if state.get(nid, 0) == 0:
+                visit(nid)
 
     def _link_parents(self) -> None:
         for node in self.nodes.values():
@@ -125,6 +155,20 @@ class TaskLibrary:
                 f"{ref!r} is ambiguous between: {both}; use the short id instead")
         return best
 
+    def resolve_exact(self, text: str) -> TaskNode | None:
+        """Short id or EXACT normalized sentence -> node, or None. No fuzzy
+        matching: used where opportunistic/approximate binding would be
+        unsafe (e.g. contract proposals, where `task` is free text chosen by
+        the proposer and merely resembling a node sentence is not the same
+        as naming it)."""
+        ref = str(text).strip()
+        if ref in self.nodes:
+            return self.nodes[ref]
+        key = normalize(ref)
+        if key in self._norm_index:
+            return self.nodes[self._norm_index[key]]
+        return None
+
     # ---------- structure ----------
 
     def leaves(self, nid: str) -> list[str]:
@@ -150,12 +194,19 @@ class TaskLibrary:
         return sum(self.questions[q].price for q in self.leaves(nid)
                    if q in self.questions)
 
-    def depth(self, nid: str) -> int:
-        """Levels in the subtree, counting this node and the leaf level."""
+    def depth(self, nid: str, _stack: tuple[str, ...] = ()) -> int:
+        """Levels in the subtree, counting this node and the leaf level.
+        Cycle-guarded regardless of construction-time validation (defense in
+        depth, not just a load-time check) so a corrupt tree fails fast here
+        too rather than recursing forever."""
+        if nid in _stack:
+            raise TreeError(f"cycle in task tree at {nid}")
         node = self.get(nid)
         if not node.children:
             return 1
-        return 1 + max(self.depth(c) if c in self.nodes else 1 for c in node.children)
+        return 1 + max(
+            self.depth(c, _stack + (nid,)) if c in self.nodes else 1
+            for c in node.children)
 
     def children_view(self, nid: str) -> list[dict]:
         """What `decompose` reveals: one row per child, subtasks summarized by
