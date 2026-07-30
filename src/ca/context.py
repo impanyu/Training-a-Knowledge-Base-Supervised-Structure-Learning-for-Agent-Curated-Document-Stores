@@ -98,6 +98,20 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
                          f"{c.proposer if agent_id != c.proposer else c.contractor}: "
                          f"{c.task} @ {c.price}")
         parts.append("Contracts needing your attention:\n" + "\n".join(lines))
+    pend_loans = infra.loans.pending_for(agent_id)
+    if pend_loans:
+        lines = []
+        for l in pend_loans:
+            if l.status == "proposed":
+                lines.append(f"- {l.lid} [proposal awaiting your acceptance as lender] "
+                             f"{l.borrower} requests {l.principal} tokens")
+            elif l.borrower == agent_id:
+                interest = max(1, round(l.principal * infra.loans.rate))
+                lines.append(f"- {l.lid} [you owe {l.lender}] principal {l.principal} tokens "
+                             f"(~{interest} interest next round)")
+            else:
+                lines.append(f"- {l.lid} [owed to you by {l.borrower}] principal {l.principal} tokens")
+        parts.append("Your loans:\n" + "\n".join(lines))
     if agent_id == "interface" and infra.cfg.level.central_pricing:
         unp = infra.contracts.unpriced()
         if unp:

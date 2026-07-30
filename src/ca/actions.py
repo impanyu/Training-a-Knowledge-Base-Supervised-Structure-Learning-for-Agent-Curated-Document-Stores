@@ -3,6 +3,7 @@ from ca.config import LevelConfig
 from ca.contracts import ContractError
 from ca.economy import InsufficientFunds
 from ca.infra import Infra
+from ca.loans import LoanError
 from ca.taskboard import BoardError
 
 
@@ -82,6 +83,20 @@ ACTION_SPECS: dict[str, dict] = {
         "description": "Freely transfer tokens to another agent (tips, deposits, aid).",
         "input_schema": _schema({"to": _S, "amount": _I}, ["to", "amount"]),
     },
+    "propose_loan": {
+        "description": ("Ask another agent (`to`, the lender) to lend you `amount` tokens. "
+                        "Interest accrues at cfg.loan_rate per round while the loan is active. "
+                        "The lender may accept or ignore."),
+        "input_schema": _schema({"to": _S, "amount": _I}, ["to", "amount"]),
+    },
+    "accept_loan": {
+        "description": "As lender, accept a loan proposal awaiting you: transfers the principal to the borrower.",
+        "input_schema": _schema({"loan_id": _S}, ["loan_id"]),
+    },
+    "repay_loan": {
+        "description": "As borrower, repay (partially or fully) an active loan.",
+        "input_schema": _schema({"loan_id": _S, "amount": _I}, ["loan_id", "amount"]),
+    },
     "push_goal": {
         "description": "Push a sub-goal note onto your goal stack.",
         "input_schema": _schema({"note": _S}, ["note"]),
@@ -113,7 +128,7 @@ _TARGETED = {"send_message", "propose_contract", "pay"}  # star-comms checked ac
 # meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
 _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
                      "reject_contract", "counter_offer", "cancel_contract", "set_price",
-                     "pay", "list_agents"}
+                     "pay", "list_agents", "propose_loan", "accept_loan", "repay_loan"}
 
 
 def classify(name: str, inp: dict) -> str:
@@ -188,7 +203,7 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
 def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
     try:
         return _HANDLERS[name](infra, agent_id, inp)
-    except (BoardError, ContractError, KeyError, ValueError, IndexError) as e:
+    except (BoardError, ContractError, LoanError, KeyError, ValueError, IndexError) as e:
         return f"ERROR: {e}"
 
 
@@ -317,6 +332,30 @@ def _h_pay(infra, a, inp):
     return f"paid {inp['amount']} to {inp['to']}"
 
 
+def _h_propose_loan(infra, a, inp):
+    if inp["to"] not in infra.agent_ids:
+        return _unknown_agent(infra, inp["to"])
+    loan = infra.loans.propose(a, inp["to"], int(inp["amount"]))
+    infra.chat.send(a, inp["to"],
+                    f"[loan request {loan.lid}] {a} requests {loan.principal} tokens "
+                    f"at {infra.loans.rate:.0%}/round interest", infra.round)
+    return (f"proposed loan {loan.lid} to {inp['to']} for {loan.principal} tokens; "
+            "lender may accept or ignore")
+
+
+def _h_accept_loan(infra, a, inp):
+    loan = infra.loans.accept(a, inp["loan_id"])
+    infra.chat.send(a, loan.borrower,
+                    f"[loan {loan.lid} accepted] {loan.principal} tokens transferred to you",
+                    infra.round)
+    return f"accepted {loan.lid}; transferred {loan.principal} tokens to {loan.borrower}"
+
+
+def _h_repay_loan(infra, a, inp):
+    loan, paid = infra.loans.repay(a, inp["loan_id"], int(inp["amount"]))
+    return f"repaid {paid} tokens on {loan.lid}; principal now {loan.principal} ({loan.status})"
+
+
 def _h_push_goal(infra, a, inp):
     return "__PUSH_GOAL__"  # handled by Agent (owns the stack); see agent.py
 
@@ -350,6 +389,7 @@ _HANDLERS = {
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,
     "cancel_contract": _h_cancel_contract, "set_price": _h_set_price, "pay": _h_pay,
+    "propose_loan": _h_propose_loan, "accept_loan": _h_accept_loan, "repay_loan": _h_repay_loan,
     "push_goal": _h_push_goal, "pop_goal": _h_pop_goal,
     "memory_write": _h_memory_write, "memory_search": _h_memory_search,
     "check_balance": _h_check_balance, "list_agents": _h_list_agents,

@@ -5,6 +5,7 @@ from ca.chat import ChatSystem
 from ca.config import ExperimentConfig, agent_ids
 from ca.contracts import ContractSystem
 from ca.economy import Ledger
+from ca.loans import LoanSystem
 from ca.memory import LongTermMemory
 from ca.taskboard import Question, TaskBoard
 
@@ -20,6 +21,7 @@ class Infra:
         self.ledger = Ledger(seed_capital)
         self.chat = ChatSystem()
         self.contracts = ContractSystem(self.ledger)
+        self.loans = LoanSystem(self.ledger, cfg.loan_rate)
         self.board = TaskBoard(questions, self.ledger)
         self.ltm = LongTermMemory()
         self.retriever = retriever

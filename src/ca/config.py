@@ -42,3 +42,4 @@ class ExperimentConfig:
     model: str = "gpt-5-mini"
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
+    loan_rate: float = 0.01      # interest charged per round on outstanding loan principal

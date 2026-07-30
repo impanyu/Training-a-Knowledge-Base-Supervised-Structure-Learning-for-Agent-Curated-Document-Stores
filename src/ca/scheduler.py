@@ -23,6 +23,15 @@ class Scheduler:
                 self.infra.round = r
                 rounds_used = r
                 self.infra.board.expire_claims(r, self.cfg.claim_ttl)
+                for ev in self.infra.loans.interest_tick():
+                    verb = "paid" if ev["paid"] else "capitalized"
+                    self.recorder.log({
+                        "round": r, "agent": ev["borrower"], "action": "__interest__",
+                        "input": {"lid": ev["lid"], "lender": ev["lender"]},
+                        "result": f"{verb} {ev['interest']}",
+                        "category": "admin", "tokens_in": 0, "tokens_out": 0,
+                        "balance_after": self.infra.ledger.balance(ev["borrower"]),
+                    })
                 order = list(self.agents)
                 self.rng.shuffle(order)
                 for agent in order:
