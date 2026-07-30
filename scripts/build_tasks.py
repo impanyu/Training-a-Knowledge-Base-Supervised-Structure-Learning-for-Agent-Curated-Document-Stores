@@ -239,7 +239,7 @@ def call_openai_summary(client, model: str, member_texts: list[str],
             {"role": "system", "content": "You summarize question groups for a task marketplace."},
             {"role": "user", "content": user},
         ],
-        max_completion_tokens=200,
+        max_completion_tokens=2000,  # reasoning models think from this budget; 200 starved it to empty
     )
     return resp.choices[0].message.content or ""
 
