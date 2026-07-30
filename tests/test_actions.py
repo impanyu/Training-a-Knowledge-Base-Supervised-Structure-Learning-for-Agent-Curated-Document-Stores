@@ -501,14 +501,19 @@ def test_collective_goal_changes_no_permissions():
                 == permission_error(i0, "agent_1", name, inp)), name
 
 
-def test_shared_solution_memory_flag_is_inert_until_the_feature_lands():
-    """C2 carries the flag now; SolutionMemory itself arrives in T26. Until
-    then C2 must be indistinguishable from C0 at the action layer."""
+def test_shared_solution_memory_changes_reach_not_permissions():
+    """T26 landed the store, so C2 is no longer byte-identical to C0 -- but the
+    difference is exactly one of REACH (whose solutions you can read; see
+    test_solutions.test_c2_shares_the_store_across_agents_and_c0_does_not).
+    Every agent still sees the same tool schemas and the same gating: nothing
+    is permitted or forbidden at C2 that is not permitted or forbidden at C0,
+    including recall_solutions itself."""
     assert CONFIGS["C2"].shared_solution_memory is True
     assert (visible_tools(CONFIGS["C2"], "agent_1")
             == visible_tools(CONFIGS["C0"], "agent_1"))
     i2, i0 = make("C2"), make("C0")
     for name, inp in (("retrieve", {"query": "x"}), ("claim_task", {"task": "t0001"}),
+                      ("recall_solutions", {"name": "t0001"}),
                       ("propose_contract", {"to": "agent_2", "task": "s", "price": 5}),
                       ("propose_loan", {"to": "agent_2", "amount": 10})):
         assert (permission_error(i2, "agent_1", name, inp)
@@ -517,8 +522,10 @@ def test_shared_solution_memory_flag_is_inert_until_the_feature_lands():
 
 def test_C7_hides_multi_agent_tool_schemas():
     names = {t["name"] for t in visible_tools(CONFIGS["C7"], "agent_1")}
+    # recall_solutions survives: reusing your OWN past work needs no peers
     assert names == {"retrieve", "work_on", "deliver_work", "list_tasks",
-                     "claim_task", "decompose", "push_goal", "pop_goal",
+                     "claim_task", "decompose", "recall_solutions",
+                     "push_goal", "pop_goal",
                      "memory_write", "memory_search", "check_balance"}
 
 

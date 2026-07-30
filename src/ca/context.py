@@ -121,6 +121,13 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
         pad_lines += [f"  - {t}" for t in thoughts[-5:]]
     if pad_lines:
         parts.append("Your scratchpad (latest thoughts per task):\n" + "\n".join(pad_lines))
+    # the solution store fills itself silently; agents only reuse what they
+    # know is there, so advertise it (once it holds anything at all)
+    st = infra.solutions.stats(agent_id)
+    if st["answers"] or st["decompositions"]:
+        parts.append(f"Solution memory: {st['answers']} answers, "
+                     f"{st['decompositions']} decompositions stored "
+                     "(recall_solutions to reuse)")
     mine = [t for t in infra.board.tasks.values()
             if t.status == "claimed" and t.claimed_by == agent_id]
     if mine:

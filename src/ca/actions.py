@@ -7,6 +7,7 @@ from ca.contracts import ContractError
 from ca.economy import InsufficientFunds
 from ca.infra import Infra
 from ca.loans import LoanError
+from ca.solutions import is_question
 from ca.taskboard import BoardError
 from ca.tasktree import TreeError
 
@@ -55,6 +56,16 @@ ACTION_SPECS: dict[str, dict] = {
                         "to a subtask node, its content must likewise be a JSON map covering that "
                         "node's leaves."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
+    },
+    "recall_solutions": {
+        "description": ("Look up what you have ALREADY solved under a task, subtask or "
+                        "question, reusing your automatically-saved decompositions and "
+                        "answers. `name` accepts a short id (t0012), a one-sentence "
+                        "summary, or a question id (q0031). Expands the subtree "
+                        "recursively and reports every known answer plus what is still "
+                        "missing - a subtask you solved before comes back whole, for the "
+                        "price of one action instead of re-solving it. COSTS TOKENS."),
+        "input_schema": _schema({"name": _S}, ["name"]),
     },
     # -------- admin (coordination) --------
     "list_tasks": {
@@ -174,7 +185,7 @@ def classify(name: str, inp: dict) -> str:
     """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
     its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
     work the tokens paid for, for recorder tallies / coordination_overhead."""
-    if name in ("retrieve", "work_on", "decompose"):
+    if name in ("retrieve", "work_on", "decompose", "recall_solutions"):
         return "solving"
     if name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")):
         return "solving"
@@ -283,6 +294,7 @@ def _task_line(infra, nid: str) -> str:
 
 def _deliver_contract(infra, a, cid, content):
     c = infra.contracts.get(cid)
+    answers = None
     # coverage is checked BEFORE settlement so a short deliverable cannot
     # release escrow; auth/status errors still come from contracts.deliver
     if c.node_id and c.status == "accepted" and a == c.contractor:
@@ -302,6 +314,13 @@ def _deliver_contract(infra, a, cid, content):
             return (f"ERROR: {c.cid} is bound to {c.node_id} and needs exactly "
                     f"one answer per leaf ({', '.join(wanted)}): {'; '.join(detail)}")
     c = infra.contracts.deliver(a, cid, content)
+    # solution memory trigger 2b/3: a node-bound deliverable is a verified-shape
+    # answer map, so BOTH sides learn it -- the contractor produced it and the
+    # payer receives it. Ungraded: no F1 exists for internal trade.
+    if c.node_id and answers:
+        for qid, ans in answers.items():
+            infra.solutions.record_answer(a, qid, ans)
+            infra.solutions.record_answer(c.proposer, qid, ans)
     infra.chat.send(a, c.proposer, f"[deliverable for {c.cid}] {content}", infra.round)
     return f"delivered {c.cid}; escrow of {c.price} tokens released to you"
 
@@ -318,6 +337,9 @@ def _h_deliver_work(infra, a, inp):
                 "was NOT used.")
     task = infra.board.get(tid)          # resolve once; errors list candidates
     per_leaf, total = infra.board.deliver(a, task.nid, answers)
+    # solution memory trigger 2a: the WORLD graded these, so the F1 is known
+    for qid, score, _pay in per_leaf:
+        infra.solutions.record_answer(a, qid, answers[qid], f1=score)
     detail = "; ".join(f"{qid} F1={score:.2f} -> {pay}" for qid, score, pay in per_leaf)
     return (f"delivered {task.nid} ({len(per_leaf)} questions graded): {detail}. "
             f"Total paid: {total} tokens")
@@ -353,6 +375,9 @@ def _h_decompose(infra, a, inp):
         return f"[{q.qid}] {q.text}"
     node = infra.library.resolve(ref)
     rows = infra.library.children_view(node.nid)
+    # solution memory trigger 1: structure learned is structure stored
+    infra.solutions.record_decomposition(
+        a, node.nid, [r.get("nid") or r["qid"] for r in rows])
     lines = [f"[{node.nid}] «{node.sentence}» breaks down into {len(rows)} part(s):"]
     for r in rows:
         if r["kind"] == "subtask":
@@ -361,6 +386,37 @@ def _h_decompose(infra, a, inp):
         else:
             lines.append(f"  [{r['qid']}] {r['text']}")
     return "\n".join(lines)
+
+
+def _solution_key(infra, ref: str) -> str:
+    """What the agent typed -> a solution-store key. The store holds ids only,
+    so sentences are resolved here (fuzzily, as everywhere an agent names a
+    node it can see). A bare q-id passes straight through even if the library
+    does not know it: recall must be able to say 'never solved' about it."""
+    r = str(ref).strip()
+    if r in infra.library.questions or is_question(r):
+        return r
+    return infra.library.resolve(r).nid
+
+
+def _h_recall_solutions(infra, a, inp):
+    key = _solution_key(infra, inp["name"])
+    res = infra.solutions.recall(a, key)
+    known, missing, unexpanded = res["known"], res["missing"], res["unexpanded"]
+    if not known:
+        return f"(no stored solutions under {key})"
+    items = []
+    for qid, rec in known.items():
+        tag = f" (F1 {rec['f1']:.2f})" if "f1" in rec else ""
+        items.append(f'"{qid}": "{rec["answer"]}"{tag}')
+    parts = [f"known {len(known)}/{len(known) + len(missing)} answers under "
+             f"{key}: {{{', '.join(items)}}}"]
+    if missing:
+        parts.append("missing: " + ", ".join(missing))
+    if unexpanded:
+        parts.append("not yet decomposed (may hide more leaves): "
+                     + ", ".join(unexpanded))
+    return "; ".join(parts)
 
 
 def _h_send_message(infra, a, inp):
@@ -520,6 +576,7 @@ def _h_list_agents(infra, a, inp):
 _HANDLERS = {
     "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
     "list_tasks": _h_list_tasks, "claim_task": _h_claim_task, "decompose": _h_decompose,
+    "recall_solutions": _h_recall_solutions,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,

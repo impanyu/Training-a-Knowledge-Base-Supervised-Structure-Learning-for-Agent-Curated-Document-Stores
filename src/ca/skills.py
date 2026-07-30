@@ -110,6 +110,17 @@ _IFACE_LENDER = """
 Every worker who runs low on tokens must borrow from you - keep an eye on loan
 requests and fund the ones worth funding."""
 
+_RECALL = """
+### Demo: reuse what you already solved
+- BEFORE working on any task/subtask: recall_solutions(name="date the two premieres")
+  -> known answers under that subtask appear instantly - claimed tasks sharing
+     leaves with past work are nearly-free profit
+- Your decompositions and delivered answers are saved automatically - nothing to do."""
+
+_RECALL_SHARED = """
+The knowledge base is SHARED: everyone's discoveries appear in it - check it
+FIRST, someone may have already solved your leaves."""
+
 _COLLECTIVE = """
 ### Collective mode
 All agents share ONE goal: total system balance. Contract prices only
@@ -145,6 +156,8 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
             blocks.append(_HIRE_PEER.format(peer=peer, price_arg=price_arg))
             lender = "interface" if (level.central_credit or level.star_comms) else "agent_5"
             blocks.append(_BORROW.format(lender=lender))
+    # the solution store exists at every configuration and for every role
+    blocks.append(_RECALL + (_RECALL_SHARED if level.shared_solution_memory else ""))
     if level.collective_goal:
         blocks.append(_COLLECTIVE)
     if not blocks:

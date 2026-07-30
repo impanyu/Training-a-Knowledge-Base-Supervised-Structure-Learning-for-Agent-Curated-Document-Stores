@@ -7,6 +7,7 @@ from ca.contracts import ContractSystem
 from ca.economy import Ledger
 from ca.loans import LoanSystem
 from ca.memory import LongTermMemory
+from ca.solutions import SolutionMemory
 from ca.taskboard import TaskBoard
 from ca.tasktree import TaskLibrary
 
@@ -27,6 +28,8 @@ class Infra:
         self.loans = LoanSystem(self.ledger, cfg.loan_rate)
         self.board = TaskBoard(library, posted, self.ledger)
         self.ltm = LongTermMemory()
+        # solved-subtree KV store, auto-written; one shared bucket at C2
+        self.solutions = SolutionMemory(shared=cfg.level.shared_solution_memory)
         self.retriever = retriever
         self.scratchpads: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         self.round = 0
