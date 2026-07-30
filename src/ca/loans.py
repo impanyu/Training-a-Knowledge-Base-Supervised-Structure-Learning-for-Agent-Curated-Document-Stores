@@ -79,6 +79,10 @@ class LoanSystem:
         loan.status = "cancelled"
         return loan
 
+    def interest_of(self, loan: Loan) -> int:
+        """Calculate interest on a loan (minimum 1 token)."""
+        return max(1, round(loan.principal * self.rate))
+
     def repay(self, agent: str, lid: str, amount: int) -> tuple[Loan, int]:
         loan = self.get(lid)
         if loan.status != "active":
@@ -87,8 +91,15 @@ class LoanSystem:
             raise LoanError(f"only the borrower ({loan.borrower}) may repay {loan.lid}")
         if amount <= 0:
             raise LoanError("amount must be positive")
-        paid = min(int(amount), loan.principal)
-        self.ledger.transfer(loan.borrower, loan.lender, paid)
+        # Cap by both principal and borrower's available balance
+        borrower_balance = self.ledger.balance(loan.borrower)
+        paid = min(int(amount), loan.principal, max(0, borrower_balance))
+        if paid <= 0:
+            raise LoanError("no funds available to repay")
+        try:
+            self.ledger.transfer(loan.borrower, loan.lender, paid)
+        except InsufficientFunds as e:
+            raise LoanError(f"borrower has insufficient funds: {e}") from e
         loan.principal -= paid
         if loan.principal == 0:
             loan.status = "repaid"
@@ -99,7 +110,7 @@ class LoanSystem:
         for loan in self.loans.values():
             if loan.status != "active":
                 continue
-            interest = max(1, round(loan.principal * self.rate))
+            interest = self.interest_of(loan)
             paid = self.ledger.balance(loan.borrower) >= interest
             if paid:
                 self.ledger.transfer(loan.borrower, loan.lender, interest)

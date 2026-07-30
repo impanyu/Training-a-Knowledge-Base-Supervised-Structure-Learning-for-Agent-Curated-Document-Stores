@@ -264,6 +264,35 @@ def test_dispatch_unknown_agent_in_propose_loan():
 
 # ---------------- scheduler integration ----------------
 
+def test_repay_capped_by_borrower_balance():
+    """borrower has less than principal: repay(1000) pays only what they have"""
+    # setup a loan of 200 accepted, then drain borrower to 30 via ledger.burn
+    led, ls = setup({"lender": 1000, "borrower": 1000})
+    loan = ls.propose("borrower", "lender", 200)
+    ls.accept("lender", loan.lid)  # borrower=1200, lender=800
+    led.burn("borrower", 1170)  # borrower=30, less than principal (200)
+    loan2, paid = ls.repay("borrower", loan.lid, 1000)
+    # pays only what they have (30), principal becomes 170, no exception
+    assert paid == 30
+    assert loan2.status == "active"  # not repaid yet
+    assert loan2.principal == 170
+    assert led.balance("borrower") == 0
+    assert led.balance("lender") == 830  # 800 + 30
+    assert led.conservation_ok()
+
+
+def test_repay_broke_borrower_returns_error_via_dispatch():
+    """drain borrower to 0; dispatch repay_loan -> result startswith "ERROR"; run does not raise"""
+    infra = make_infra()
+    dispatch(infra, "agent_1", "propose_loan", {"to": "agent_2", "amount": 100})
+    loan = list(infra.loans.loans.values())[0]
+    dispatch(infra, "agent_2", "accept_loan", {"loan_id": loan.lid})
+    infra.ledger.burn("agent_1", infra.ledger.balance("agent_1"))  # agent_1 = 0
+    out = dispatch(infra, "agent_1", "repay_loan", {"loan_id": loan.lid, "amount": 100})
+    assert out.startswith("ERROR")
+    assert loan.status == "active"  # loan unchanged
+
+
 def test_scheduler_logs_interest_events_and_conserves(tmp_path):
     cfg = ExperimentConfig(level=LEVELS["L0"], seed=1, seed_capital_total=1000, max_rounds=3)
     qs = [Question("q0001", "capital of France?", ["Paris"], "easy", 100)]

@@ -106,7 +106,7 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
                 lines.append(f"- {l.lid} [proposal awaiting your acceptance as lender] "
                              f"{l.borrower} requests {l.principal} tokens")
             elif l.borrower == agent_id:
-                interest = max(1, round(l.principal * infra.loans.rate))
+                interest = infra.loans.interest_of(l)
                 lines.append(f"- {l.lid} [you owe {l.lender}] principal {l.principal} tokens "
                              f"(~{interest} interest next round)")
             else:

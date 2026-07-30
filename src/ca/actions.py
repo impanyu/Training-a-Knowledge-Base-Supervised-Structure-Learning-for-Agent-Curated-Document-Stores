@@ -203,7 +203,7 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
 def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
     try:
         return _HANDLERS[name](infra, agent_id, inp)
-    except (BoardError, ContractError, LoanError, KeyError, ValueError, IndexError) as e:
+    except (BoardError, ContractError, LoanError, InsufficientFunds, KeyError, ValueError, IndexError) as e:
         return f"ERROR: {e}"
 
 
