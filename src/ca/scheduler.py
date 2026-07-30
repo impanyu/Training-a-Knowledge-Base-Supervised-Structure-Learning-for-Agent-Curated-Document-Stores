@@ -36,6 +36,8 @@ class Scheduler:
                 if self.cfg.level.has_hub and self.cfg.hub_turns_per_round > 1:
                     iface = next(a for a in self.agents if a.id == "hub")
                     order += [iface] * (self.cfg.hub_turns_per_round - 1)
+                if len(self.agents) == 1 and self.cfg.solo_turns_per_round > 1:
+                    order += [self.agents[0]] * (self.cfg.solo_turns_per_round - 1)
                 self.rng.shuffle(order)
                 for agent in order:
                     event = agent.take_turn()

@@ -367,6 +367,15 @@ def test_hub_turns_per_round_knob(tmp_path):
     assert sum(1 for e in round1 if e["agent"] == "agent_1") == 1
 
 
+def test_solo_turns_per_round_knob(tmp_path):
+    infra, sched = build("C7", {}, tmp_path, solo_turns_per_round=8)
+    sched.cfg.max_rounds = 2
+    summary = sched.run()
+    round1 = [e for e in _trace(tmp_path) if e["round"] == 1]
+    assert sum(1 for e in round1 if e["agent"] == "agent_1") == 8
+    assert summary["rounds_used"] == 2
+
+
 def test_run_terminates_when_all_bankrupt(tmp_path):
     infra, sched = build("C7", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
     infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it

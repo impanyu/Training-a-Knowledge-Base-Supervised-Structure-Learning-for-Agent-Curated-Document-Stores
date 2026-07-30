@@ -67,6 +67,8 @@ def main() -> None:
     ap.add_argument("--max-rounds", type=int, default=60)
     ap.add_argument("--turns", type=int, default=None,
                     help="total agent-turn budget; overrides --max-rounds with turns//n_agents")
+    ap.add_argument("--solo-turns", type=int, default=1,
+                    help="solo-agent turns per round at C7 (8 = compute parity with 8-agent configs)")
     ap.add_argument("--model", default="claude-haiku-4-5")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -75,10 +77,12 @@ def main() -> None:
     level = CONFIGS[args.level]
     cfg = ExperimentConfig(level=level, seed=args.seed,
                            seed_capital_total=args.capital,
-                           max_rounds=args.max_rounds, model=args.model)
+                           max_rounds=args.max_rounds, model=args.model,
+                           solo_turns_per_round=args.solo_turns)
     if args.turns is not None:
         slots_per_round = len(agent_ids(level)) + (
-            cfg.hub_turns_per_round - 1 if level.has_hub else 0)
+            cfg.hub_turns_per_round - 1 if level.has_hub else 0) + (
+            cfg.solo_turns_per_round - 1 if level.n_agents == 1 else 0)
         cfg.max_rounds = max(1, args.turns // slots_per_round)
     library = load_library(args.library)
     infra = Infra(cfg, library, load_posted(library, args.posted),
