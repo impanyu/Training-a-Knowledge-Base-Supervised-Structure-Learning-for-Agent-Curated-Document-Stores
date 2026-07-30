@@ -227,3 +227,18 @@ class TaskLibrary:
 
     def sentence(self, nid: str) -> str:
         return self.get(nid).sentence
+
+    def base_subtask(self, task_nid: str, qid: str) -> str:
+        """The level-1 grouping key for a leaf delivered under `task_nid`
+        (used by metrics.specialization): the immediate child of task_nid
+        that contains qid in its subtree, or qid itself when the leaf hangs
+        directly off task_nid with no wrapping subtask node. Relative to the
+        task it was delivered under, so a leaf shared by two posted tasks
+        (e.g. a bare leaf under both) buckets independently per delivery."""
+        node = self.get(task_nid)
+        if qid in node.children:
+            return qid
+        for child in node.children:
+            if child in self.nodes and qid in self.leaves(child):
+                return child
+        raise UnknownNodeError(f"{qid} is not a leaf of {task_nid}")

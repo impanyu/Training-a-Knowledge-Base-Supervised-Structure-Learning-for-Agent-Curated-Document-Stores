@@ -180,6 +180,17 @@ def test_interest_tick_pays_when_solvent():
     assert led.conservation_ok()
 
 
+def test_interest_tick_accumulates_total_interest_paid_only_when_paid():
+    led, ls = setup({"lender": 1000, "borrower": 1000})
+    loan = ls.propose("borrower", "lender", 500)
+    ls.accept("lender", loan.lid)  # borrower=1500, lender=500
+    ls.interest_tick()  # interest=5, paid
+    assert ls.total_interest_paid == 5
+    led.burn("borrower", ls.ledger.balance("borrower") - 3)  # leave 3, less than next interest
+    ls.interest_tick()  # capitalized this time, not paid
+    assert ls.total_interest_paid == 5  # unchanged: capitalization is not a payment
+
+
 def test_interest_tick_capitalizes_when_borrower_broke():
     led, ls = setup({"lender": 1000, "borrower": 1000})
     loan = ls.propose("borrower", "lender", 500)

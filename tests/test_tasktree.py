@@ -162,6 +162,31 @@ def test_depth_on_valid_deep_chain():
     assert lib.depth("t0001") == 4
 
 
+def test_base_subtask_returns_wrapping_subtask_node():
+    lib = demo_library()
+    assert lib.base_subtask("t0001", "q0001") == "t0002"
+    assert lib.base_subtask("t0001", "q0002") == "t0002"
+
+
+def test_base_subtask_returns_leaf_itself_when_directly_attached():
+    lib = demo_library()
+    # q0003 hangs directly off t0001, with no wrapping subtask node
+    assert lib.base_subtask("t0001", "q0003") == "q0003"
+
+
+def test_base_subtask_is_relative_to_the_task_it_was_delivered_under():
+    lib = demo_library()
+    # q0003 is shared: under t0001 it's a bare leaf, under t0004 also a bare leaf
+    assert lib.base_subtask("t0004", "q0003") == "q0003"
+    assert lib.base_subtask("t0004", "q0004") == "q0004"
+
+
+def test_base_subtask_rejects_leaf_not_under_task():
+    lib = demo_library()
+    with pytest.raises(UnknownNodeError):
+        lib.base_subtask("t0002", "q0005")
+
+
 def test_resolve_exact_matches_id_or_exact_sentence_only():
     lib = demo_library()
     assert lib.resolve_exact("t0002").nid == "t0002"

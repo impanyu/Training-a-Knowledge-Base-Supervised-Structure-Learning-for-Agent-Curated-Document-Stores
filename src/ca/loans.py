@@ -23,6 +23,7 @@ class LoanSystem:
         self.rate = rate
         self.loans: dict[str, Loan] = {}
         self._n = 0
+        self.total_interest_paid = 0  # accumulates actual transfers, not capitalizations
 
     def _next_id(self) -> str:
         self._n += 1
@@ -114,6 +115,7 @@ class LoanSystem:
             paid = self.ledger.balance(loan.borrower) >= interest
             if paid:
                 self.ledger.transfer(loan.borrower, loan.lender, interest)
+                self.total_interest_paid += interest
             else:
                 loan.principal += interest
             events.append({

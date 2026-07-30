@@ -99,6 +99,25 @@ def test_packaged_multi_leaf_task_flow_L0(tmp_path):
     assert summary["conservation_ok"] is True
     assert [l["payout"] for l in summary["tasks"][0]["leaves"]] == [100, 200, 300]
 
+    # T22: deliveries carries the leaf->agent attribution metrics.specialization needs
+    assert len(summary["deliveries"]) == 1
+    delivery = summary["deliveries"][0]
+    assert delivery["task"] == "t0001" and delivery["agent"] == "agent_1"
+    assert delivery["total_payout"] == 600 and delivery["n_leaves"] == 3
+    assert {l["qid"] for l in delivery["per_leaf"]} == {"q0001", "q0002", "q0003"}
+    # no loans were taken out in this run, so the credit block is all zeros
+    assert summary["loans"] == {
+        "n_proposed": 0, "n_active": 0, "n_repaid": 0,
+        "total_principal_outstanding": 0, "total_interest_paid": 0,
+        "debtors": {}, "bankrupt_with_debt": [],
+    }
+    # specialization requires the library, so it's opt-in via compute_metrics(library=)
+    # agent_1's 3 leaves split 2 (t0002: q0001,q0002) / 1 (bare leaf q0003 under t0001)
+    m = compute_metrics(summary, library=demo_library())
+    assert m["specialization"]["agent_1"] == pytest.approx((2 / 3) ** 2 + (1 / 3) ** 2)
+    assert m["task_completion_rate"] == pytest.approx(1.0)
+    assert m["n_loans"] == 0 and m["bad_debt"] == 0
+
 
 def test_subcontract_flow_L1(tmp_path):
     # interface claims, subcontracts to agent_1, agent_1 delivers, interface packages

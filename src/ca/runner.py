@@ -87,7 +87,7 @@ def main() -> None:
               for a in infra.agent_ids]
     sched = Scheduler(infra, agents, cfg, Recorder(args.out), random.Random(args.seed))
     summary = sched.run()
-    metrics = compute_metrics(summary)
+    metrics = compute_metrics(summary, library=library)
     print(json.dumps(metrics, indent=2))
     with open(f"{args.out}/metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
