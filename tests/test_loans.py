@@ -5,7 +5,7 @@ import pytest
 
 from ca.actions import dispatch
 from ca.agent import Agent, ScriptedPolicy
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
 from ca.loans import LoanError, LoanSystem
 from ca.economy import Ledger
@@ -23,8 +23,8 @@ def setup(bal=None):
     return led, LoanSystem(led, rate=0.01)
 
 
-def make_infra(level="L0", capital=1000):
-    cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=capital)
+def make_infra(level="C0", capital=1000):
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=0, seed_capital_total=capital)
     return Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
 
 
@@ -304,7 +304,7 @@ def test_repay_broke_borrower_returns_error_via_dispatch():
 
 
 def test_scheduler_logs_interest_events_and_conserves(tmp_path):
-    cfg = ExperimentConfig(level=LEVELS["L0"], seed=1, seed_capital_total=1000, max_rounds=3)
+    cfg = ExperimentConfig(level=CONFIGS["C0"], seed=1, seed_capital_total=1000, max_rounds=3)
     infra = Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
     scripts = {
         "agent_1": [("propose_loan", {"to": "agent_2", "amount": 100})],

@@ -189,8 +189,6 @@ def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
             continue  # solo agent: never bill it for schemas it can never use
         if level.world_access == "interface" and not is_iface and name in _WORLD_ACTIONS:
             continue
-        if level.retrieve_access == "interface" and not is_iface and name == "retrieve":
-            continue
         if name == "counter_offer" and level.central_pricing:
             continue  # bargaining disabled for everyone
         if name == "set_price" and not (level.central_pricing and is_iface):
@@ -211,8 +209,8 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
         name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")))
     if world_call and level.world_access == "interface" and not is_iface:
         return "only the interface agent may interact with the task board"
-    if name == "retrieve" and level.retrieve_access == "interface" and not is_iface:
-        return "only the interface agent may retrieve external information"
+    # retrieval is infrastructure: every agent may query the corpus at every
+    # configuration (info centralization was deleted in v3).
     # credit centralization: the interface is the sole lender
     if level.central_credit and name == "propose_loan":
         if is_iface:

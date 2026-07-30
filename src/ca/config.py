@@ -1,5 +1,17 @@
-"""Centralization levels L0-L6. Levels differ ONLY through these fields."""
-from dataclasses import dataclass, field
+"""Centralization configurations C0-C7 (v3: single-factor design).
+
+Configs are NOT cumulative. C0 is the fully decentralized baseline and every
+other multi-agent config flips EXACTLY ONE mechanism relative to it, so any
+measured effect attributes cleanly to that one mechanism. The flags are
+independent booleans, so arbitrary combinations remain mechanically possible
+for follow-up experiments -- the C0-C7 table just does not use them.
+
+C7 is the solo baseline (one agent, no collaboration at all).
+
+Info centralization was deleted in v3: `retrieve` reads a shared corpus that is
+infrastructure, so there is nothing for an agent-level monopoly to add.
+"""
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -7,21 +19,25 @@ class LevelConfig:
     level: str
     n_agents: int
     has_interface: bool
-    world_access: str        # "all" | "interface"  (list/claim/deliver to WORLD)
-    retrieve_access: str     # "all" | "interface"
-    central_pricing: bool    # interface sets ALL contract prices; bargaining disabled
-    central_credit: bool     # interface is the sole lender; loans must route through it
-    star_comms: bool         # non-interface agents may only interact with interface
+    world_access: str = "all"          # "all" | "interface" (list/claim/deliver to WORLD)
+    central_pricing: bool = False      # interface sets ALL contract prices; bargaining off
+    central_credit: bool = False       # interface is the sole lender
+    star_comms: bool = False           # non-interface agents may only reach the interface
+    shared_solution_memory: bool = False  # one solution KV store for everyone (T26)
+    collective_goal: bool = False      # root goal = TOTAL system balance, not one's own
 
 
-LEVELS: dict[str, LevelConfig] = {
-    "L0": LevelConfig("L0", 8, False, "all", "all", False, False, False),
-    "L1": LevelConfig("L1", 8, True, "interface", "all", False, False, False),
-    "L2": LevelConfig("L2", 8, True, "interface", "interface", False, False, False),
-    "L3": LevelConfig("L3", 8, True, "interface", "interface", True, False, False),
-    "L4": LevelConfig("L4", 8, True, "interface", "interface", True, True, False),
-    "L5": LevelConfig("L5", 8, True, "interface", "interface", True, True, True),
-    "L6": LevelConfig("L6", 1, False, "all", "all", False, False, False),
+CONFIGS: dict[str, LevelConfig] = {
+    # demand, pricing, credit and comms centralization each need a hub agent to
+    # hold the power; shared memory and the collective goal do not.
+    "C0": LevelConfig("C0", 8, False),
+    "C1": LevelConfig("C1", 8, True, world_access="interface"),
+    "C2": LevelConfig("C2", 8, False, shared_solution_memory=True),
+    "C3": LevelConfig("C3", 8, True, central_pricing=True),
+    "C4": LevelConfig("C4", 8, True, central_credit=True),
+    "C5": LevelConfig("C5", 8, True, star_comms=True),
+    "C6": LevelConfig("C6", 8, False, collective_goal=True),
+    "C7": LevelConfig("C7", 1, False),
 }
 
 

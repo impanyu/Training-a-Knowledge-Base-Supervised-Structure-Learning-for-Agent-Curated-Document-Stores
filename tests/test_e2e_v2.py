@@ -1,6 +1,6 @@
 """v2 end-to-end scripted flows (T23): hierarchy + node-bound subcontracts,
 loan lifecycle through bankruptcy/rescue/interest/repay, credit-centralization
-gating at L4/L5, and the one-attempt + coverage guards enforced by the
+gating at C4 and star-topology gating at C5, and the one-attempt + coverage guards enforced by the
 scheduler. Deterministic, no LLM -- see test_e2e_scripted.py for the v1/T20-21
 flows this file extends (kept untouched)."""
 import json
@@ -10,7 +10,7 @@ import pytest
 from fixtures import demo_library
 
 from ca.agent import Agent, ScriptedPolicy
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
 from ca.metrics import compute_metrics
 from ca.recorder import Recorder
@@ -32,7 +32,7 @@ def flat_library(n_tasks: int) -> TaskLibrary:
 
 def build(level, scripts, tmp_path, n_tasks=1, library=None, posted=None,
           seed_capital_total=1000, in_tokens=10, out_tokens=5, max_rounds=10, **cfg_kw):
-    cfg = ExperimentConfig(level=LEVELS[level], seed=7, seed_capital_total=seed_capital_total,
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=7, seed_capital_total=seed_capital_total,
                            max_rounds=max_rounds, **cfg_kw)
     lib = library or flat_library(n_tasks)
     infra = Infra(cfg, lib, posted or list(lib.nodes), retriever=KeywordBackend(DOCS))
@@ -50,7 +50,7 @@ def _results(trace, agent, action):
     return [e["result"] for e in trace if e["agent"] == agent and e["action"] == action]
 
 
-def test_full_hierarchy_subcontract_flow_L0(tmp_path):
+def test_full_hierarchy_subcontract_flow_C0(tmp_path):
     """t0001 -> t0002(q0001,q0002) + q0003. agent_1 claims the root, decomposes
     it, subcontracts the whole t0002 subtree to agent_2 by its exact one-
     sentence summary (node-bound, coverage-checked), agent_2 delivers, agent_1
@@ -79,7 +79,7 @@ def test_full_hierarchy_subcontract_flow_L0(tmp_path):
                               "content": json.dumps({"q0001": "Paris", "q0002": "Loire"})}),
         ],
     }
-    infra, sched = build("L0", scripts, tmp_path, library=demo_library(), posted=["t0001"],
+    infra, sched = build("C0", scripts, tmp_path, library=demo_library(), posted=["t0001"],
                          seed_capital_total=8000, max_rounds=8)
     summary = sched.run()
     trace = _trace(tmp_path)
@@ -125,7 +125,7 @@ def test_full_hierarchy_subcontract_flow_L0(tmp_path):
     assert m["task_completion_rate"] == pytest.approx(1.0)
 
 
-def test_loan_rescue_after_bankruptcy_L0(tmp_path):
+def test_loan_rescue_after_bankruptcy_C0(tmp_path):
     """agent_1 is driven into bankruptcy (solving frozen -- retrieve errors),
     borrows from agent_2 to climb back to a positive balance (retrieve works
     again), interest ticks (paid, then capitalized once agent_1 sinks again),
@@ -145,7 +145,7 @@ def test_loan_rescue_after_bankruptcy_L0(tmp_path):
             ("accept_loan", {"loan_id": "n0001"}),
         ],
     }
-    infra, sched = build("L0", scripts, tmp_path, max_rounds=6)
+    infra, sched = build("C0", scripts, tmp_path, max_rounds=6)
     infra.ledger.burn("agent_1", 130)   # 125 seed - 130 = -5: bankrupt before round 1
     summary = sched.run()
     trace = _trace(tmp_path)
@@ -182,8 +182,8 @@ def test_loan_rescue_after_bankruptcy_L0(tmp_path):
     assert summary["conservation_ok"] is True
 
 
-def test_credit_centralization_L4(tmp_path):
-    """L4: the interface is the sole lender. A worker cannot borrow from a
+def test_credit_centralization_C4(tmp_path):
+    """C4: the interface is the sole lender. A worker cannot borrow from a
     peer, can borrow from the interface, and the interface itself cannot
     borrow (nobody to be the sole lender to it)."""
     scripts = {
@@ -200,7 +200,7 @@ def test_credit_centralization_L4(tmp_path):
             ("propose_loan", {"to": "agent_1", "amount": 10}),     # r4: ERROR, sole lender
         ],
     }
-    infra, sched = build("L4", scripts, tmp_path, max_rounds=4)
+    infra, sched = build("C4", scripts, tmp_path, max_rounds=4)
     summary = sched.run()
     trace = _trace(tmp_path)
 
@@ -225,11 +225,12 @@ def test_credit_centralization_L4(tmp_path):
     assert summary["conservation_ok"] is True
 
 
-def test_star_L5_loans_only_via_interface(tmp_path):
-    """L5 (star comms) layers on top of L4's credit centralization: a worker
-    still cannot borrow from a peer, and additionally cannot even PAY a peer
-    directly (the star-comms restriction, which L4 does not impose) -- both
-    still work when the counterparty is the interface."""
+def test_star_C5_loans_only_via_interface(tmp_path):
+    """C5 flips comms topology ONLY: lending rights are untouched, but the
+    star restricts every counterparty to the hub, so a worker can neither
+    borrow from nor PAY a peer -- and both work against the interface. (C4
+    reaches the same loan outcome by a different mechanism: a right, not a
+    topology, which is why the two configs are separable.)"""
     scripts = {
         "agent_1": [
             ("propose_loan", {"to": "agent_2", "amount": 50}),   # r1: ERROR (credit-central)
@@ -246,7 +247,7 @@ def test_star_L5_loans_only_via_interface(tmp_path):
             ("accept_loan", {"loan_id": "n0001"}),
         ],
     }
-    infra, sched = build("L5", scripts, tmp_path, max_rounds=5)
+    infra, sched = build("C5", scripts, tmp_path, max_rounds=5)
     summary = sched.run()
     trace = _trace(tmp_path)
 
@@ -284,7 +285,7 @@ def test_one_attempt_and_coverage_guard_e2e(tmp_path):
                                                      "q0002": "Loire River"})}),
         ],
     }
-    infra, sched = build("L0", scripts, tmp_path, library=demo_library(), posted=["t0002"])
+    infra, sched = build("C0", scripts, tmp_path, library=demo_library(), posted=["t0002"])
     summary = sched.run()
     trace = _trace(tmp_path)
 

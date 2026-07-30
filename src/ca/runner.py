@@ -4,7 +4,7 @@ import json
 import random
 
 from ca.agent import Agent
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
 from ca.metrics import compute_metrics
 from ca.providers import make_policy
@@ -55,7 +55,7 @@ def load_posted(library: TaskLibrary, path: str | None = None) -> list[str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--level", required=True, choices=list(LEVELS))
+    ap.add_argument("--level", required=True, choices=list(CONFIGS))
     ap.add_argument("--library", required=True,
                     help="library.json (task tree + question pool); a bare pool.jsonl is also accepted and wrapped into one single-leaf task per question")
     ap.add_argument("--posted", default=None,
@@ -72,7 +72,7 @@ def main() -> None:
     args = ap.parse_args()
 
     from ca.config import agent_ids
-    level = LEVELS[args.level]
+    level = CONFIGS[args.level]
     cfg = ExperimentConfig(level=level, seed=args.seed,
                            seed_capital_total=args.capital,
                            max_rounds=args.max_rounds, model=args.model)

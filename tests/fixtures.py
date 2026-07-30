@@ -16,7 +16,7 @@
 t0005 exists mainly so that fuzzy resolution has a near-twin of t0001 to be
 ambiguous against.
 """
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.taskboard import Question
 from ca.tasktree import TaskLibrary, TaskNode
 
@@ -45,11 +45,11 @@ def demo_posted() -> list[str]:
     return ["t0001", "t0004"]
 
 
-def demo_infra(level: str = "L0", capital: int = 1000, retriever=None,
+def demo_infra(level: str = "C0", capital: int = 1000, retriever=None,
                library: TaskLibrary | None = None, posted: list[str] | None = None,
                **cfg_kw):
     from ca.infra import Infra
-    cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=capital,
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=0, seed_capital_total=capital,
                            **cfg_kw)
     return Infra(cfg, library or demo_library(),
                  demo_posted() if posted is None else posted, retriever=retriever)

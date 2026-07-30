@@ -2,13 +2,13 @@ import ca.agent as agent_mod
 from fixtures import demo_infra
 
 from ca.agent import Agent, ScriptedPolicy, Decision, LLMPolicy
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.retrieval import KeywordBackend
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
 
 
-def make(level="L0"):
+def make(level="C0"):
     infra = demo_infra(level, capital=1000, retriever=KeywordBackend(DOCS))
     return infra.cfg, infra
 
@@ -36,7 +36,7 @@ def test_billing_on_solving_turn():
 
 def test_permission_denied_still_bills_every_turn():
     # T17: EVERY turn bills its tokens now, even a denied (ERROR) one.
-    cfg, infra = make("L1")
+    cfg, infra = make("C1")
     ag = Agent("agent_1", cfg, infra,
                ScriptedPolicy([("claim_task", {"task": "t0001"})],
                               in_tokens=10, out_tokens=5))
@@ -73,6 +73,17 @@ def test_goal_actions_update_local_stack():
     assert "solve t0001" in ag.goals.render()
     ag.take_turn()
     assert "solve t0001" not in ag.goals.render()
+
+
+def test_root_goal_is_private_by_default_and_global_at_c6():
+    cfg, infra = make()
+    root = Agent("agent_1", cfg, infra, ScriptedPolicy([])).goals.render()
+    assert "[0] maximize token balance (root, permanent)" in root
+    assert "GLOBAL" not in root
+
+    cfg6, infra6 = make("C6")
+    root6 = Agent("agent_1", cfg6, infra6, ScriptedPolicy([])).goals.render()
+    assert "[0] maximize GLOBAL token balance (root, permanent)" in root6
 
 
 def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):

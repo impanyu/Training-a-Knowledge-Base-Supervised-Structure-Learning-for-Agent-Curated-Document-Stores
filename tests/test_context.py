@@ -1,17 +1,17 @@
 from fixtures import demo_infra
 
 from ca.actions import dispatch
-from ca.config import LEVELS
+from ca.config import CONFIGS
 from ca.context import render_turn, system_prompt
 from ca.memory import FifoMemory, GoalStack
 
 
-def make(level="L1"):
+def make(level="C1"):
     return demo_infra(level, capital=800)
 
 
 def test_system_prompt_mentions_identity_goal_and_rules():
-    infra = make("L5")
+    infra = make("C5")
     sp = system_prompt(infra.cfg.level, "agent_1", infra.agent_ids)
     assert "agent_1" in sp
     assert "maximize" in sp.lower()
@@ -21,22 +21,67 @@ def test_system_prompt_mentions_identity_goal_and_rules():
 
 
 def test_system_prompt_explains_packaged_task_delivery():
-    sp = system_prompt(LEVELS["L0"], "agent_1", ["agent_1", "agent_2"])
+    sp = system_prompt(CONFIGS["C0"], "agent_1", ["agent_1", "agent_2"])
     assert "task" in sp.lower() and "json" in sp.lower()
 
 
 def test_credit_rule_text_at_central_credit_level():
     ids = ["interface", "agent_1"]
-    sp = system_prompt(LEVELS["L4"], "agent_1", ids)
+    sp = system_prompt(CONFIGS["C4"], "agent_1", ids)
     assert "only borrow from the interface agent" in sp.lower()
-    sp_i = system_prompt(LEVELS["L4"], "interface", ids)
+    sp_i = system_prompt(CONFIGS["C4"], "interface", ids)
     assert "sole lender" in sp_i.lower()
-    sp_l3 = system_prompt(LEVELS["L3"], "agent_1", ids)
+    sp_l3 = system_prompt(CONFIGS["C3"], "agent_1", ids)
     assert "only borrow from the interface agent" not in sp_l3.lower()
 
 
+def test_world_monopoly_text_only_under_demand_centralization():
+    """Cumulative-era wording leak check: only C1 may tell anyone that the
+    interface alone can take tasks and deliver to the WORLD."""
+    ids = ["interface", "agent_1"]
+    monopoly = "only agent allowed to take tasks"
+    rule = "Only the interface agent can list/claim tasks"
+    assert monopoly in system_prompt(CONFIGS["C1"], "interface", ids)
+    assert rule in system_prompt(CONFIGS["C1"], "agent_1", ids)
+    for name in ("C3", "C4", "C5"):
+        for who in ids:
+            sp = system_prompt(CONFIGS[name], who, ids)
+            assert monopoly not in sp and rule not in sp, (name, who)
+
+
+def test_collective_goal_rewrites_the_root_goal_at_c6():
+    ids = ["agent_1", "agent_2"]
+    sp = system_prompt(CONFIGS["C6"], "agent_1", ids)
+    assert "maximize the TOTAL token balance of the ENTIRE SYSTEM" in sp
+    assert "Your own balance only matters as part of the whole" in sp
+    assert "only WORLD income (adds) and token burn (subtracts) move it" in sp
+    assert "Avoid duplicated work across agents" in sp
+    assert "maximize your token balance" not in sp
+    assert "### Collective mode" in sp          # the handbook block rides along
+
+
+def test_non_collective_configs_keep_the_private_root_goal():
+    for name in CONFIGS:
+        if name == "C6":
+            continue
+        sp = system_prompt(CONFIGS[name], "agent_1", ["agent_1", "agent_2"])
+        assert "YOUR PERMANENT ROOT GOAL: maximize your token balance." in sp, name
+        assert "ENTIRE SYSTEM" not in sp, name
+
+
+def test_render_turn_shows_global_and_own_balance_at_c6():
+    infra = make("C6")
+    infra.ledger.burn("agent_1", 25)
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    total = sum(infra.ledger.balance(a) for a in infra.agent_ids)
+    assert f"Global balance: {total} tokens | Your balance: 75 tokens" in out
+    # every other config shows the private balance only
+    out0 = render_turn(make("C0"), "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "Balance: 100 tokens" in out0 and "Global balance" not in out0
+
+
 def test_render_turn_contains_state():
-    infra = make("L0")
+    infra = make("C0")
     infra.chat.send("agent_2", "agent_1", "hello there", 1)
     infra.contracts.propose("agent_2", "agent_1", "subtask", 20)
     fifo, goals = FifoMemory(3), GoalStack("maximize token balance")
@@ -52,7 +97,7 @@ def test_render_turn_contains_state():
 
 
 def test_render_turn_shows_active_task_claims_with_ttl_and_progress():
-    infra = make("L0")
+    infra = make("C0")
     infra.round = 2
     dispatch(infra, "agent_1", "claim_task", {"task": "t0001"})
     infra.round = 3
@@ -68,7 +113,7 @@ def test_render_turn_shows_active_task_claims_with_ttl_and_progress():
 
 
 def test_render_turn_claim_progress_before_any_notes():
-    infra = make("L0")
+    infra = make("C0")
     dispatch(infra, "agent_1", "claim_task", {"task": "t0004"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     assert "0/2" in out and "decompose" in out
@@ -78,7 +123,7 @@ def test_render_turn_claim_progress_before_any_notes():
 def test_render_turn_progress_hint_counts_notes_filed_under_the_task_id_too():
     """Notes filed under the claimed task's own nid (rather than a specific
     leaf qid) should not be reported as zero progress."""
-    infra = make("L0")
+    infra = make("C0")
     dispatch(infra, "agent_1", "claim_task", {"task": "t0004"})
     dispatch(infra, "agent_1", "work_on",
              {"task_id": "t0004", "thought": "general notes before decomposing"})
@@ -88,7 +133,7 @@ def test_render_turn_progress_hint_counts_notes_filed_under_the_task_id_too():
 
 
 def test_render_turn_shows_scratchpad_written_by_work_on():
-    infra = make("L0")
+    infra = make("C0")
     dispatch(infra, "agent_1", "work_on",
              {"task_id": "q0001", "thought": "the author is Y, need Y birthplace"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
@@ -99,7 +144,7 @@ def test_render_turn_shows_scratchpad_written_by_work_on():
 
 
 def test_render_turn_scratchpad_keeps_last_five_thoughts():
-    infra = make("L0")
+    infra = make("C0")
     for i in range(7):
         infra.scratchpads["agent_1"]["q0001"].append(f"<thought{i}>")
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
@@ -108,7 +153,7 @@ def test_render_turn_scratchpad_keeps_last_five_thoughts():
 
 
 def test_render_turn_shows_all_unread_messages():
-    infra = make("L0")
+    infra = make("C0")
     for i in range(15):
         infra.chat.send("agent_2", "agent_1", f"<msg{i}>", 1)
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
@@ -118,16 +163,16 @@ def test_render_turn_shows_all_unread_messages():
 
 def test_negotiation_hint_only_where_prices_are_negotiable():
     ids = ["interface", "agent_1"]
-    sp0 = system_prompt(LEVELS["L0"], "agent_1", ids)
+    sp0 = system_prompt(CONFIGS["C0"], "agent_1", ids)
     assert "Prices are freely negotiable." in sp0
     assert "negotiate prices" not in sp0
     assert "fully decentralized" in sp0
-    assert "Prices are freely negotiable." not in system_prompt(LEVELS["L3"], "agent_1", ids)
-    assert "Prices are freely negotiable." not in system_prompt(LEVELS["L6"], "agent_1", ["agent_1"])
+    assert "Prices are freely negotiable." not in system_prompt(CONFIGS["C3"], "agent_1", ids)
+    assert "Prices are freely negotiable." not in system_prompt(CONFIGS["C7"], "agent_1", ["agent_1"])
 
 
 def test_repetition_warning_after_three_identical_actions():
-    infra = make("L0")
+    infra = make("C0")
     fifo, goals = FifoMemory(6), GoalStack("maximize token balance")
     for _ in range(3):
         fifo.add("list_tasks({})", "same result")

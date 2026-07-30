@@ -5,7 +5,7 @@ import pytest
 from fixtures import demo_library, demo_posted
 
 from ca.agent import Agent, ScriptedPolicy
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
 from ca.metrics import compute_metrics
 from ca.recorder import Recorder
@@ -29,7 +29,7 @@ def flat_library(n_tasks: int) -> TaskLibrary:
 
 
 def build(level, scripts, tmp_path, n_tasks=1, library=None, posted=None, **cfg_kw):
-    cfg = ExperimentConfig(level=LEVELS[level], seed=7, seed_capital_total=1000,
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=7, seed_capital_total=1000,
                            max_rounds=10, **cfg_kw)
     lib = library or flat_library(n_tasks)
     infra = Infra(cfg, lib, posted or list(lib.nodes), retriever=KeywordBackend(DOCS))
@@ -46,14 +46,14 @@ def _results(trace, agent, action):
     return [e["result"] for e in trace if e["agent"] == agent and e["action"] == action]
 
 
-def test_solo_answer_flow_L6(tmp_path):
+def test_solo_answer_flow_C7(tmp_path):
     scripts = {"agent_1": [
         ("list_tasks", {}),
         ("claim_task", {"task": "t0001"}),
         ("retrieve", {"query": "capital of France"}),
         ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),
     ]}
-    infra, sched = build("L6", scripts, tmp_path)
+    infra, sched = build("C7", scripts, tmp_path)
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
     assert summary["tasks"][0]["status"] == "closed" and summary["tasks"][0]["payout"] == 100
@@ -69,7 +69,7 @@ def test_solo_answer_flow_L6(tmp_path):
     assert m["coordination_overhead"] == pytest.approx(0.5)
 
 
-def test_packaged_multi_leaf_task_flow_L0(tmp_path):
+def test_packaged_multi_leaf_task_flow_C0(tmp_path):
     """Claim a real tree, decompose both levels, package every leaf at once."""
     scripts = {"agent_1": [
         ("list_tasks", {}),
@@ -83,7 +83,7 @@ def test_packaged_multi_leaf_task_flow_L0(tmp_path):
                           "content": json.dumps({"q0001": "Paris", "q0002": "Loire",
                                                  "q0003": "4"})}),
     ]}
-    infra, sched = build("L0", scripts, tmp_path,
+    infra, sched = build("C0", scripts, tmp_path,
                          library=demo_library(), posted=["t0001"])
     summary = sched.run()
     trace = _trace(tmp_path)
@@ -119,7 +119,7 @@ def test_packaged_multi_leaf_task_flow_L0(tmp_path):
     assert m["n_loans"] == 0 and m["bad_debt"] == 0
 
 
-def test_subcontract_flow_L1(tmp_path):
+def test_subcontract_flow_C1(tmp_path):
     # interface claims, subcontracts to agent_1, agent_1 delivers, interface packages
     scripts = {
         "interface": [
@@ -137,7 +137,7 @@ def test_subcontract_flow_L1(tmp_path):
             ("deliver_work", {"target_id": "c0001", "content": "The answer is Paris"}),
         ],
     }
-    infra, sched = build("L1", scripts, tmp_path)
+    infra, sched = build("C1", scripts, tmp_path)
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
@@ -149,7 +149,7 @@ def test_subcontract_flow_L1(tmp_path):
     assert summary["balances"]["agent_1"] == 125 - 75 + 40
 
 
-def test_node_bound_subcontract_flow_L1(tmp_path):
+def test_node_bound_subcontract_flow_C1(tmp_path):
     """Interface hands a whole child subtree over by sentence; the contractor's
     JSON is merged into the interface's package."""
     scripts = {
@@ -172,7 +172,7 @@ def test_node_bound_subcontract_flow_L1(tmp_path):
                               "content": json.dumps({"q0001": "Paris", "q0002": "Loire"})}),
         ],
     }
-    infra, sched = build("L1", scripts, tmp_path, library=demo_library(), posted=["t0001"])
+    infra, sched = build("C1", scripts, tmp_path, library=demo_library(), posted=["t0001"])
     summary = sched.run()
     trace = _trace(tmp_path)
 
@@ -187,14 +187,14 @@ def test_node_bound_subcontract_flow_L1(tmp_path):
 
 
 def test_stops_at_max_rounds(tmp_path):
-    infra, sched = build("L6", {}, tmp_path)  # nobody answers
+    infra, sched = build("C7", {}, tmp_path)  # nobody answers
     summary = sched.run()
     assert summary["rounds_used"] == 10
     assert summary["questions"][0]["status"] != "closed"
     assert summary["tasks"][0]["status"] == "open"
 
 
-def test_central_pricing_flow_L3(tmp_path):
+def test_central_pricing_flow_C3(tmp_path):
     """Worker-to-worker contract priced by the interface, start to settlement.
     One action per round, so the seeded shuffle cannot reorder dependencies."""
     scripts = {
@@ -203,7 +203,7 @@ def test_central_pricing_flow_L3(tmp_path):
             ("check_balance", {}),                            # waits for interface pricing
             ("check_balance", {}),                            # waits for agent_2 to accept
             ("check_balance", {}),                            # waits for delivery
-            ("counter_offer", {"contract_id": "c0001", "price": 999}),  # banned at L3
+            ("counter_offer", {"contract_id": "c0001", "price": 999}),  # banned at C3
         ],
         "interface": [
             ("check_balance", {}),                            # waits for the proposal
@@ -216,7 +216,7 @@ def test_central_pricing_flow_L3(tmp_path):
             ("deliver_work", {"target_id": "c0001", "content": "Paris"}),
         ],
     }
-    infra, sched = build("L3", scripts, tmp_path)
+    infra, sched = build("C3", scripts, tmp_path)
     summary = sched.run()
 
     c = infra.contracts.get("c0001")
@@ -262,7 +262,7 @@ def test_adversarial_scripted(tmp_path):
             ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),  # deliver another's claim
         ],
     }
-    infra, sched = build("L0", scripts, tmp_path, n_tasks=2, claim_ttl=2)
+    infra, sched = build("C0", scripts, tmp_path, n_tasks=2, claim_ttl=2)
     summary = sched.run()
     trace = _trace(tmp_path)
 
@@ -289,17 +289,17 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
         def decide(self, system, context, tools):
             raise RuntimeError("policy exploded")
 
-    infra, sched = build("L6", {}, tmp_path)
+    infra, sched = build("C7", {}, tmp_path)
     sched.agents[0].policy = BoomPolicy()
     with pytest.raises(RuntimeError):
         sched.run()
     summary = json.loads((tmp_path / "summary.json").read_text())
-    assert summary["level"] == "L6"
+    assert summary["level"] == "C7"
     assert summary["conservation_ok"] is True
 
 
 def test_interface_turns_per_round_knob(tmp_path):
-    infra, sched = build("L1", {}, tmp_path, interface_turns_per_round=3)
+    infra, sched = build("C1", {}, tmp_path, interface_turns_per_round=3)
     sched.cfg.max_rounds = 1
     sched.run()
     round1 = [e for e in _trace(tmp_path) if e["round"] == 1]
@@ -308,7 +308,7 @@ def test_interface_turns_per_round_knob(tmp_path):
 
 
 def test_run_terminates_when_all_bankrupt(tmp_path):
-    infra, sched = build("L6", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
+    infra, sched = build("C7", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
     infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it
     summary = sched.run()
     assert summary["rounds_used"] <= 2

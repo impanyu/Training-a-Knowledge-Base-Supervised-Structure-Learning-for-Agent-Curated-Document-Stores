@@ -1,8 +1,13 @@
-"""Role handbooks with action-trajectory demos, assembled per level so a
-demo never shows an action the agent lacks at that level.
+"""Role handbooks with action-trajectory demos, assembled per configuration so
+a demo never shows an action the agent lacks there.
 
 v2: every demo is built around the task tree -- claim a task, decompose it
 level by level, then package ONE JSON map covering all of its leaves.
+
+v3: configurations are single-factor, so a demo may only assume the ONE
+mechanism that config centralizes. In particular the interface is not
+privileged in general -- at C3/C4/C5 it holds exactly one power and is an
+ordinary market participant in every other respect.
 """
 from ca.config import LevelConfig
 
@@ -29,41 +34,26 @@ into one leaf, and never let the whole package expire over one hard question.
 If your claim on a task EXPIRED, that is strong evidence it is too big for you:
 do NOT re-claim it, pick a smaller one."""
 
-_SOLO_ANSWER_NO_RETRIEVE = """
-### Demo: taking a task from the WORLD and answering it yourself
-1. list_tasks -> "[t0007] «identify the composers behind three operas» (3 questions, reward 6000)"
-2. claim_task(task="t0007")
-3. decompose(node="t0007") ... decompose each child until every leaf is visible
-4. work_on(task_id="q0033", thought="recall what I know about Salome ...")
-5. deliver_work(target_id="t0007",
-       content='{"q0031": "1911", "q0032": "1905", "q0033": "Richard Strauss"}')
-   -> one attempt, every leaf q-id required, paid = sum(price x F1)"""
-
 _CONTRACTOR = """
 ### Demo: earning tokens as a contractor
 - Unread message: "[contract offer c0007] task: date the two premieres | price: 300
   [bound to t0012: the deliverable must be a JSON map with full leaf coverage of t0012 (2 questions)]"
 - accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
 - decompose(node="t0012")                  # see exactly which questions you owe
-- do the work{how}, then:
+- do the work (retrieve / work_on), then:
 - deliver_work(target_id="c0007", content='{{"q0031": "1911", "q0032": "1905"}}')
   -> escrow released to you. A BOUND contract settles only when every leaf q-id
      of that node is present; answers are NOT machine-graded here, but cheaters
      lose future business. A free-text contract takes any text instead."""
 
-_BUY_INFO = """
-### Demo: buying external information (only the interface can search the corpus)
-- propose_contract(to="interface", task="look up: who composed Salome"{price_arg})
-- interface accepts+delivers -> the passages arrive in your chat."""
-
 _HIRE_PEER = """
 ### Demo: hiring another agent (you can be the payer, not only the worker)
 - decompose your claimed task, then hand a whole CHILD SUBTREE to a peer:
-- propose_contract(to="agent_5", task="date the two premieres"{price_arg})
-  -> naming a subtask's sentence BINDS the contract to that node, so agent_5
+- propose_contract(to="{peer}", task="date the two premieres"{price_arg})
+  -> naming a subtask's sentence BINDS the contract to that node, so {peer}
      must return a JSON map covering all of its leaves - not vague prose
-- agent_5 accepts -> your tokens move into escrow; keep taking your own turns
-- when agent_5 delivers, the JSON lands in your chat and escrow is released
+- {peer} accepts -> your tokens move into escrow; keep taking your own turns
+- when {peer} delivers, the JSON lands in your chat and escrow is released
 Delegating costs tokens but frees your turns: offer less than the subtree is
 worth to you, and check the deliverable before merging it into your package."""
 
@@ -85,9 +75,15 @@ _IFACE_PIPELINE = """
    -> WORLD pays sum(price x F1) in one settlement; ONE attempt per task
 Your profit = WORLD rewards - subcontract payments - your own token burn.
 Parallelize: keep several agents working on different subtrees at once, and
-watch the claim expiry countdown - an unpackaged task pays nothing.
-YOUR TURN IS THE SCARCEST RESOURCE IN THE SYSTEM: never spend it on greetings
-or per-worker small talk. Priority every turn:
+watch the claim expiry countdown - an unpackaged task pays nothing."""
+
+# Only true when the interface holds the demand monopoly (C1): there it is the
+# system's single income channel, so its turns are the scarcest resource. At
+# C3/C4/C5 every agent earns from the WORLD directly, so this must NOT appear.
+_IFACE_BOTTLENECK = """
+YOUR TURN IS THE SCARCEST RESOURCE IN THE SYSTEM: you are the only agent who
+can take tasks and be paid by the WORLD, so never spend a turn on greetings or
+per-worker small talk. Priority every turn:
 (1) package and deliver tasks whose leaves are all answered (the only income),
 (2) respond to pending contracts and collect deliverables,
 (3) claim new tasks, decompose them and subcontract the subtrees,
@@ -114,38 +110,43 @@ _IFACE_LENDER = """
 Every worker who runs low on tokens must borrow from you - keep an eye on loan
 requests and fund the ones worth funding."""
 
+_COLLECTIVE = """
+### Collective mode
+All agents share ONE goal: total system balance. Contract prices only
+redistribute - never haggle for margin; pay whatever coordinates work fastest.
+Never duplicate a task another agent is already solving (check chat / ask).
+Deliver everything you can - income is the only way the system grows."""
+
 
 def role_skill(level: LevelConfig, agent_id: str) -> str:
     is_iface = agent_id == "interface"
-    can_retrieve = level.retrieve_access == "all" or is_iface
     can_world = level.world_access == "all" or is_iface
     solo = level.n_agents == 1
     blocks: list[str] = []
     if is_iface:
-        blocks.append(_IFACE_PIPELINE)
+        # concatenated, not .format()ted: the demo body contains literal JSON braces
+        blocks.append(_IFACE_PIPELINE +
+                      (_IFACE_BOTTLENECK if level.world_access == "interface" else ""))
         if level.central_pricing:
             blocks.append(_IFACE_PRICING)
         if level.central_credit:
             blocks.append(_IFACE_LENDER)
     else:
         if can_world:
-            blocks.append(_SOLO_ANSWER if can_retrieve else _SOLO_ANSWER_NO_RETRIEVE)
+            blocks.append(_SOLO_ANSWER)
         if not solo:
             counter = ("\n- price too low? counter_offer(contract_id=\"c0007\", price=450)"
                        if not level.central_pricing else "")
-            how = (" (retrieve / work_on)" if can_retrieve
-                   else " (work_on with what you know, or buy info)")
-            blocks.append(_CONTRACTOR.format(counter_line=counter, how=how))
-            if not can_retrieve:
-                price_arg = "" if level.central_pricing else ", price=80"
-                blocks.append(_BUY_INFO.format(price_arg=price_arg))
-            elif not level.star_comms:
-                # workers who CAN retrieve never see _BUY_INFO, so without this
-                # they are only ever shown how to be hired, never how to hire
-                price_arg = "" if level.central_pricing else ", price=120"
-                blocks.append(_HIRE_PEER.format(price_arg=price_arg))
+            blocks.append(_CONTRACTOR.format(counter_line=counter))
+            # without this workers only ever see themselves as sellers. Under
+            # star comms the only counterparty they can hire is the hub.
+            peer = "interface" if level.star_comms else "agent_5"
+            price_arg = "" if level.central_pricing else ", price=120"
+            blocks.append(_HIRE_PEER.format(peer=peer, price_arg=price_arg))
             lender = "interface" if (level.central_credit or level.star_comms) else "agent_5"
             blocks.append(_BORROW.format(lender=lender))
+    if level.collective_goal:
+        blocks.append(_COLLECTIVE)
     if not blocks:
         return ""
     return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)

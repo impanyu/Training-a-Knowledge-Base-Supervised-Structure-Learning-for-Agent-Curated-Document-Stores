@@ -78,7 +78,8 @@ class Agent:
         self.infra = infra
         self.policy = policy
         self.fifo = FifoMemory(cfg.fifo_k)
-        self.goals = GoalStack("maximize token balance")
+        self.goals = GoalStack("maximize GLOBAL token balance"
+                               if cfg.level.collective_goal else "maximize token balance")
         self._system = system_prompt(cfg.level, agent_id, infra.agent_ids)
         self._tools = visible_tools(cfg.level, agent_id)
 
