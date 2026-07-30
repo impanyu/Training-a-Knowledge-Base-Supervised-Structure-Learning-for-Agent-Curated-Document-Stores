@@ -9,12 +9,11 @@ class Recorder:
         self.dir = Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self._f = open(self.dir / "trace.jsonl", "w")  # fresh trace per run
-        self._tokens = defaultdict(lambda: {"billable": 0, "free": 0})
+        self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
 
     def log(self, event: dict) -> None:
         spent = event["tokens_in"] + event["tokens_out"]
-        key = "billable" if event["billable"] else "free"
-        self._tokens[event["agent"]][key] += spent
+        self._tokens[event["agent"]][event["category"]] += spent
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
 

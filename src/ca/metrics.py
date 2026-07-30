@@ -18,17 +18,17 @@ def compute_metrics(summary: dict) -> dict:
     total_f1 = sum(q["score"] for q in qs)
     total_em = sum(q["em"] for q in qs)
     n_answered = sum(1 for q in qs if q["status"] == "closed")
-    billable = sum(t["billable"] for t in summary["tokens"].values())
-    free = sum(t["free"] for t in summary["tokens"].values())
-    all_tok = billable + free
+    solving = sum(t["solving"] for t in summary["tokens"].values())
+    admin = sum(t["admin"] for t in summary["tokens"].values())
+    all_tok = solving + admin
     prices = summary.get("contract_prices", [])
     return {
         "total_f1": total_f1,
         "total_em": total_em,
         "n_answered": n_answered,
-        "accuracy_per_ktok_billable": total_f1 / (billable / 1000) if billable else 0.0,
+        "accuracy_per_ktok_solving": total_f1 / (solving / 1000) if solving else 0.0,
         "accuracy_per_ktok_all": total_f1 / (all_tok / 1000) if all_tok else 0.0,
-        "coordination_overhead": free / all_tok if all_tok else 0.0,
+        "coordination_overhead": admin / all_tok if all_tok else 0.0,
         "rounds_used": summary["rounds_used"],
         "bankrupt_rate": (len(summary["bankrupt"]) / len(summary["balances"])
                           if summary["balances"] else 0.0),

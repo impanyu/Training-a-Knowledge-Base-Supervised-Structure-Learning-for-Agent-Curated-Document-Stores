@@ -1,5 +1,5 @@
 import pytest
-from ca.actions import dispatch, is_billable, permission_error, visible_tools, ACTION_SPECS
+from ca.actions import classify, dispatch, permission_error, visible_tools, ACTION_SPECS
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
 from ca.retrieval import KeywordBackend
@@ -14,12 +14,16 @@ def make(level="L0", capital=1000):
     return Infra(cfg, qs, retriever=KeywordBackend(DOCS))
 
 
-def test_billability():
-    assert is_billable("retrieve", {"query": "x"})
-    assert is_billable("work_on", {"task_id": "q0001", "thought": "t"})
-    assert is_billable("deliver_work", {"target_id": "q0001", "content": "Paris"})
-    assert not is_billable("deliver_work", {"target_id": "c0001", "content": "x"})
-    assert not is_billable("send_message", {"to": "a", "text": "x"})
+def test_classify():
+    assert classify("retrieve", {"query": "x"}) == "solving"
+    assert classify("work_on", {"task_id": "q0001", "thought": "t"}) == "solving"
+    # decompose doesn't exist yet (T20) but must classify as solving, future-proof
+    assert classify("decompose", {}) == "solving"
+    assert classify("deliver_work", {"target_id": "q0001", "content": "Paris"}) == "solving"
+    assert classify("deliver_work", {"target_id": "t0001", "content": "Paris"}) == "solving"
+    assert classify("deliver_work", {"target_id": "c0001", "content": "x"}) == "admin"
+    assert classify("send_message", {"to": "a", "text": "x"}) == "admin"
+    assert classify("check_balance", {}) == "admin"
 
 
 def test_world_gating_by_level():
@@ -86,10 +90,12 @@ def test_free_bargaining_below_L3():
     assert out.startswith("ERROR")
 
 
-def test_bankrupt_blocks_billable_only():
+def test_bankrupt_blocks_solving_only():
     i0 = make("L0", capital=8)  # 1 token each
     i0.ledger.burn("agent_1", 5)
-    assert permission_error(i0, "agent_1", "retrieve", {"query": "x"}) is not None
+    err = permission_error(i0, "agent_1", "retrieve", {"query": "x"})
+    assert err is not None
+    assert "coordinate or borrow" in err
     assert permission_error(i0, "agent_1", "send_message", {"to": "agent_2", "text": "s"}) is None
 
 

@@ -33,7 +33,7 @@ class Scheduler:
                 if self.infra.board.all_done():
                     break
                 if all(self.infra.ledger.is_bankrupt(a) for a in self.infra.agent_ids):
-                    break  # terminal: billable actions frozen for everyone, no income possible
+                    break  # terminal: solving actions frozen for everyone, no income possible
         finally:
             # a crash (or a tripped invariant) must not cost us the run's data
             summary = self.recorder.write_summary(self.infra, rounds_used)

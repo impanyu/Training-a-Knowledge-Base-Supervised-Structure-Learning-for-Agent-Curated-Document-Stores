@@ -37,8 +37,11 @@ def test_solo_answer_flow_L5(tmp_path):
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
-    # billable turns: retrieve + deliver_work = 2 * 15 tokens burned
-    assert summary["tokens"]["agent_1"]["billable"] == 30
+    # solving turns: retrieve + deliver_work = 2 * 15 tokens
+    assert summary["tokens"]["agent_1"]["solving"] == 30
+    # admin turns: list_questions + claim_question = 2 * 15 tokens (T17: these now
+    # bill too, just tallied under "admin" instead of "solving")
+    assert summary["tokens"]["agent_1"]["admin"] == 30
     trace = [json.loads(l) for l in open(tmp_path / "trace.jsonl")]
     assert len(trace) >= 4
 
@@ -65,9 +68,16 @@ def test_subcontract_flow_L1(tmp_path):
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
-    # agent_1 earned the 40-token escrow minus its own burn
-    assert summary["balances"]["agent_1"] > 1000 // 8
-    assert summary["rounds_used"] <= 10
+    # T17: EVERY turn bills 15 tokens (10 in + 5 out, fixed by ScriptedPolicy),
+    # including idle check_balance turns while an agent waits its turn.
+    # q0001 closes on interface's round-5 deliver_work, so rounds_used == 5 and
+    # every one of the 8 agents has taken exactly 5 turns => 75 tokens burned each.
+    assert summary["rounds_used"] == 5
+    # interface: 125 seed - 75 burn - 40 escrow (locked when agent_1 accepts
+    # c0001 in round 3) + 100 mint (WORLD payout for the correct q0001 answer)
+    assert summary["balances"]["interface"] == 125 - 75 - 40 + 100
+    # agent_1: 125 seed - 75 burn + 40 escrow released on its round-5 delivery
+    assert summary["balances"]["agent_1"] == 125 - 75 + 40
 
 
 def test_stops_at_max_rounds(tmp_path):
@@ -114,9 +124,16 @@ def test_central_pricing_flow_L3(tmp_path):
     assert c.status == "delivered" and c.price == 30          # the interface's price stuck
     assert summary["contract_prices"] == [30]
     # escrow settled atomically: payer -30, contractor +30, nothing left locked
-    assert infra.ledger.balance("agent_1") == 125 - 30
-    assert infra.ledger.balance("agent_2") == 125 + 30
     assert infra.ledger.escrow == {}
+    # T17: no delivery ever reaches WORLD in this script (only the c0001
+    # subcontract), so q0001 never closes and the run goes the full 10 rounds.
+    # Every one of the 8 agents bills 15 tokens/round regardless of action
+    # (fixed 10 in + 5 out from ScriptedPolicy), for 150 tokens burned each.
+    # agent_1 additionally loses the 30-token escrow (locked round 3, when
+    # agent_2 accepts); agent_2 additionally gains it back (released round 4).
+    assert summary["rounds_used"] == 10
+    assert infra.ledger.balance("agent_1") == 125 - 150 - 30
+    assert infra.ledger.balance("agent_2") == 125 - 150 + 30
     # bargaining really is disabled, not merely hidden from the tool list
     countered = _results(_trace(tmp_path), "agent_1", "counter_offer")
     assert len(countered) == 1 and countered[0].startswith("ERROR")
@@ -182,8 +199,9 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
 
 def test_run_terminates_when_all_bankrupt(tmp_path):
     infra, sched = build("L5", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
-    infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next billable turn (15) sinks it
-    # scripted policy bills 15/turn; after a few turns agent is bankrupt -> early stop
+    infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it
+    # T17: every turn bills 15/turn regardless of category; after one turn the
+    # agent is bankrupt -> early stop (still solo, so nothing else can happen)
     summary = sched.run()
     assert summary["rounds_used"] <= 2
     assert summary["bankrupt"] == ["agent_1"]

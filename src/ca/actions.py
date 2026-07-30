@@ -14,7 +14,7 @@ _S = {"type": "string"}
 _I = {"type": "integer"}
 
 ACTION_SPECS: dict[str, dict] = {
-    # -------- billable (answer-related) --------
+    # -------- solving (answer-related) --------
     "retrieve": {
         "description": "Search the external knowledge corpus. COSTS TOKENS.",
         "input_schema": _schema({"query": _S}, ["query"]),
@@ -34,7 +34,7 @@ ACTION_SPECS: dict[str, dict] = {
                         "the deliverable to arrive in your chat instead."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
-    # -------- free (coordination) --------
+    # -------- admin (coordination) --------
     "list_questions": {
         "description": ("List open questions on the task board with prices, sorted by reward "
                         "(highest first). Shows one page; pass `offset` to see further pages."),
@@ -116,12 +116,20 @@ _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_co
                      "pay", "list_agents"}
 
 
-def is_billable(name: str, inp: dict) -> bool:
-    if name in ("retrieve", "work_on"):
-        return True
+def classify(name: str, inp: dict) -> str:
+    """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
+    its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
+    work the tokens paid for, for recorder tallies / coordination_overhead.
+
+    `decompose` doesn't exist yet (T20) but is future-proofed here so it lands
+    as "solving" the moment it's added."""
+    if name in ("retrieve", "work_on", "decompose"):
+        return "solving"
     if name == "deliver_work":
-        return str(inp.get("target_id", "")).startswith("q")
-    return False
+        target = str(inp.get("target_id", ""))
+        if target[:1] in ("q", "t"):
+            return "solving"
+    return "admin"
 
 
 def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
@@ -170,9 +178,10 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
             return "only the interface agent may set contract prices"
     elif name == "set_price":
         return "set_price does not exist in this configuration (prices are negotiated)"
-    # bankruptcy freezes billable actions
-    if is_billable(name, inp) and infra.ledger.is_bankrupt(agent_id):
-        return "you are bankrupt (balance <= 0): answer-related actions are frozen"
+    # bankruptcy freezes SOLVING actions only; admin actions (incl. borrowing
+    # and coordination) remain available -- and still bill, so debt deepens.
+    if classify(name, inp) == "solving" and infra.ledger.is_bankrupt(agent_id):
+        return "bankrupt: answer-related actions are frozen; you may still coordinate or borrow"
     return None
 
 

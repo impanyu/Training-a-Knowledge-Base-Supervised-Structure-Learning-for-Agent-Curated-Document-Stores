@@ -19,33 +19,52 @@ def test_turn_executes_and_logs():
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("claim_question", {"qid": "q0001"})]))
     ev = ag.take_turn()
-    assert ev["action"] == "claim_question" and ev["billable"] is False
+    assert ev["action"] == "claim_question" and ev["category"] == "admin"
     assert "claimed" in ev["result"]
     assert len(ag.fifo.items) == 1
 
 
-def test_billing_on_billable_turn():
+def test_billing_on_solving_turn():
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra,
-               ScriptedPolicy([("retrieve", {"query": "capital of France"})]))
-    ag.policy.script[0] = ("retrieve", {"query": "capital of France"})
-    # simulate LLM cost by wrapping decision tokens
-    ag.policy = ScriptedPolicy([("retrieve", {"query": "capital of France"})],
-                               in_tokens=100, out_tokens=20)
+               ScriptedPolicy([("retrieve", {"query": "capital of France"})],
+                              in_tokens=100, out_tokens=20))
     start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
-    assert ev["billable"] is True and ev["tokens_in"] == 100
+    assert ev["category"] == "solving" and ev["tokens_in"] == 100
     assert infra.ledger.balance("agent_1") == start - 120
     assert infra.ledger.conservation_ok()
 
 
-def test_permission_denied_becomes_error_result_unbilled():
+def test_permission_denied_still_bills_every_turn():
+    # T17: EVERY turn bills its tokens now, even a denied (ERROR) one.
     cfg, infra = make("L1")
-    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("claim_question", {"qid": "q0001"})]))
+    ag = Agent("agent_1", cfg, infra,
+               ScriptedPolicy([("claim_question", {"qid": "q0001"})],
+                              in_tokens=10, out_tokens=5))
     start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
     assert ev["result"].startswith("ERROR")
-    assert infra.ledger.balance("agent_1") == start
+    assert ev["category"] == "admin"  # claim_question is admin even when denied
+    assert infra.ledger.balance("agent_1") == start - 15
+    assert infra.ledger.conservation_ok()
+
+
+def test_noop_turn_bills_tokens():
+    # A __noop__ turn (e.g. LLM policy failure) still bills whatever tokens
+    # were actually spent producing it; zero tokens burns zero, harmlessly.
+    class _NoopPolicy:
+        def decide(self, system, context, tools):
+            return Decision("__noop__", {}, 7, 3)
+
+    cfg, infra = make()
+    ag = Agent("agent_1", cfg, infra, _NoopPolicy())
+    start = infra.ledger.balance("agent_1")
+    ev = ag.take_turn()
+    assert ev["result"].startswith("ERROR")
+    assert ev["category"] == "admin"
+    assert infra.ledger.balance("agent_1") == start - 10
+    assert infra.ledger.conservation_ok()
 
 
 def test_goal_actions_update_local_stack():

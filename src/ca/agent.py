@@ -6,7 +6,7 @@ from typing import Protocol
 
 import anthropic
 
-from ca.actions import dispatch, is_billable, permission_error, visible_tools
+from ca.actions import classify, dispatch, permission_error, visible_tools
 from ca.config import ExperimentConfig
 from ca.context import render_turn, system_prompt
 from ca.infra import Infra
@@ -85,7 +85,7 @@ class Agent:
     def take_turn(self) -> dict:
         context = render_turn(self.infra, self.id, self.fifo, self.goals)
         d = self.policy.decide(self._system, context, self._tools)
-        billable = False
+        category = classify(d.name, d.inp)
         if d.name == "__noop__":
             result = "ERROR: no valid action produced this turn"
         elif d.name == "push_goal":
@@ -102,15 +102,16 @@ class Agent:
                 result = f"ERROR: {err}"
             else:
                 result = dispatch(self.infra, self.id, d.name, d.inp)
-                billable = is_billable(d.name, d.inp) and not result.startswith("ERROR")
-        if billable:
-            self.infra.ledger.burn(self.id, d.in_tokens + d.out_tokens)
+        # T17: EVERY turn bills its input+output tokens, unconditionally --
+        # ERROR results and __noop__ turns included. A noop with 0 tokens
+        # burns 0, which is harmless.
+        self.infra.ledger.burn(self.id, d.in_tokens + d.out_tokens)
         self.infra.chat.mark_read(self.id)  # rendered messages are now "seen"
         # store the FULL action and result
         self.fifo.add(f"{d.name}({json.dumps(d.inp, ensure_ascii=False)})", result)
         return {
             "round": self.infra.round, "agent": self.id,
             "action": d.name, "input": d.inp, "result": result,
-            "billable": billable, "tokens_in": d.in_tokens, "tokens_out": d.out_tokens,
+            "category": category, "tokens_in": d.in_tokens, "tokens_out": d.out_tokens,
             "balance_after": self.infra.ledger.balance(self.id),
         }
