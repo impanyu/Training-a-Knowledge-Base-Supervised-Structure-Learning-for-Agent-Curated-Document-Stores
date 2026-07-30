@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 MODEL="${1:-deepseek-v4-flash}"
 python3 scripts/prepare_data.py --hotpot-n 3 --musique-n 0 --out data/smoke
-python3 -m ca.runner --level L6 --questions data/smoke/pool.jsonl \
+python3 -m ca.runner --level L6 --library data/smoke/pool.jsonl \
   --index data/smoke/index --seed 0 --capital 30000 --max-rounds 15 \
   --model "$MODEL" --out "runs/smoke_L6_$MODEL"
 echo "=== metrics ==="

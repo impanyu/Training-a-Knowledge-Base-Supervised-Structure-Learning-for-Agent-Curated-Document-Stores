@@ -12,7 +12,7 @@ from ca.economy import Ledger
 from ca.recorder import Recorder
 from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
-from ca.taskboard import Question
+from fixtures import demo_library, demo_posted
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
 
@@ -25,8 +25,7 @@ def setup(bal=None):
 
 def make_infra(level="L0", capital=1000):
     cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=capital)
-    qs = [Question("q0001", "capital of France?", ["Paris"], "easy", 100)]
-    return Infra(cfg, qs, retriever=KeywordBackend(DOCS))
+    return Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
 
 
 # ---------------- LoanSystem unit tests ----------------
@@ -295,8 +294,7 @@ def test_repay_broke_borrower_returns_error_via_dispatch():
 
 def test_scheduler_logs_interest_events_and_conserves(tmp_path):
     cfg = ExperimentConfig(level=LEVELS["L0"], seed=1, seed_capital_total=1000, max_rounds=3)
-    qs = [Question("q0001", "capital of France?", ["Paris"], "easy", 100)]
-    infra = Infra(cfg, qs, retriever=KeywordBackend(DOCS))
+    infra = Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
     scripts = {
         "agent_1": [("propose_loan", {"to": "agent_2", "amount": 100})],
         "agent_2": [("check_balance", {}), ("accept_loan", {"loan_id": "n0001"})],

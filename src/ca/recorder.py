@@ -22,12 +22,11 @@ class Recorder:
             "level": infra.cfg.level.level,
             "seed": infra.cfg.seed,
             "rounds_used": rounds_used,
-            "questions": [{
-                "qid": q.qid, "status": q.status, "difficulty": q.difficulty,
-                "price": q.price, "claimed_by": q.claimed_by,
-                "submitted": q.submitted, "score": q.score, "em": q.em,
-                "payout": q.payout,
-            } for q in infra.board.results()],
+            # v2: the board posts task TREES. "tasks" is the task-level record;
+            # "questions" flattens it to one row per (task, leaf) pair -- the
+            # unit that is actually graded and paid, and what the metrics read.
+            "tasks": infra.board.results(),
+            "questions": infra.board.leaf_results(),
             "balances": {a: infra.ledger.balance(a) for a in infra.agent_ids},
             "tokens": {a: dict(self._tokens[a]) for a in infra.agent_ids},
             "bankrupt": [a for a in infra.agent_ids if infra.ledger.is_bankrupt(a)],

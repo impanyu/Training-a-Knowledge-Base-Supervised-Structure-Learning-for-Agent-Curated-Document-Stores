@@ -1,6 +1,6 @@
 from ca.config import LEVELS, ExperimentConfig, agent_ids
 from ca.infra import Infra
-from ca.taskboard import Question
+from fixtures import demo_library, demo_posted
 
 
 def test_level_matrix_matches_spec():
@@ -29,7 +29,7 @@ def test_agent_ids():
 
 def test_infra_splits_seed_capital():
     cfg = ExperimentConfig(level=LEVELS["L0"], seed=0, seed_capital_total=801)
-    infra = Infra(cfg, [Question("q0001", "?", ["x"], "easy", 10)], retriever=None)
+    infra = Infra(cfg, demo_library(), demo_posted(), retriever=None)
     balances = [infra.ledger.balance(a) for a in infra.agent_ids]
     assert sum(balances) == 801 and max(balances) - min(balances) <= 1
     assert infra.ledger.conservation_ok()

@@ -1,14 +1,13 @@
+from fixtures import demo_infra
+
 from ca.actions import dispatch
-from ca.config import LEVELS, ExperimentConfig
+from ca.config import LEVELS
 from ca.context import render_turn, system_prompt
-from ca.infra import Infra
 from ca.memory import FifoMemory, GoalStack
-from ca.taskboard import Question
 
 
 def make(level="L1"):
-    cfg = ExperimentConfig(level=LEVELS[level], seed=0, seed_capital_total=800)
-    return Infra(cfg, [Question("q0001", "?", ["x"], "easy", 100)], retriever=None)
+    return demo_infra(level, capital=800)
 
 
 def test_system_prompt_mentions_identity_goal_and_rules():
@@ -19,6 +18,11 @@ def test_system_prompt_mentions_identity_goal_and_rules():
     assert "interface" in sp  # star-comms rule explained
     sp_i = system_prompt(infra.cfg.level, "interface", infra.agent_ids)
     assert "you are the interface" in sp_i.lower()
+
+
+def test_system_prompt_explains_packaged_task_delivery():
+    sp = system_prompt(LEVELS["L0"], "agent_1", ["agent_1", "agent_2"])
+    assert "task" in sp.lower() and "json" in sp.lower()
 
 
 def test_credit_rule_text_at_central_credit_level():
@@ -36,16 +40,39 @@ def test_render_turn_contains_state():
     infra.chat.send("agent_2", "agent_1", "hello there", 1)
     infra.contracts.propose("agent_2", "agent_1", "subtask", 20)
     fifo, goals = FifoMemory(3), GoalStack("maximize token balance")
-    goals.push("finish q0001")
+    goals.push("finish t0001")
     fifo.add("check_balance", "balance: 100")
     out = render_turn(infra, "agent_1", fifo, goals)
     assert "100" in out            # balance
-    assert "finish q0001" in out   # goal stack
+    assert "finish t0001" in out   # goal stack
     assert "hello there" in out    # unread
     assert "c0001" in out          # pending contract
     assert "check_balance" in out  # fifo
-    # render must NOT consume unread
-    assert infra.chat.unread("agent_1")
+    assert infra.chat.unread("agent_1")   # render must NOT consume unread
+
+
+def test_render_turn_shows_active_task_claims_with_ttl_and_progress():
+    infra = make("L0")
+    infra.round = 2
+    dispatch(infra, "agent_1", "claim_task", {"task": "t0001"})
+    infra.round = 3
+    dispatch(infra, "agent_1", "work_on", {"task_id": "q0001", "thought": "Paris"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "t0001" in out
+    assert "answer the french geography questions" in out
+    assert "3 questions" in out and "600" in out
+    assert "EXPIRES in 7 round(s)" in out          # claimed r2, ttl 8, now r3
+    assert "1/3" in out and "q0001" in out         # per-leaf progress hint
+    # another agent's claim is not advertised
+    assert "EXPIRES" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
+
+
+def test_render_turn_claim_progress_before_any_notes():
+    infra = make("L0")
+    dispatch(infra, "agent_1", "claim_task", {"task": "t0004"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "0/2" in out and "decompose" in out
+    assert "q0003" not in out          # leaf ids stay hidden until decompose
 
 
 def test_render_turn_shows_scratchpad_written_by_work_on():
@@ -81,8 +108,8 @@ def test_negotiation_hint_only_where_prices_are_negotiable():
     ids = ["interface", "agent_1"]
     sp0 = system_prompt(LEVELS["L0"], "agent_1", ids)
     assert "Prices are freely negotiable." in sp0
-    assert "negotiate prices" not in sp0                      # dropped from the base prompt
-    assert "fully decentralized" in sp0                       # L0 framing preserved
+    assert "negotiate prices" not in sp0
+    assert "fully decentralized" in sp0
     assert "Prices are freely negotiable." not in system_prompt(LEVELS["L3"], "agent_1", ids)
     assert "Prices are freely negotiable." not in system_prompt(LEVELS["L6"], "agent_1", ["agent_1"])
 
@@ -91,9 +118,8 @@ def test_repetition_warning_after_three_identical_actions():
     infra = make("L0")
     fifo, goals = FifoMemory(6), GoalStack("maximize token balance")
     for _ in range(3):
-        fifo.add("list_questions({})", "same result")
+        fifo.add("list_tasks({})", "same result")
     out = render_turn(infra, "agent_1", fifo, goals)
     assert "MUST choose a different action" in out
     fifo.add("retrieve({})", "different")
-    out2 = render_turn(infra, "agent_1", fifo, goals)
-    assert "MUST choose a different action" not in out2
+    assert "MUST choose a different action" not in render_turn(infra, "agent_1", fifo, goals)

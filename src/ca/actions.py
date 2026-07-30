@@ -1,10 +1,13 @@
 """Action registry: specs (tool schemas), permission gating, dispatch."""
+import json
+
 from ca.config import LevelConfig
 from ca.contracts import ContractError
 from ca.economy import InsufficientFunds
 from ca.infra import Infra
 from ca.loans import LoanError
 from ca.taskboard import BoardError
+from ca.tasktree import TreeError
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -21,29 +24,49 @@ ACTION_SPECS: dict[str, dict] = {
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "work_on": {
-        "description": "Record one reasoning step about a task in your private scratchpad. COSTS TOKENS.",
+        "description": ("Record one reasoning step about a task, subtask or question in your "
+                        "private scratchpad. COSTS TOKENS."),
         "input_schema": _schema({"task_id": _S, "thought": _S}, ["task_id", "thought"]),
     },
+    "decompose": {
+        "description": ("Reveal the direct children of a task or subtask: child subtasks are "
+                        "shown as [t####] «one-sentence summary» (n questions, reward r), child "
+                        "leaves as [q####] the full question text. Questions only become visible "
+                        "once you decompose down to them. `node` accepts a short id (t0012) or "
+                        "the one-sentence summary; passing a q-id just re-prints that question. "
+                        "COSTS TOKENS."),
+        "input_schema": _schema({"node": _S}, ["node"]),
+    },
     "deliver_work": {
-        "description": ("Deliver work. target_id starting with 'q' = submit final answer to the WORLD "
-                        "(graded, paid by quality, one shot, COSTS TOKENS). WORLD answers are graded by "
-                        "token-overlap F1 against a short gold answer: content MUST be ONLY the short "
-                        "answer itself (a name / date / phrase, e.g. 'Richard Strauss'), never a full "
-                        "sentence or explanation. target_id starting with 'c' = deliver an accepted "
-                        "contract (escrow released to you, free) — only the CONTRACTOR (the agent "
+        "description": ("Deliver work. target_id = a TASK (short id 't0012' or its one-sentence "
+                        "summary) submits the whole task to the WORLD: `content` must be a JSON "
+                        "object {\"q0031\": \"answer\", ...} with one entry for EVERY leaf "
+                        "question of that task - no missing and no extra q-ids. Each answer is "
+                        "graded by token-overlap F1 against a short gold answer, so every JSON "
+                        "VALUE must be ONLY the short answer itself (a name / date / phrase, "
+                        "e.g. 'Richard Strauss'), never a sentence or explanation. You get ONE "
+                        "graded attempt per task and are paid the sum of price x F1 over its "
+                        "leaves; a malformed or incomplete map is rejected without using up that "
+                        "attempt. COSTS TOKENS. target_id starting with 'c' = deliver an accepted "
+                        "contract (escrow released to you) — only the CONTRACTOR (the agent "
                         "hired to do the work) delivers a contract; if you are the payer, wait for "
-                        "the deliverable to arrive in your chat instead."),
+                        "the deliverable to arrive in your chat instead. If the contract was bound "
+                        "to a subtask node, its content must likewise be a JSON map covering that "
+                        "node's leaves."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
     # -------- admin (coordination) --------
-    "list_questions": {
-        "description": ("List open questions on the task board with prices, sorted by reward "
-                        "(highest first). Shows one page; pass `offset` to see further pages."),
+    "list_tasks": {
+        "description": ("List open tasks on the WORLD's task board as "
+                        "[t####] «one-sentence summary» (n questions, reward R), sorted by "
+                        "reward (highest first). Shows one page; pass `offset` to see further "
+                        "pages. Use decompose to see what a task actually contains."),
         "input_schema": _schema({"offset": _I}, []),
     },
-    "claim_question": {
-        "description": "Exclusively claim an open question (others can no longer see it).",
-        "input_schema": _schema({"qid": _S}, ["qid"]),
+    "claim_task": {
+        "description": ("Exclusively claim an open task tree (others can no longer see or take "
+                        "it). `task` accepts a short id (t0012) or its one-sentence summary."),
+        "input_schema": _schema({"task": _S}, ["task"]),
     },
     "send_message": {
         "description": "Send a chat message to another agent.",
@@ -56,7 +79,10 @@ ACTION_SPECS: dict[str, dict] = {
     "propose_contract": {
         "description": ("Offer to PAY another agent to do `task` for you. Include `price` "
                         "when bargaining is allowed; under central pricing the interface "
-                        "agent sets the price after you propose."),
+                        "agent sets the price after you propose. If `task` names a subtask "
+                        "node (short id or its one-sentence summary) the contract is BOUND to "
+                        "that node: the contractor must then deliver a JSON map covering all "
+                        "of its leaf questions. Any other text is a free-text contract."),
         "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task"]),
     },
     "set_price": {
@@ -123,7 +149,7 @@ ACTION_SPECS: dict[str, dict] = {
     },
 }
 
-_WORLD_ACTIONS = {"list_questions", "claim_question"}
+_WORLD_ACTIONS = {"list_tasks", "claim_task"}
 _TARGETED = {"send_message", "propose_contract", "pay", "propose_loan"}  # star-comms checked actions
 # meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
 _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
@@ -131,19 +157,20 @@ _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_co
                      "pay", "list_agents", "propose_loan", "accept_loan", "repay_loan"}
 
 
+def _is_contract_target(target: str) -> bool:
+    """Contract ids are the ONE reserved namespace for deliver_work targets;
+    everything else (short task id or its sentence) addresses the WORLD."""
+    return str(target).strip().startswith("c")
+
+
 def classify(name: str, inp: dict) -> str:
     """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
     its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
-    work the tokens paid for, for recorder tallies / coordination_overhead.
-
-    `decompose` doesn't exist yet (T20) but is future-proofed here so it lands
-    as "solving" the moment it's added."""
+    work the tokens paid for, for recorder tallies / coordination_overhead."""
     if name in ("retrieve", "work_on", "decompose"):
         return "solving"
-    if name == "deliver_work":
-        target = str(inp.get("target_id", ""))
-        if target[:1] in ("q", "t"):
-            return "solving"
+    if name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")):
+        return "solving"
     return "admin"
 
 
@@ -174,7 +201,7 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
     is_iface = agent_id == "interface"
     # world access (incl. deliver to WORLD)
     world_call = name in _WORLD_ACTIONS or (
-        name == "deliver_work" and str(inp.get("target_id", "")).startswith("q"))
+        name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")))
     if world_call and level.world_access == "interface" and not is_iface:
         return "only the interface agent may interact with the task board"
     if name == "retrieve" and level.retrieve_access == "interface" and not is_iface:
@@ -209,7 +236,8 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
 def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
     try:
         return _HANDLERS[name](infra, agent_id, inp)
-    except (BoardError, ContractError, LoanError, InsufficientFunds, KeyError, ValueError, IndexError) as e:
+    except (BoardError, TreeError, ContractError, LoanError, InsufficientFunds,
+            KeyError, ValueError, IndexError) as e:
         return f"ERROR: {e}"
 
 
@@ -225,36 +253,109 @@ def _h_work_on(infra, a, inp):
     return f"noted on scratchpad for {inp['task_id']} ({len(infra.scratchpads[a][inp['task_id']])} entries)"
 
 
-def _h_deliver_work(infra, a, inp):
-    tid, content = inp["target_id"], inp["content"]
-    if tid.startswith("q"):
-        score, payout = infra.board.deliver(a, tid, content)
-        return f"answer to {tid} graded: F1={score:.2f}, paid {payout} tokens"
-    c = infra.contracts.deliver(a, tid, content)
+_JSON_HINT = ('content must be JSON {qid: answer}, e.g. '
+              '{"q0031": "Richard Strauss", "q0032": "1911"}')
+
+
+def _parse_answer_map(content: str) -> dict[str, str] | None:
+    """A well-formed {qid: short answer} map, or None. Rejecting here (rather
+    than inside the board) is what keeps a malformed submission from consuming
+    the task's single delivery attempt."""
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict) or not data:
+        return None
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def _task_line(infra, nid: str) -> str:
+    lib = infra.library
+    return (f"[{nid}] «{lib.sentence(nid)}» "
+            f"({len(lib.leaves(nid))} questions, reward {lib.price(nid)})")
+
+
+def _deliver_contract(infra, a, cid, content):
+    c = infra.contracts.get(cid)
+    # coverage is checked BEFORE settlement so a short deliverable cannot
+    # release escrow; auth/status errors still come from contracts.deliver
+    if c.node_id and c.status == "accepted" and a == c.contractor:
+        wanted = infra.library.leaves(c.node_id)
+        answers = _parse_answer_map(content)
+        if answers is None:
+            return (f"ERROR: {c.cid} is bound to {c.node_id}; {_JSON_HINT} - "
+                    f"one entry for each of {', '.join(wanted)}")
+        missing = [q for q in wanted if q not in answers]
+        extra = sorted(set(answers) - set(wanted))
+        if missing or extra:
+            detail = []
+            if missing:
+                detail.append("missing " + ", ".join(missing))
+            if extra:
+                detail.append("unknown " + ", ".join(extra))
+            return (f"ERROR: {c.cid} is bound to {c.node_id} and needs exactly "
+                    f"one answer per leaf ({', '.join(wanted)}): {'; '.join(detail)}")
+    c = infra.contracts.deliver(a, cid, content)
     infra.chat.send(a, c.proposer, f"[deliverable for {c.cid}] {content}", infra.round)
     return f"delivered {c.cid}; escrow of {c.price} tokens released to you"
 
 
-def _h_list_questions(infra, a, inp):
-    qs = sorted(infra.board.list_open(), key=lambda q: -q.price)
-    if not qs:
-        return "(no open questions)"
+def _h_deliver_work(infra, a, inp):
+    tid, content = str(inp["target_id"]).strip(), inp["content"]
+    if _is_contract_target(tid):
+        return _deliver_contract(infra, a, tid, content)
+    # WORLD: packaged delivery of a whole task tree
+    answers = _parse_answer_map(content)
+    if answers is None:
+        return (f"ERROR: {_JSON_HINT} - one entry for every leaf question of "
+                "the task (use decompose to see them). Your delivery attempt "
+                "was NOT used.")
+    task = infra.board.get(tid)          # resolve once; errors list candidates
+    per_leaf, total = infra.board.deliver(a, task.nid, answers)
+    detail = "; ".join(f"{qid} F1={score:.2f} -> {pay}" for qid, score, pay in per_leaf)
+    return (f"delivered {task.nid} ({len(per_leaf)} questions graded): {detail}. "
+            f"Total paid: {total} tokens")
+
+
+def _h_list_tasks(infra, a, inp):
+    tasks = infra.board.list_open()
+    if not tasks:
+        return "(no open tasks)"
     top = infra.cfg.list_top_n
     offset = max(0, int(inp.get("offset") or 0))
-    page = qs[offset:offset + top]
+    page = tasks[offset:offset + top]
     if not page:
-        return f"(no open questions at offset {offset}; {len(qs)} open in total)"
-    lines = [f"{q.qid} [{q.difficulty}, reward {q.price}]: {q.text}" for q in page]
-    remaining = len(qs) - (offset + len(page))
+        return f"(no open tasks at offset {offset}; {len(tasks)} open in total)"
+    lines = [_task_line(infra, t.nid) for t in page]
+    remaining = len(tasks) - (offset + len(page))
     if remaining > 0:
-        lines.append(f"... and {remaining} more (call list_questions with "
+        lines.append(f"... and {remaining} more (call list_tasks with "
                      f"offset={offset + len(page)} to see them)")
     return "\n".join(lines)
 
 
-def _h_claim_question(infra, a, inp):
-    q = infra.board.claim(a, inp["qid"], infra.round)
-    return f"claimed {q.qid}: {q.text} (reward up to {q.price})"
+def _h_claim_task(infra, a, inp):
+    t = infra.board.claim(a, inp["task"], infra.round)
+    return (f"claimed {_task_line(infra, t.nid)}. Call decompose to reveal its "
+            "structure; deliver all of its questions in one JSON package.")
+
+
+def _h_decompose(infra, a, inp):
+    ref = str(inp["node"]).strip()
+    if ref in infra.library.questions:          # a leaf: nothing left to reveal
+        q = infra.library.questions[ref]
+        return f"[{q.qid}] {q.text}"
+    node = infra.library.resolve(ref)
+    rows = infra.library.children_view(node.nid)
+    lines = [f"[{node.nid}] «{node.sentence}» breaks down into {len(rows)} part(s):"]
+    for r in rows:
+        if r["kind"] == "subtask":
+            lines.append(f"  [{r['nid']}] «{r['sentence']}» "
+                         f"({r['leaf_count']} questions, reward {r['price']})")
+        else:
+            lines.append(f"  [{r['qid']}] {r['text']}")
+    return "\n".join(lines)
 
 
 def _h_send_message(infra, a, inp):
@@ -269,6 +370,18 @@ def _h_read_chat(infra, a, inp):
     return "\n".join(f"[r{m.round_no}] {m.sender}: {m.text}" for m in msgs) or "(no history)"
 
 
+def _bind_node(infra, c) -> str:
+    """A contract whose task text names a library node is bound to it: the
+    deliverable then has to cover that node's leaves. Free text stays free."""
+    try:
+        c.node_id = infra.library.resolve(c.task).nid
+    except TreeError:
+        return ""
+    return (f" [bound to {c.node_id}: the deliverable must be a JSON map with "
+            f"full leaf coverage of {c.node_id} "
+            f"({len(infra.library.leaves(c.node_id))} questions)]")
+
+
 def _h_propose_contract(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
         return _unknown_agent(infra, inp["to"])
@@ -276,20 +389,25 @@ def _h_propose_contract(infra, a, inp):
     if central and a != "interface":
         # price (if any) is ignored: the interface will set it
         c = infra.contracts.propose(a, inp["to"], inp["task"])
+        bound = _bind_node(infra, c)
         infra.chat.send(a, "interface",
-                        f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: {c.task}",
-                        infra.round)
+                        f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: "
+                        f"{c.task}{bound}", infra.round)
         if inp["to"] != "interface":
             infra.chat.send(a, inp["to"],
-                            f"[contract offer {c.cid}, price pending interface] task: {c.task}",
-                            infra.round)
-        return f"proposed {c.cid} to {inp['to']}; awaiting interface pricing"
+                            f"[contract offer {c.cid}, price pending interface] "
+                            f"task: {c.task}{bound}", infra.round)
+        return (f"proposed {c.cid} to {inp['to']}; awaiting interface pricing"
+                + (f" (bound to {c.node_id})" if c.node_id else ""))
     if inp.get("price") is None:
         return "ERROR: price is required (bargaining configuration)"
     c = infra.contracts.propose(a, inp["to"], inp["task"], int(inp["price"]))
+    bound = _bind_node(infra, c)
     infra.chat.send(a, inp["to"],
-                    f"[contract offer {c.cid}] task: {c.task} | price: {c.price}", infra.round)
-    return f"proposed {c.cid} to {inp['to']} at {c.price}"
+                    f"[contract offer {c.cid}] task: {c.task} | price: {c.price}{bound}",
+                    infra.round)
+    return (f"proposed {c.cid} to {inp['to']} at {c.price}"
+            + (f" (bound to {c.node_id})" if c.node_id else ""))
 
 
 def _h_set_price(infra, a, inp):
@@ -390,7 +508,7 @@ def _h_list_agents(infra, a, inp):
 
 _HANDLERS = {
     "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
-    "list_questions": _h_list_questions, "claim_question": _h_claim_question,
+    "list_tasks": _h_list_tasks, "claim_task": _h_claim_task, "decompose": _h_decompose,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,

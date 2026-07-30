@@ -8,33 +8,45 @@ _BASE = """You are {agent_id}, an autonomous agent in a multi-agent economy.
 Agents in the system: {peers}.
 
 YOUR PERMANENT ROOT GOAL: maximize your token balance.
-Tokens are both your money and your fuel: answer-related actions (retrieve,
-work_on, and delivering answers to the WORLD) consume tokens equal to the LLM
-cost of that turn. Coordination actions (chat, contracts, payments, memory,
-goals) are free. If your balance drops to 0 or below you are BANKRUPT and can
-no longer perform answer-related actions.
+Tokens are both your money and your fuel: EVERY action costs the tokens that
+turn's LLM call consumed. If your balance drops to 0 or below you are BANKRUPT
+and can no longer perform answer-related actions (retrieve, work_on, decompose,
+delivering to the WORLD); you may still coordinate and borrow.
 
-You earn tokens ONLY from: (a) delivering correct answers to the WORLD's
-questions (paid = price x answer quality F1, one attempt per question), or
+The WORLD posts TASKS, not single questions. A task is a tree: a one-sentence
+summary (its name), child subtasks, and question leaves at the bottom. Its
+reward is the sum of its leaf prices. Claim a task, use `decompose` to reveal
+one level of children at a time (leaf questions only become visible when you
+decompose down to them), then deliver the WHOLE task in one package:
+`deliver_work(target_id=<task>, content='{{"q0031": "answer", ...}}')` with one
+entry for EVERY leaf question - no missing, no extra. Each answer is graded by
+F1 and you are paid the sum of price x F1 in a single settlement. You get ONE
+graded attempt per task; a malformed or incomplete JSON map is rejected without
+spending it. Any task or subtask can be named either by its short id (t0012)
+or by its one-sentence summary.
+
+You earn tokens ONLY from: (a) delivering task packages to the WORLD, or
 (b) payments from other agents (contract escrow settlements or transfers).
 
 Each turn you must choose EXACTLY ONE action (tool call). Unread messages
 are delivered automatically into your context every turn - you never need
 to poll read_chat (use it only to re-read older history). Think about
-profitability: estimate what a question will cost to answer vs its reward.
-You may subcontract work to other agents via contracts.
+profitability: estimate what a task will cost to solve vs its reward.
+You may subcontract a whole subtask subtree to another agent via contracts:
+naming the subtask in the contract binds it, and the contractor must return a
+JSON map covering that subtask's leaves.
 {level_rules}"""
 
 _INTERFACE_EXTRA = """
-YOU ARE THE INTERFACE AGENT: the only agent allowed to take questions from
-the task board and deliver answers to the WORLD. Other agents can work for
-you via contracts. Your profit = WORLD rewards minus what you pay them."""
+YOU ARE THE INTERFACE AGENT: the only agent allowed to take tasks from the
+task board and deliver packages to the WORLD. Other agents can work for you
+via contracts. Your profit = WORLD rewards minus what you pay them."""
 
 
 def _level_rules(level: LevelConfig, is_iface: bool) -> str:
     rules = []
     if level.world_access == "interface":
-        rules.append("Only the interface agent can list/claim questions and deliver answers to the WORLD.")
+        rules.append("Only the interface agent can list/claim tasks and deliver packages to the WORLD.")
     if level.retrieve_access == "interface":
         rules.append("Only the interface agent can retrieve external information; others must ask it via chat/contracts.")
     if level.central_pricing:
@@ -83,15 +95,28 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
         pad_lines += [f"  - {t}" for t in thoughts[-5:]]
     if pad_lines:
         parts.append("Your scratchpad (latest thoughts per task):\n" + "\n".join(pad_lines))
-    mine = [q for q in infra.board.questions.values()
-            if q.status == "claimed" and q.claimed_by == agent_id]
+    mine = [t for t in infra.board.tasks.values()
+            if t.status == "claimed" and t.claimed_by == agent_id]
     if mine:
         ttl = infra.cfg.claim_ttl
         lines = []
-        for q in mine:
-            left = q.claimed_round + ttl - infra.round
-            lines.append(f"- {q.qid} (reward {q.price}): {q.text}  "
+        for t in mine:
+            lib = infra.library
+            leaves = lib.leaves(t.nid)
+            left = t.claimed_round + ttl - infra.round
+            lines.append(f"- [{t.nid}] «{lib.sentence(t.nid)}» "
+                         f"({len(leaves)} questions, reward {lib.price(t.nid)})  "
                          f"[claim EXPIRES in {max(left,0)} round(s) - deliver before then!]")
+            # progress hint: only leaves this agent has already worked on are
+            # named -- undiscovered q-ids stay behind `decompose`
+            noted = [q for q in leaves if pad.get(q)]
+            if noted:
+                lines.append(f"    progress: notes on {len(noted)}/{len(leaves)} "
+                             f"questions ({', '.join(noted)}); deliver ALL "
+                             f"{len(leaves)} in one JSON package")
+            else:
+                lines.append(f"    progress: notes on 0/{len(leaves)} questions - "
+                             "use decompose to reveal them")
         parts.append("Your ACTIVE CLAIMS (deliver these first):\n" + "\n".join(lines))
     pend = infra.contracts.pending_for(agent_id)
     if pend:

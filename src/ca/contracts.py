@@ -18,6 +18,10 @@ class Contract:
     status: str = "proposed"
     awaiting: str = ""          # who must respond while status == proposed
     deliverable: str | None = None
+    # set when `task` named a node of the shared task library: delivery must
+    # then be a JSON map covering exactly that node's leaves (coverage only,
+    # quality is disciplined by repeated play, not by the grader)
+    node_id: str | None = None
 
 
 class ContractSystem:

@@ -2,63 +2,117 @@ import json
 import random
 
 import pytest
+from fixtures import demo_library, demo_posted
 
 from ca.agent import Agent, ScriptedPolicy
 from ca.config import LEVELS, ExperimentConfig
 from ca.infra import Infra
+from ca.metrics import compute_metrics
 from ca.recorder import Recorder
 from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
 from ca.taskboard import Question
+from ca.tasktree import TaskLibrary, TaskNode
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
+PARIS_1 = json.dumps({"q0001": "Paris"})
+PARIS_2 = json.dumps({"q0002": "Paris"})
 
 
-def build(level, scripts, tmp_path, n_questions=1, **cfg_kw):
+def flat_library(n_tasks: int) -> TaskLibrary:
+    """n single-leaf tasks, so payout arithmetic stays as simple as v1's."""
+    nodes = [TaskNode(f"t{i:04d}", f"answer capital question number {i}", [f"q{i:04d}"])
+             for i in range(1, n_tasks + 1)]
+    qs = [Question(f"q{i:04d}", "capital of France?", ["Paris"], "easy", 100)
+          for i in range(1, n_tasks + 1)]
+    return TaskLibrary(nodes, qs)
+
+
+def build(level, scripts, tmp_path, n_tasks=1, library=None, posted=None, **cfg_kw):
     cfg = ExperimentConfig(level=LEVELS[level], seed=7, seed_capital_total=1000,
                            max_rounds=10, **cfg_kw)
-    qs = [Question(f"q{i:04d}", "capital of France?", ["Paris"], "easy", 100)
-          for i in range(1, n_questions + 1)]
-    infra = Infra(cfg, qs, retriever=KeywordBackend(DOCS))
+    lib = library or flat_library(n_tasks)
+    infra = Infra(cfg, lib, posted or list(lib.nodes), retriever=KeywordBackend(DOCS))
     agents = [Agent(a, cfg, infra, ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
-    rec = Recorder(str(tmp_path))
-    return infra, Scheduler(infra, agents, cfg, rec, random.Random(cfg.seed))
+    return infra, Scheduler(infra, agents, cfg, Recorder(str(tmp_path)), random.Random(cfg.seed))
+
+
+def _trace(tmp_path):
+    return [json.loads(l) for l in open(tmp_path / "trace.jsonl")]
+
+
+def _results(trace, agent, action):
+    return [e["result"] for e in trace if e["agent"] == agent and e["action"] == action]
 
 
 def test_solo_answer_flow_L6(tmp_path):
     scripts = {"agent_1": [
-        ("list_questions", {}),
-        ("claim_question", {"qid": "q0001"}),
+        ("list_tasks", {}),
+        ("claim_task", {"task": "t0001"}),
         ("retrieve", {"query": "capital of France"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),
     ]}
     infra, sched = build("L6", scripts, tmp_path)
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
+    assert summary["tasks"][0]["status"] == "closed" and summary["tasks"][0]["payout"] == 100
     assert summary["conservation_ok"] is True
     # solving turns: retrieve + deliver_work = 2 * 15 tokens
     assert summary["tokens"]["agent_1"]["solving"] == 30
-    # admin turns: list_questions + claim_question = 2 * 15 tokens (T17: these now
-    # bill too, just tallied under "admin" instead of "solving")
+    # admin turns: list_tasks + claim_task = 2 * 15 tokens
     assert summary["tokens"]["agent_1"]["admin"] == 30
-    trace = [json.loads(l) for l in open(tmp_path / "trace.jsonl")]
-    assert len(trace) >= 4
+    assert len(_trace(tmp_path)) >= 4
+    # the v2 summary still feeds the metrics module unchanged
+    m = compute_metrics(summary)
+    assert m["total_f1"] == 1.0 and m["n_answered"] == 1
+    assert m["coordination_overhead"] == pytest.approx(0.5)
+
+
+def test_packaged_multi_leaf_task_flow_L0(tmp_path):
+    """Claim a real tree, decompose both levels, package every leaf at once."""
+    scripts = {"agent_1": [
+        ("list_tasks", {}),
+        ("claim_task", {"task": "answer the french geography questions"}),   # by sentence
+        ("decompose", {"node": "t0001"}),
+        ("decompose", {"node": "name the capital and the river"}),
+        ("work_on", {"task_id": "q0001", "thought": "Paris"}),
+        ("deliver_work", {"target_id": "t0001",
+                          "content": json.dumps({"q0001": "Paris", "q0002": "Loire"})}),
+        ("deliver_work", {"target_id": "t0001",
+                          "content": json.dumps({"q0001": "Paris", "q0002": "Loire",
+                                                 "q0003": "4"})}),
+    ]}
+    infra, sched = build("L0", scripts, tmp_path,
+                         library=demo_library(), posted=["t0001"])
+    summary = sched.run()
+    trace = _trace(tmp_path)
+
+    reveal = _results(trace, "agent_1", "decompose")
+    assert "[t0002]" in reveal[0] and "[q0003]" in reveal[0] and "q0001" not in reveal[0]
+    assert "[q0001]" in reveal[1] and "[q0002]" in reveal[1]
+    delivers = _results(trace, "agent_1", "deliver_work")
+    assert delivers[0].startswith("ERROR") and "q0003" in delivers[0]   # attempt preserved
+    assert not delivers[1].startswith("ERROR") and "600" in delivers[1]
+    assert infra.board.tasks["t0001"].status == "closed"
+    assert infra.ledger.balance("agent_1") == 125 - 7 * 15 + 600
+    assert summary["conservation_ok"] is True
+    assert [l["payout"] for l in summary["tasks"][0]["leaves"]] == [100, 200, 300]
 
 
 def test_subcontract_flow_L1(tmp_path):
-    # interface claims, subcontracts to agent_1, agent_1 delivers, interface answers WORLD
+    # interface claims, subcontracts to agent_1, agent_1 delivers, interface packages
     scripts = {
         "interface": [
-            ("claim_question", {"qid": "q0001"}),
+            ("claim_task", {"task": "t0001"}),
             ("propose_contract", {"to": "agent_1", "task": "find the capital of France", "price": 40}),
             ("check_balance", {}),                      # waits while agent_1 works
             ("check_balance", {}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+            ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),
         ],
         "agent_1": [
-            ("check_balance", {}),                      # waits for interface's claim_question (r1)
-            ("check_balance", {}),                      # waits for interface's propose_contract (r2)
+            ("check_balance", {}),                      # waits for interface's claim_task (r1)
+            ("check_balance", {}),                      # waits for propose_contract (r2)
             ("accept_contract", {"contract_id": "c0001"}),
             ("retrieve", {"query": "capital of France"}),
             ("deliver_work", {"target_id": "c0001", "content": "The answer is Paris"}),
@@ -69,15 +123,48 @@ def test_subcontract_flow_L1(tmp_path):
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
     # T17: EVERY turn bills 15 tokens (10 in + 5 out, fixed by ScriptedPolicy),
-    # including idle check_balance turns while an agent waits its turn.
-    # q0001 closes on interface's round-5 deliver_work, so rounds_used == 5 and
-    # every one of the 8 agents has taken exactly 5 turns => 75 tokens burned each.
+    # including idle check_balance turns. t0001 closes on the interface's
+    # round-5 delivery, so all 8 agents took 5 turns => 75 tokens burned each.
     assert summary["rounds_used"] == 5
-    # interface: 125 seed - 75 burn - 40 escrow (locked when agent_1 accepts
-    # c0001 in round 3) + 100 mint (WORLD payout for the correct q0001 answer)
     assert summary["balances"]["interface"] == 125 - 75 - 40 + 100
-    # agent_1: 125 seed - 75 burn + 40 escrow released on its round-5 delivery
     assert summary["balances"]["agent_1"] == 125 - 75 + 40
+
+
+def test_node_bound_subcontract_flow_L1(tmp_path):
+    """Interface hands a whole child subtree over by sentence; the contractor's
+    JSON is merged into the interface's package."""
+    scripts = {
+        "interface": [
+            ("claim_task", {"task": "t0001"}),
+            ("propose_contract", {"to": "agent_1",
+                                  "task": "name the capital and the river", "price": 40}),
+            ("check_balance", {}),
+            ("check_balance", {}),
+            ("deliver_work", {"target_id": "t0001",
+                              "content": json.dumps({"q0001": "Paris", "q0002": "Loire",
+                                                     "q0003": "4"})}),
+        ],
+        "agent_1": [
+            ("check_balance", {}),
+            ("check_balance", {}),
+            ("accept_contract", {"contract_id": "c0001"}),
+            ("deliver_work", {"target_id": "c0001", "content": "Paris and the Loire"}),  # unbound prose
+            ("deliver_work", {"target_id": "c0001",
+                              "content": json.dumps({"q0001": "Paris", "q0002": "Loire"})}),
+        ],
+    }
+    infra, sched = build("L1", scripts, tmp_path, library=demo_library(), posted=["t0001"])
+    summary = sched.run()
+    trace = _trace(tmp_path)
+
+    assert infra.contracts.get("c0001").node_id == "t0002"
+    worker = _results(trace, "agent_1", "deliver_work")
+    assert worker[0].startswith("ERROR") and "q0002" in worker[0]   # coverage enforced
+    assert not worker[1].startswith("ERROR")
+    assert infra.contracts.get("c0001").status == "delivered"
+    assert infra.board.tasks["t0001"].status == "closed"
+    assert summary["tasks"][0]["payout"] == 600
+    assert infra.ledger.escrow == {} and summary["conservation_ok"] is True
 
 
 def test_stops_at_max_rounds(tmp_path):
@@ -85,14 +172,7 @@ def test_stops_at_max_rounds(tmp_path):
     summary = sched.run()
     assert summary["rounds_used"] == 10
     assert summary["questions"][0]["status"] != "closed"
-
-
-def _trace(tmp_path):
-    return [json.loads(l) for l in open(tmp_path / "trace.jsonl")]
-
-
-def _results(trace, agent, action):
-    return [e["result"] for e in trace if e["agent"] == agent and e["action"] == action]
+    assert summary["tasks"][0]["status"] == "open"
 
 
 def test_central_pricing_flow_L3(tmp_path):
@@ -122,19 +202,14 @@ def test_central_pricing_flow_L3(tmp_path):
 
     c = infra.contracts.get("c0001")
     assert c.status == "delivered" and c.price == 30          # the interface's price stuck
+    assert c.node_id is None                                  # free-text, so no coverage rule
     assert summary["contract_prices"] == [30]
-    # escrow settled atomically: payer -30, contractor +30, nothing left locked
     assert infra.ledger.escrow == {}
-    # T17: no delivery ever reaches WORLD in this script (only the c0001
-    # subcontract), so q0001 never closes and the run goes the full 10 rounds.
-    # Every one of the 8 agents bills 15 tokens/round regardless of action
-    # (fixed 10 in + 5 out from ScriptedPolicy), for 150 tokens burned each.
-    # agent_1 additionally loses the 30-token escrow (locked round 3, when
-    # agent_2 accepts); agent_2 additionally gains it back (released round 4).
+    # No delivery ever reaches WORLD here, so t0001 never closes and the run
+    # goes the full 10 rounds at 15 tokens/turn => 150 burned each.
     assert summary["rounds_used"] == 10
     assert infra.ledger.balance("agent_1") == 125 - 150 - 30
     assert infra.ledger.balance("agent_2") == 125 - 150 + 30
-    # bargaining really is disabled, not merely hidden from the tool list
     countered = _results(_trace(tmp_path), "agent_1", "counter_offer")
     assert len(countered) == 1 and countered[0].startswith("ERROR")
     assert summary["conservation_ok"] is True
@@ -155,15 +230,20 @@ def test_adversarial_scripted(tmp_path):
             ("accept_contract", {"contract_id": "c0001"}),
         ],
         "agent_3": [
-            ("claim_question", {"qid": "q0001"}),                        # claims, then idles
+            ("claim_task", {"task": "t0001"}),                           # claims, then idles
         ],
         "agent_4": [
-            ("claim_question", {"qid": "q0002"}),
-            ("deliver_work", {"target_id": "q0002", "content": "Paris"}),
-            ("deliver_work", {"target_id": "q0002", "content": "Paris"}),  # second attempt
+            ("claim_task", {"task": "t0002"}),
+            ("deliver_work", {"target_id": "t0002", "content": PARIS_2}),
+            ("deliver_work", {"target_id": "t0002", "content": PARIS_2}),  # second attempt
+        ],
+        "agent_5": [
+            ("check_balance", {}),
+            ("claim_task", {"task": "t0002"}),                           # steal a claimed task
+            ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),  # deliver another's claim
         ],
     }
-    infra, sched = build("L0", scripts, tmp_path, n_questions=2, claim_ttl=2)
+    infra, sched = build("L0", scripts, tmp_path, n_tasks=2, claim_ttl=2)
     summary = sched.run()
     trace = _trace(tmp_path)
 
@@ -171,11 +251,13 @@ def test_adversarial_scripted(tmp_path):
     assert _results(trace, "agent_1", "cancel_contract")[0].startswith("ERROR")
     delivers = _results(trace, "agent_4", "deliver_work")
     assert not delivers[0].startswith("ERROR") and delivers[1].startswith("ERROR")
+    assert _results(trace, "agent_5", "claim_task")[0].startswith("ERROR")
+    assert _results(trace, "agent_5", "deliver_work")[0].startswith("ERROR")
 
     # the hoarded claim was returned to the pool; the answered one stays answered
-    q1, q2 = infra.board.get("q0001"), infra.board.get("q0002")
-    assert q1.status == "open" and q1.claimed_by is None
-    assert q2.status == "closed" and q2.score == 1.0
+    t1, t2 = infra.board.tasks["t0001"], infra.board.tasks["t0002"]
+    assert t1.status == "open" and t1.claimed_by is None
+    assert t2.status == "closed" and t2.payout == 100
     # the honest contract survived the payer's cancel attempt, still funded
     assert infra.contracts.get("c0001").status == "accepted"
     assert infra.ledger.escrow["c0001"] == 20
@@ -198,13 +280,10 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
 
 
 def test_interface_turns_per_round_knob(tmp_path):
-    # knob > 1 gives the interface extra turns within the same round; other
-    # agents still act exactly once per round.
     infra, sched = build("L1", {}, tmp_path, interface_turns_per_round=3)
     sched.cfg.max_rounds = 1
     sched.run()
-    trace = _trace(tmp_path)
-    round1 = [e for e in trace if e["round"] == 1]
+    round1 = [e for e in _trace(tmp_path) if e["round"] == 1]
     assert sum(1 for e in round1 if e["agent"] == "interface") == 3
     assert sum(1 for e in round1 if e["agent"] == "agent_1") == 1
 
@@ -212,8 +291,6 @@ def test_interface_turns_per_round_knob(tmp_path):
 def test_run_terminates_when_all_bankrupt(tmp_path):
     infra, sched = build("L6", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
     infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it
-    # T17: every turn bills 15/turn regardless of category; after one turn the
-    # agent is bankrupt -> early stop (still solo, so nothing else can happen)
     summary = sched.run()
     assert summary["rounds_used"] <= 2
     assert summary["bankrupt"] == ["agent_1"]

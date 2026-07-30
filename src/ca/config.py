@@ -38,7 +38,7 @@ class ExperimentConfig:
     seed_capital_total: int
     fifo_k: int = 6
     retrieve_k: int = 3          # passages per retrieve call (billable-cost knob)
-    list_top_n: int = 20            # open questions shown by list_questions
+    list_top_n: int = 20            # open tasks shown per page by list_tasks
     claim_ttl: int = 8              # rounds before an undelivered claim reopens
     max_rounds: int = 60
     model: str = "gpt-5-mini"
