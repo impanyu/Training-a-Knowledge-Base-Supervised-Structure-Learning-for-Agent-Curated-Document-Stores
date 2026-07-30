@@ -283,6 +283,66 @@ def test_adversarial_scripted(tmp_path):
     assert summary["rounds_used"] == 10 and summary["conservation_ok"] is True
 
 
+def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
+    """T28: every round appends one cumulative system snapshot to
+    timeseries.jsonl; the last line agrees with summary.json / metrics."""
+    scripts = {"agent_1": [
+        ("list_tasks", {}),
+        ("claim_task", {"task": "t0001"}),
+        ("decompose", {"node": "t0001"}),
+        ("decompose", {"node": "t0002"}),
+        ("recall_solutions", {"name": "t0001"}),
+        ("deliver_work", {"target_id": "t0001",
+                          "content": json.dumps({"q0001": "Paris", "q0002": "Loire",
+                                                 "q0003": "4"})}),
+    ]}
+    infra, sched = build("C0", scripts, tmp_path,
+                         library=demo_library(), posted=["t0001"])
+    summary = sched.run()
+    lines = [json.loads(l) for l in open(tmp_path / "timeseries.jsonl")]
+
+    assert len(lines) == summary["rounds_used"] == 6
+    assert [s["round"] for s in lines] == list(range(1, 7))
+    roster = set(infra.agent_ids)
+    for s in lines:
+        for key in ("balances", "tokens", "answered", "tasks_closed", "solutions"):
+            assert set(s[key]) == roster, key
+    # cumulative counters never go down tick over tick
+    for key in ("minted", "burned", "solving_total", "admin_total", "n_answered",
+                "total_f1", "n_tasks_closed", "n_contracts", "n_loans",
+                "interest_paid_total", "n_recalls"):
+        vals = [s[key] for s in lines]
+        assert vals == sorted(vals), key
+    assert [s["board"]["closed"] for s in lines] == [0, 0, 0, 0, 0, 1]
+
+    last = lines[-1]
+    m = compute_metrics(summary)
+    assert last["balances"] == summary["balances"]
+    assert last["tokens"] == summary["tokens"]
+    assert last["bankrupt"] == summary["bankrupt"]
+    assert last["minted"] == summary["minted"]
+    assert last["burned"] == summary["burned"]
+    assert last["n_contracts"] == summary["n_contracts"]
+    assert last["total_f1"] == pytest.approx(m["total_f1"])
+    assert last["total_em"] == pytest.approx(m["total_em"])
+    assert last["n_answered"] == m["n_answered"]
+    assert last["coordination_overhead"] == pytest.approx(m["coordination_overhead"])
+    assert last["task_completion_rate"] == pytest.approx(m["task_completion_rate"])
+    assert last["n_loans"] == m["n_loans"]
+    assert last["loan_principal_outstanding"] == m["loan_principal_outstanding"]
+    assert last["interest_paid_total"] == m["interest_paid_total"]
+    assert last["n_recalls"] == m["n_recalls"]
+    assert last["answers_in_memory_total"] == m["answers_in_memory_total"]
+
+
+def test_timeseries_line_count_matches_max_rounds_run(tmp_path):
+    infra, sched = build("C7", {}, tmp_path)  # nobody answers -> full 10 rounds
+    summary = sched.run()
+    lines = [json.loads(l) for l in open(tmp_path / "timeseries.jsonl")]
+    assert len(lines) == summary["rounds_used"] == 10
+    assert lines[-1]["board"] == {"open": 1, "claimed": 0, "closed": 0}
+
+
 def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
     """A crash mid-run must not cost us the whole run's data."""
     class BoomPolicy:

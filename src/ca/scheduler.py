@@ -42,6 +42,10 @@ class Scheduler:
                     self.recorder.log(event)
                 assert self.infra.ledger.conservation_ok(), \
                     f"conservation violated in round {r}"
+                # T28: snapshot each completed round (before the break checks,
+                # so the final round is captured too); a crash mid-round means
+                # no line for that round, but the finally still writes summary.
+                self.recorder.log_round(self.infra, r)
                 if self.infra.board.all_done():
                     break
                 if all(self.infra.ledger.is_bankrupt(a) for a in self.infra.agent_ids):
