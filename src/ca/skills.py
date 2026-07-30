@@ -68,6 +68,20 @@ _IFACE_PRICING = """
 - set_price(contract_id="c0009", price=250)   # then agent_5 may accept or reject
 Unpriced contracts stall the economy; price them promptly and consistently."""
 
+_BORROW = """
+### Demo: borrowing when you are low on tokens
+- Out of tokens? propose_loan(to="{lender}", amount=200)
+  -> interest accrues at 1% per round on the outstanding principal
+- Once the lender accept_loan()s, the principal lands in your balance
+- repay_loan(loan_id="n0001", amount=50) anytime, partial or full, to cut interest"""
+
+_IFACE_LENDER = """
+### Demo: lending (you are the SOLE lender)
+- Unread message: "[loan request n0001] agent_3 requests 200 tokens at 1%/round interest"
+- accept_loan(loan_id="n0001")   # funds the borrower; interest is passive income to you
+Every worker who runs low on tokens must borrow from you - keep an eye on loan
+requests and fund the ones worth funding."""
+
 
 def role_skill(level: LevelConfig, agent_id: str) -> str:
     is_iface = agent_id == "interface"
@@ -79,6 +93,8 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
         blocks.append(_IFACE_PIPELINE)
         if level.central_pricing:
             blocks.append(_IFACE_PRICING)
+        if level.central_credit:
+            blocks.append(_IFACE_LENDER)
     else:
         if can_world:
             blocks.append(_SOLO_ANSWER if can_retrieve else _SOLO_ANSWER_NO_RETRIEVE)
@@ -96,6 +112,8 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
                 # they are only ever shown how to be hired, never how to hire
                 price_arg = "" if level.central_pricing else ", price=120"
                 blocks.append(_HIRE_PEER.format(price_arg=price_arg))
+            lender = "interface" if (level.central_credit or level.star_comms) else "agent_5"
+            blocks.append(_BORROW.format(lender=lender))
     if not blocks:
         return ""
     return "\n\n## ROLE HANDBOOK (worked examples)\n" + "\n".join(blocks)

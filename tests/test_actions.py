@@ -38,10 +38,34 @@ def test_retrieve_gating_and_star_comms():
     i2 = make("L2")
     assert permission_error(i2, "agent_1", "retrieve", {"query": "x"}) is not None
     assert permission_error(i2, "interface", "retrieve", {"query": "x"}) is None
+    i5 = make("L5")
+    assert permission_error(i5, "agent_1", "send_message", {"to": "agent_2", "text": "hi"}) is not None
+    assert permission_error(i5, "agent_1", "send_message", {"to": "interface", "text": "hi"}) is None
+    assert permission_error(i5, "interface", "send_message", {"to": "agent_2", "text": "hi"}) is None
+
+
+def test_central_credit_gating_at_L4():
     i4 = make("L4")
-    assert permission_error(i4, "agent_1", "send_message", {"to": "agent_2", "text": "hi"}) is not None
-    assert permission_error(i4, "agent_1", "send_message", {"to": "interface", "text": "hi"}) is None
-    assert permission_error(i4, "interface", "send_message", {"to": "agent_2", "text": "hi"}) is None
+    # a non-interface agent may only borrow FROM the interface
+    err = permission_error(i4, "agent_1", "propose_loan", {"to": "agent_2", "amount": 10})
+    assert err is not None and "interface agent" in err
+    assert permission_error(i4, "agent_1", "propose_loan", {"to": "interface", "amount": 10}) is None
+    # the interface is the sole lender: it may not itself borrow
+    err_i = permission_error(i4, "interface", "propose_loan", {"to": "agent_1", "amount": 10})
+    assert err_i is not None and "sole lender" in err_i
+
+
+def test_central_credit_not_gated_below_L4():
+    i3 = make("L3")
+    assert permission_error(i3, "agent_1", "propose_loan", {"to": "agent_2", "amount": 10}) is None
+    assert permission_error(i3, "interface", "propose_loan", {"to": "agent_1", "amount": 10}) is None
+
+
+def test_star_comms_extends_to_loans_at_L5():
+    i5 = make("L5")
+    err = permission_error(i5, "agent_1", "propose_loan", {"to": "agent_2", "amount": 10})
+    assert err is not None
+    assert permission_error(i5, "agent_1", "propose_loan", {"to": "interface", "amount": 10}) is None
 
 
 def test_central_pricing_at_L3():
@@ -156,10 +180,10 @@ def test_visible_tools_filtered():
     assert set(ACTION_SPECS) >= names_l0
 
 
-def test_L5_hides_multi_agent_tool_schemas():
+def test_L6_hides_multi_agent_tool_schemas():
     # a solo agent has nobody to message, contract or pay: billing it for those
     # schemas on every turn is pure waste
-    names = {t["name"] for t in visible_tools(LEVELS["L5"], "agent_1")}
+    names = {t["name"] for t in visible_tools(LEVELS["L6"], "agent_1")}
     assert names == {"retrieve", "work_on", "deliver_work", "list_questions",
                      "claim_question", "push_goal", "pop_goal",
                      "memory_write", "memory_search", "check_balance"}

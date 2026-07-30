@@ -124,7 +124,7 @@ ACTION_SPECS: dict[str, dict] = {
 }
 
 _WORLD_ACTIONS = {"list_questions", "claim_question"}
-_TARGETED = {"send_message", "propose_contract", "pay"}  # star-comms checked actions
+_TARGETED = {"send_message", "propose_contract", "pay", "propose_loan"}  # star-comms checked actions
 # meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
 _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
                      "reject_contract", "counter_offer", "cancel_contract", "set_price",
@@ -179,6 +179,12 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
         return "only the interface agent may interact with the task board"
     if name == "retrieve" and level.retrieve_access == "interface" and not is_iface:
         return "only the interface agent may retrieve external information"
+    # credit centralization: the interface is the sole lender
+    if level.central_credit and name == "propose_loan":
+        if is_iface:
+            return "the interface agent is the sole lender; it cannot borrow"
+        if inp.get("to") != "interface":
+            return "at this configuration you may only borrow from the interface agent"
     # star comms
     if level.star_comms and not is_iface:
         if name in _TARGETED and inp.get("to") != "interface":

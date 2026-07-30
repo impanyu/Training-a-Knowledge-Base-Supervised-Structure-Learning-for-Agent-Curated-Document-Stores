@@ -41,6 +41,10 @@ def _level_rules(level: LevelConfig, is_iface: bool) -> str:
         rules.append("ALL contract prices are set by the interface agent (set_price); bargaining is disabled."
                      if not is_iface else
                      "You set the price of EVERY contract in the system via set_price; nobody can bargain.")
+    if level.central_credit:
+        rules.append("Loans: you may only borrow from the interface agent."
+                     if not is_iface else
+                     "You are the SOLE lender in the system.")
     if level.star_comms:
         rules.append("You may only message/contract/pay the interface agent."
                      if not is_iface else

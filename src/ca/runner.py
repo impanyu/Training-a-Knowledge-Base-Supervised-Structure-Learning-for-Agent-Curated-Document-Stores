@@ -39,12 +39,14 @@ def main() -> None:
     args = ap.parse_args()
 
     from ca.config import agent_ids
-    max_rounds = args.max_rounds
-    if args.turns is not None:
-        max_rounds = max(1, args.turns // len(agent_ids(LEVELS[args.level])))
-    cfg = ExperimentConfig(level=LEVELS[args.level], seed=args.seed,
+    level = LEVELS[args.level]
+    cfg = ExperimentConfig(level=level, seed=args.seed,
                            seed_capital_total=args.capital,
-                           max_rounds=max_rounds, model=args.model)
+                           max_rounds=args.max_rounds, model=args.model)
+    if args.turns is not None:
+        slots_per_round = len(agent_ids(level)) + (
+            cfg.interface_turns_per_round - 1 if level.has_interface else 0)
+        cfg.max_rounds = max(1, args.turns // slots_per_round)
     infra = Infra(cfg, load_questions(args.questions),
                   retriever=ChromaBackend.load(args.index))
     agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn, cfg.temperature))

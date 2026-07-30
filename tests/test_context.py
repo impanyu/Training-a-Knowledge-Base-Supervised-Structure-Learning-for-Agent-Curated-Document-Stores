@@ -12,13 +12,23 @@ def make(level="L1"):
 
 
 def test_system_prompt_mentions_identity_goal_and_rules():
-    infra = make("L4")
+    infra = make("L5")
     sp = system_prompt(infra.cfg.level, "agent_1", infra.agent_ids)
     assert "agent_1" in sp
     assert "maximize" in sp.lower()
     assert "interface" in sp  # star-comms rule explained
     sp_i = system_prompt(infra.cfg.level, "interface", infra.agent_ids)
     assert "you are the interface" in sp_i.lower()
+
+
+def test_credit_rule_text_at_central_credit_level():
+    ids = ["interface", "agent_1"]
+    sp = system_prompt(LEVELS["L4"], "agent_1", ids)
+    assert "only borrow from the interface agent" in sp.lower()
+    sp_i = system_prompt(LEVELS["L4"], "interface", ids)
+    assert "sole lender" in sp_i.lower()
+    sp_l3 = system_prompt(LEVELS["L3"], "agent_1", ids)
+    assert "only borrow from the interface agent" not in sp_l3.lower()
 
 
 def test_render_turn_contains_state():
@@ -74,7 +84,7 @@ def test_negotiation_hint_only_where_prices_are_negotiable():
     assert "negotiate prices" not in sp0                      # dropped from the base prompt
     assert "fully decentralized" in sp0                       # L0 framing preserved
     assert "Prices are freely negotiable." not in system_prompt(LEVELS["L3"], "agent_1", ids)
-    assert "Prices are freely negotiable." not in system_prompt(LEVELS["L5"], "agent_1", ["agent_1"])
+    assert "Prices are freely negotiable." not in system_prompt(LEVELS["L6"], "agent_1", ["agent_1"])
 
 
 def test_repetition_warning_after_three_identical_actions():

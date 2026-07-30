@@ -26,14 +26,14 @@ def build(level, scripts, tmp_path, n_questions=1, **cfg_kw):
     return infra, Scheduler(infra, agents, cfg, rec, random.Random(cfg.seed))
 
 
-def test_solo_answer_flow_L5(tmp_path):
+def test_solo_answer_flow_L6(tmp_path):
     scripts = {"agent_1": [
         ("list_questions", {}),
         ("claim_question", {"qid": "q0001"}),
         ("retrieve", {"query": "capital of France"}),
         ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
     ]}
-    infra, sched = build("L5", scripts, tmp_path)
+    infra, sched = build("L6", scripts, tmp_path)
     summary = sched.run()
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
@@ -81,7 +81,7 @@ def test_subcontract_flow_L1(tmp_path):
 
 
 def test_stops_at_max_rounds(tmp_path):
-    infra, sched = build("L5", {}, tmp_path)  # nobody answers
+    infra, sched = build("L6", {}, tmp_path)  # nobody answers
     summary = sched.run()
     assert summary["rounds_used"] == 10
     assert summary["questions"][0]["status"] != "closed"
@@ -188,17 +188,29 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
         def decide(self, system, context, tools):
             raise RuntimeError("policy exploded")
 
-    infra, sched = build("L5", {}, tmp_path)
+    infra, sched = build("L6", {}, tmp_path)
     sched.agents[0].policy = BoomPolicy()
     with pytest.raises(RuntimeError):
         sched.run()
     summary = json.loads((tmp_path / "summary.json").read_text())
-    assert summary["level"] == "L5"
+    assert summary["level"] == "L6"
     assert summary["conservation_ok"] is True
 
 
+def test_interface_turns_per_round_knob(tmp_path):
+    # knob > 1 gives the interface extra turns within the same round; other
+    # agents still act exactly once per round.
+    infra, sched = build("L1", {}, tmp_path, interface_turns_per_round=3)
+    sched.cfg.max_rounds = 1
+    sched.run()
+    trace = _trace(tmp_path)
+    round1 = [e for e in trace if e["round"] == 1]
+    assert sum(1 for e in round1 if e["agent"] == "interface") == 3
+    assert sum(1 for e in round1 if e["agent"] == "agent_1") == 1
+
+
 def test_run_terminates_when_all_bankrupt(tmp_path):
-    infra, sched = build("L5", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
+    infra, sched = build("L6", {"agent_1": [("retrieve", {"query": "x"})]}, tmp_path)
     infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it
     # T17: every turn bills 15/turn regardless of category; after one turn the
     # agent is bankrupt -> early stop (still solo, so nothing else can happen)

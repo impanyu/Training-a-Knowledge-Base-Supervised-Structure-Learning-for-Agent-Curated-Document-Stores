@@ -33,6 +33,9 @@ class Scheduler:
                         "balance_after": self.infra.ledger.balance(ev["borrower"]),
                     })
                 order = list(self.agents)
+                if self.cfg.level.has_interface and self.cfg.interface_turns_per_round > 1:
+                    iface = next(a for a in self.agents if a.id == "interface")
+                    order += [iface] * (self.cfg.interface_turns_per_round - 1)
                 self.rng.shuffle(order)
                 for agent in order:
                     event = agent.take_turn()
