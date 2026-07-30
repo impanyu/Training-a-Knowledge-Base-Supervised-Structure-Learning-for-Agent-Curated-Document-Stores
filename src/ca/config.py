@@ -18,11 +18,11 @@ from dataclasses import dataclass
 class LevelConfig:
     level: str
     n_agents: int
-    has_interface: bool
-    world_access: str = "all"          # "all" | "interface" (list/claim/deliver to WORLD)
-    central_pricing: bool = False      # interface sets ALL contract prices; bargaining off
-    central_credit: bool = False       # interface is the sole lender
-    star_comms: bool = False           # non-interface agents may only reach the interface
+    has_hub: bool
+    world_access: str = "all"          # "all" | "hub" (list/claim/deliver to WORLD)
+    central_pricing: bool = False      # hub sets ALL contract prices; bargaining off
+    central_credit: bool = False       # hub is the sole lender
+    star_comms: bool = False           # non-hub agents may only reach the hub
     shared_solution_memory: bool = False  # one solution KV store for everyone (T26)
     collective_goal: bool = False      # root goal = TOTAL system balance, not one's own
 
@@ -31,7 +31,7 @@ CONFIGS: dict[str, LevelConfig] = {
     # demand, pricing, credit and comms centralization each need a hub agent to
     # hold the power; shared memory and the collective goal do not.
     "C0": LevelConfig("C0", 8, False),
-    "C1": LevelConfig("C1", 8, True, world_access="interface"),
+    "C1": LevelConfig("C1", 8, True, world_access="hub"),
     "C2": LevelConfig("C2", 8, False, shared_solution_memory=True),
     "C3": LevelConfig("C3", 8, True, central_pricing=True),
     "C4": LevelConfig("C4", 8, True, central_credit=True),
@@ -42,8 +42,8 @@ CONFIGS: dict[str, LevelConfig] = {
 
 
 def agent_ids(level: LevelConfig) -> list[str]:
-    if level.has_interface:
-        return ["interface"] + [f"agent_{i}" for i in range(1, level.n_agents)]
+    if level.has_hub:
+        return ["hub"] + [f"agent_{i}" for i in range(1, level.n_agents)]
     return [f"agent_{i}" for i in range(1, level.n_agents + 1)]
 
 
@@ -61,4 +61,4 @@ class ExperimentConfig:
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
     loan_rate: float = 0.01      # interest charged per round on outstanding loan principal
-    interface_turns_per_round: int = 1  # extra interface turns/round at has_interface levels
+    hub_turns_per_round: int = 1  # extra hub turns/round at has_hub levels

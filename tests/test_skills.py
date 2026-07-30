@@ -19,21 +19,21 @@ def test_worker_demo_matches_config_permissions():
 def test_every_worker_is_taught_retrieve_v3():
     """Info centralization is gone: no config may hide the corpus from a worker."""
     for name in CONFIGS:
-        for who in ("agent_1", "interface"):
-            if who == "interface" and not CONFIGS[name].has_interface:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             assert "retrieve" in role_skill(CONFIGS[name], who), (name, who)
 
 
 def test_v1_question_level_verbs_are_gone_everywhere():
     for name in CONFIGS:
-        for who in ("agent_1", "interface"):
+        for who in ("agent_1", "hub"):
             s = role_skill(CONFIGS[name], who)
             assert "claim_question" not in s and "list_questions" not in s
 
 
 def test_world_demos_teach_decompose_then_packaged_json_delivery():
-    for s in (role_skill(CONFIGS["C0"], "agent_1"), role_skill(CONFIGS["C1"], "interface")):
+    for s in (role_skill(CONFIGS["C0"], "agent_1"), role_skill(CONFIGS["C1"], "hub")):
         assert "list_tasks" in s and "claim_task" in s and "decompose" in s
         assert 'deliver_work(target_id="t0007"' in s
         assert '"q0031"' in s                       # a JSON package, not a bare answer
@@ -48,28 +48,28 @@ def test_contractors_everywhere_are_taught_decompose_and_bound_delivery():
 
 
 def test_only_the_demand_monopoly_config_withholds_the_world_demo():
-    """C3/C4/C5 have an interface but no demand monopoly: workers there still
+    """C3/C4/C5 have an hub but no demand monopoly: workers there still
     claim tasks and deliver to the WORLD, so they keep the solo demo."""
     for name in _MULTI:
         s = role_skill(CONFIGS[name], "agent_1")
         assert ("claim_task" in s) == (CONFIGS[name].world_access == "all"), name
 
 
-def test_interface_demo_matches_config_permissions():
-    c1 = role_skill(CONFIGS["C1"], "interface")
+def test_hub_demo_matches_config_permissions():
+    c1 = role_skill(CONFIGS["C1"], "hub")
     assert "propose_contract" in c1 and "deliver_work" in c1 and "set_price" not in c1
-    assert "set_price" in role_skill(CONFIGS["C3"], "interface")
+    assert "set_price" in role_skill(CONFIGS["C3"], "hub")
     c7 = role_skill(CONFIGS["C7"], "agent_1")
     assert "propose_contract" not in c7                          # solo: no contracting demo
     assert "claim_task" in c7 and "decompose" in c7              # but still a full solo demo
 
 
-def test_interface_bottleneck_claim_only_under_demand_centralization():
-    """'your turn is the scarcest resource' is only true when the interface is
+def test_hub_bottleneck_claim_only_under_demand_centralization():
+    """'your turn is the scarcest resource' is only true when the hub is
     the system's sole income channel (C1), not at C3/C4/C5."""
-    assert "SCARCEST RESOURCE" in role_skill(CONFIGS["C1"], "interface")
+    assert "SCARCEST RESOURCE" in role_skill(CONFIGS["C1"], "hub")
     for name in ("C3", "C4", "C5"):
-        assert "SCARCEST RESOURCE" not in role_skill(CONFIGS[name], "interface"), name
+        assert "SCARCEST RESOURCE" not in role_skill(CONFIGS[name], "hub"), name
 
 
 def test_workers_are_shown_how_to_hire_wherever_contracting_exists():
@@ -89,7 +89,7 @@ def test_hire_demo_teaches_subtree_binding_by_sentence():
 
 def test_hire_demo_targets_the_hub_under_star_comms():
     s = role_skill(CONFIGS["C5"], "agent_1")
-    assert 'propose_contract(to="interface"' in s
+    assert 'propose_contract(to="hub"' in s
     assert 'to="agent_5"' not in s
 
 
@@ -103,20 +103,20 @@ def test_worker_borrowing_demo_targets_any_peer_without_credit_centralization():
         s = role_skill(CONFIGS[name], "agent_1")
         assert "propose_loan" in s
         assert "repay_loan" in s
-        assert 'propose_loan(to="interface"' not in s
+        assert 'propose_loan(to="hub"' not in s
 
 
-def test_worker_borrowing_demo_targets_interface_under_credit_centralization():
+def test_worker_borrowing_demo_targets_hub_under_credit_centralization():
     for name in ("C4", "C5"):
         s = role_skill(CONFIGS[name], "agent_1")
-        assert 'propose_loan(to="interface"' in s
+        assert 'propose_loan(to="hub"' in s
         assert "repay_loan" in s
 
 
-def test_interface_lender_demo_shown_only_under_credit_centralization():
+def test_hub_lender_demo_shown_only_under_credit_centralization():
     for name in ("C1", "C3", "C5"):
-        assert "SOLE lender" not in role_skill(CONFIGS[name], "interface")
-    assert "SOLE lender" in role_skill(CONFIGS["C4"], "interface")
+        assert "SOLE lender" not in role_skill(CONFIGS[name], "hub")
+    assert "SOLE lender" in role_skill(CONFIGS["C4"], "hub")
 
 
 def test_collective_block_only_at_c6():
@@ -137,7 +137,7 @@ def test_solo_has_no_borrowing_demo():
 
 def test_no_demo_leaks_unformatted_placeholders():
     for name in CONFIGS:
-        for who in ("agent_1", "interface"):
+        for who in ("agent_1", "hub"):
             s = role_skill(CONFIGS[name], who)
             assert "{{" not in s and "}}" not in s
             assert "{lender}" not in s and "{price_arg}" not in s and "{peer}" not in s

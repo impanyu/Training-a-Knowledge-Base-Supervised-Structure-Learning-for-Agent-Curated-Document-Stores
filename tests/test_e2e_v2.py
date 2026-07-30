@@ -183,17 +183,17 @@ def test_loan_rescue_after_bankruptcy_C0(tmp_path):
 
 
 def test_credit_centralization_C4(tmp_path):
-    """C4: the interface is the sole lender. A worker cannot borrow from a
-    peer, can borrow from the interface, and the interface itself cannot
+    """C4: the hub is the sole lender. A worker cannot borrow from a
+    peer, can borrow from the hub, and the hub itself cannot
     borrow (nobody to be the sole lender to it)."""
     scripts = {
         "agent_1": [
             ("propose_loan", {"to": "agent_2", "amount": 50}),     # r1: ERROR, peer lender
-            ("propose_loan", {"to": "interface", "amount": 50}),   # r2: OK
+            ("propose_loan", {"to": "hub", "amount": 50}),   # r2: OK
             ("check_balance", {}),                                  # r3: waits for accept
             ("check_balance", {}),                                  # r4: confirm funded
         ],
-        "interface": [
+        "hub": [
             ("check_balance", {}),
             ("check_balance", {}),
             ("accept_loan", {"loan_id": "n0001"}),
@@ -205,19 +205,19 @@ def test_credit_centralization_C4(tmp_path):
     trace = _trace(tmp_path)
 
     peer_attempt = _results(trace, "agent_1", "propose_loan")[0]
-    assert peer_attempt.startswith("ERROR") and "interface" in peer_attempt
+    assert peer_attempt.startswith("ERROR") and "hub" in peer_attempt
 
     iface_attempt = _results(trace, "agent_1", "propose_loan")[1]
     assert not iface_attempt.startswith("ERROR")
 
-    accept = _results(trace, "interface", "accept_loan")[0]
+    accept = _results(trace, "hub", "accept_loan")[0]
     assert not accept.startswith("ERROR")
 
-    iface_borrow = _results(trace, "interface", "propose_loan")[0]
+    iface_borrow = _results(trace, "hub", "propose_loan")[0]
     assert iface_borrow.startswith("ERROR") and "sole lender" in iface_borrow
 
     loan = infra.loans.get("n0001")
-    assert loan.lender == "interface" and loan.borrower == "agent_1"
+    assert loan.lender == "hub" and loan.borrower == "agent_1"
     assert loan.status == "active" and loan.principal == 50
     # 125 - 4*15 + 50 borrowed - 1 interest (round 4's tick, the loan's first
     # since it went active mid round 3)
@@ -225,21 +225,21 @@ def test_credit_centralization_C4(tmp_path):
     assert summary["conservation_ok"] is True
 
 
-def test_star_C5_loans_only_via_interface(tmp_path):
+def test_star_C5_loans_only_via_hub(tmp_path):
     """C5 flips comms topology ONLY: lending rights are untouched, but the
     star restricts every counterparty to the hub, so a worker can neither
-    borrow from nor PAY a peer -- and both work against the interface. (C4
+    borrow from nor PAY a peer -- and both work against the hub. (C4
     reaches the same loan outcome by a different mechanism: a right, not a
     topology, which is why the two configs are separable.)"""
     scripts = {
         "agent_1": [
             ("propose_loan", {"to": "agent_2", "amount": 50}),   # r1: ERROR (credit-central)
             ("pay", {"to": "agent_2", "amount": 10}),            # r2: ERROR (star comms)
-            ("propose_loan", {"to": "interface", "amount": 50}), # r3: OK
-            ("pay", {"to": "interface", "amount": 10}),          # r4: OK (star allows interface)
+            ("propose_loan", {"to": "hub", "amount": 50}), # r3: OK
+            ("pay", {"to": "hub", "amount": 10}),          # r4: OK (star allows hub)
             ("check_balance", {}),                                # r5: waits for accept
         ],
-        "interface": [
+        "hub": [
             ("check_balance", {}),
             ("check_balance", {}),
             ("check_balance", {}),
@@ -255,7 +255,7 @@ def test_star_C5_loans_only_via_interface(tmp_path):
     assert peer_loan.startswith("ERROR")
 
     peer_pay = _results(trace, "agent_1", "pay")[0]
-    assert peer_pay.startswith("ERROR") and "interact with the interface agent" in peer_pay
+    assert peer_pay.startswith("ERROR") and "interact with the hub agent" in peer_pay
 
     iface_loan = _results(trace, "agent_1", "propose_loan")[1]
     assert not iface_loan.startswith("ERROR")
@@ -264,10 +264,10 @@ def test_star_C5_loans_only_via_interface(tmp_path):
     assert not iface_pay.startswith("ERROR")
 
     loan = infra.loans.get("n0001")
-    assert loan.lender == "interface" and loan.borrower == "agent_1"
+    assert loan.lender == "hub" and loan.borrower == "agent_1"
     assert loan.status == "active" and loan.principal == 50
     assert infra.ledger.balance("agent_1") == 90    # 125 - 5*15 - 10(paid) + 50(borrowed)
-    assert infra.ledger.balance("interface") == 10  # 125 - 5*15 + 10(received) - 50(lent)
+    assert infra.ledger.balance("hub") == 10  # 125 - 5*15 + 10(received) - 50(lent)
     assert summary["conservation_ok"] is True
 
 

@@ -5,7 +5,7 @@ v2: every demo is built around the task tree -- claim a task, decompose it
 level by level, then package ONE JSON map covering all of its leaves.
 
 v3: configurations are single-factor, so a demo may only assume the ONE
-mechanism that config centralizes. In particular the interface is not
+mechanism that config centralizes. In particular the hub is not
 privileged in general -- at C3/C4/C5 it holds exactly one power and is an
 ordinary market participant in every other respect.
 """
@@ -77,7 +77,7 @@ Your profit = WORLD rewards - subcontract payments - your own token burn.
 Parallelize: keep several agents working on different subtrees at once, and
 watch the claim expiry countdown - an unpackaged task pays nothing."""
 
-# Only true when the interface holds the demand monopoly (C1): there it is the
+# Only true when the hub holds the demand monopoly (C1): there it is the
 # system's single income channel, so its turns are the scarcest resource. At
 # C3/C4/C5 every agent earns from the WORLD directly, so this must NOT appear.
 _IFACE_BOTTLENECK = """
@@ -130,14 +130,14 @@ Deliver everything you can - income is the only way the system grows."""
 
 
 def role_skill(level: LevelConfig, agent_id: str) -> str:
-    is_iface = agent_id == "interface"
+    is_iface = agent_id == "hub"
     can_world = level.world_access == "all" or is_iface
     solo = level.n_agents == 1
     blocks: list[str] = []
     if is_iface:
         # concatenated, not .format()ted: the demo body contains literal JSON braces
         blocks.append(_IFACE_PIPELINE +
-                      (_IFACE_BOTTLENECK if level.world_access == "interface" else ""))
+                      (_IFACE_BOTTLENECK if level.world_access == "hub" else ""))
         if level.central_pricing:
             blocks.append(_IFACE_PRICING)
         if level.central_credit:
@@ -151,10 +151,10 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
             blocks.append(_CONTRACTOR.format(counter_line=counter))
             # without this workers only ever see themselves as sellers. Under
             # star comms the only counterparty they can hire is the hub.
-            peer = "interface" if level.star_comms else "agent_5"
+            peer = "hub" if level.star_comms else "agent_5"
             price_arg = "" if level.central_pricing else ", price=120"
             blocks.append(_HIRE_PEER.format(peer=peer, price_arg=price_arg))
-            lender = "interface" if (level.central_credit or level.star_comms) else "agent_5"
+            lender = "hub" if (level.central_credit or level.star_comms) else "agent_5"
             blocks.append(_BORROW.format(lender=lender))
     # the solution store exists at every configuration and for every role
     blocks.append(_RECALL + (_RECALL_SHARED if level.shared_solution_memory else ""))

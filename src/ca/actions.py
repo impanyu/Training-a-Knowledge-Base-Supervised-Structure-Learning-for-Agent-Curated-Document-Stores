@@ -90,7 +90,7 @@ ACTION_SPECS: dict[str, dict] = {
     },
     "propose_contract": {
         "description": ("Offer to PAY another agent to do `task` for you. Include `price` "
-                        "when bargaining is allowed; under central pricing the interface "
+                        "when bargaining is allowed; under central pricing the hub "
                         "agent sets the price after you propose. If `task` names a subtask "
                         "node (short id or its one-sentence summary) the contract is BOUND to "
                         "that node: the contractor must then deliver a JSON map covering all "
@@ -98,7 +98,7 @@ ACTION_SPECS: dict[str, dict] = {
         "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task"]),
     },
     "set_price": {
-        "description": "INTERFACE ONLY (central pricing): set the final price of an unpriced contract.",
+        "description": "HUB ONLY (central pricing): set the final price of an unpriced contract.",
         "input_schema": _schema({"contract_id": _S, "price": _I}, ["contract_id", "price"]),
     },
     "accept_contract": {
@@ -193,12 +193,12 @@ def classify(name: str, inp: dict) -> str:
 
 
 def visible_tools(level: LevelConfig, agent_id: str) -> list[dict]:
-    is_iface = agent_id == "interface"
+    is_iface = agent_id == "hub"
     out = []
     for name, spec in ACTION_SPECS.items():
         if level.n_agents == 1 and name in _MULTI_AGENT_ONLY:
             continue  # solo agent: never bill it for schemas it can never use
-        if level.world_access == "interface" and not is_iface and name in _WORLD_ACTIONS:
+        if level.world_access == "hub" and not is_iface and name in _WORLD_ACTIONS:
             continue
         if name == "counter_offer" and level.central_pricing:
             continue  # bargaining disabled for everyone
@@ -214,32 +214,32 @@ def _unknown_agent(infra: Infra, to: str) -> str:
 
 def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str | None:
     level = infra.cfg.level
-    is_iface = agent_id == "interface"
+    is_iface = agent_id == "hub"
     # world access (incl. deliver to WORLD)
     world_call = name in _WORLD_ACTIONS or (
         name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")))
-    if world_call and level.world_access == "interface" and not is_iface:
-        return "only the interface agent may interact with the task board"
+    if world_call and level.world_access == "hub" and not is_iface:
+        return "only the hub agent may interact with the task board"
     # retrieval is infrastructure: every agent may query the corpus at every
     # configuration (info centralization was deleted in v3).
-    # credit centralization: the interface is the sole lender
+    # credit centralization: the hub is the sole lender
     if level.central_credit and name == "propose_loan":
         if is_iface:
-            return "the interface agent is the sole lender; it cannot borrow"
-        if inp.get("to") != "interface":
-            return "at this configuration you may only borrow from the interface agent"
+            return "the hub agent is the sole lender; it cannot borrow"
+        if inp.get("to") != "hub":
+            return "at this configuration you may only borrow from the hub agent"
     # star comms
     if level.star_comms and not is_iface:
-        if name in _TARGETED and inp.get("to") != "interface":
-            return "at this configuration you may only interact with the interface agent"
-        if name == "read_chat" and inp.get("with_agent") != "interface":
-            return "at this configuration you may only interact with the interface agent"
-    # pricing centralization: interface monopolizes ALL contract pricing
+        if name in _TARGETED and inp.get("to") != "hub":
+            return "at this configuration you may only interact with the hub agent"
+        if name == "read_chat" and inp.get("with_agent") != "hub":
+            return "at this configuration you may only interact with the hub agent"
+    # pricing centralization: hub monopolizes ALL contract pricing
     if level.central_pricing:
         if name == "counter_offer":
-            return "all contract prices are set by the interface agent; bargaining is disabled"
+            return "all contract prices are set by the hub agent; bargaining is disabled"
         if name == "set_price" and not is_iface:
-            return "only the interface agent may set contract prices"
+            return "only the hub agent may set contract prices"
     elif name == "set_price":
         return "set_price does not exist in this configuration (prices are negotiated)"
     # bankruptcy freezes SOLVING actions only; admin actions (incl. borrowing
@@ -453,18 +453,18 @@ def _h_propose_contract(infra, a, inp):
     if inp["to"] not in infra.agent_ids:
         return _unknown_agent(infra, inp["to"])
     central = infra.cfg.level.central_pricing
-    if central and a != "interface":
-        # price (if any) is ignored: the interface will set it
+    if central and a != "hub":
+        # price (if any) is ignored: the hub will set it
         c = infra.contracts.propose(a, inp["to"], inp["task"])
         bound = _bind_node(infra, c)
-        infra.chat.send(a, "interface",
+        infra.chat.send(a, "hub",
                         f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: "
                         f"{c.task}{bound}", infra.round)
-        if inp["to"] != "interface":
+        if inp["to"] != "hub":
             infra.chat.send(a, inp["to"],
-                            f"[contract offer {c.cid}, price pending interface] "
+                            f"[contract offer {c.cid}, price pending hub] "
                             f"task: {c.task}{bound}", infra.round)
-        return (f"proposed {c.cid} to {inp['to']}; awaiting interface pricing"
+        return (f"proposed {c.cid} to {inp['to']}; awaiting hub pricing"
                 + (f" (bound to {c.node_id})" if c.node_id else ""))
     if inp.get("price") is None:
         return "ERROR: price is required (bargaining configuration)"

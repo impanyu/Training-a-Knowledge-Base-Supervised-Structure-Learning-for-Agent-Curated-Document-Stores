@@ -48,16 +48,16 @@ naming the subtask in the contract binds it, and the contractor must return a
 JSON map covering that subtask's leaves.
 {level_rules}"""
 
-_INTERFACE_EXTRA_DEMAND = """
-YOU ARE THE INTERFACE AGENT: the only agent allowed to take tasks from the
+_HUB_EXTRA_DEMAND = """
+YOU ARE THE HUB AGENT: the only agent allowed to take tasks from the
 task board and deliver packages to the WORLD. Other agents can work for you
 via contracts. Your profit = WORLD rewards minus what you pay them."""
 
-# C3/C4/C5: the interface holds exactly ONE power (named in the configuration
+# C3/C4/C5: the hub holds exactly ONE power (named in the configuration
 # rules above) and is an ordinary market participant in every other respect --
 # it must not be told it monopolizes the task board.
-_INTERFACE_EXTRA = """
-YOU ARE THE INTERFACE AGENT: the hub of this configuration. Apart from the one
+_HUB_EXTRA = """
+YOU ARE THE HUB AGENT: the hub of this configuration. Apart from the one
 privilege named in the configuration rules above you are an ordinary agent -
 every other agent may claim tasks and deliver to the WORLD exactly as you can,
 and you earn by solving and packaging tasks just like they do."""
@@ -65,18 +65,18 @@ and you earn by solving and packaging tasks just like they do."""
 
 def _level_rules(level: LevelConfig, is_iface: bool) -> str:
     rules = []
-    if level.world_access == "interface":
-        rules.append("Only the interface agent can list/claim tasks and deliver packages to the WORLD.")
+    if level.world_access == "hub":
+        rules.append("Only the hub agent can list/claim tasks and deliver packages to the WORLD.")
     if level.central_pricing:
-        rules.append("ALL contract prices are set by the interface agent (set_price); bargaining is disabled."
+        rules.append("ALL contract prices are set by the hub agent (set_price); bargaining is disabled."
                      if not is_iface else
                      "You set the price of EVERY contract in the system via set_price; nobody can bargain.")
     if level.central_credit:
-        rules.append("Loans: you may only borrow from the interface agent."
+        rules.append("Loans: you may only borrow from the hub agent."
                      if not is_iface else
                      "You are the SOLE lender in the system.")
     if level.star_comms:
-        rules.append("You may only message/contract/pay the interface agent."
+        rules.append("You may only message/contract/pay the hub agent."
                      if not is_iface else
                      "Other agents can only interact with you, not with each other.")
     negotiable = not level.central_pricing and level.n_agents > 1
@@ -90,14 +90,14 @@ def _level_rules(level: LevelConfig, is_iface: bool) -> str:
 
 
 def system_prompt(level: LevelConfig, agent_id: str, all_ids: list[str]) -> str:
-    is_iface = agent_id == "interface"
+    is_iface = agent_id == "hub"
     sp = _BASE.format(agent_id=agent_id,
                       peers=", ".join(all_ids),
                       root_goal=_GOAL_COLLECTIVE if level.collective_goal else _GOAL_OWN,
                       level_rules=_level_rules(level, is_iface))
     if is_iface:
-        sp += (_INTERFACE_EXTRA_DEMAND if level.world_access == "interface"
-               else _INTERFACE_EXTRA)
+        sp += (_HUB_EXTRA_DEMAND if level.world_access == "hub"
+               else _HUB_EXTRA)
     sp += role_skill(level, agent_id)
     return sp
 
@@ -181,7 +181,7 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
             else:
                 lines.append(f"- {l.lid} [owed to you by {l.borrower}] principal {l.principal} tokens")
         parts.append("Your loans:\n" + "\n".join(lines))
-    if agent_id == "interface" and infra.cfg.level.central_pricing:
+    if agent_id == "hub" and infra.cfg.level.central_pricing:
         unp = infra.contracts.unpriced()
         if unp:
             parts.append("Contracts awaiting YOUR pricing (use set_price):\n" +

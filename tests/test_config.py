@@ -25,7 +25,7 @@ def test_config_set_is_c0_through_c7():
 
 def test_c0_is_the_fully_decentralized_baseline():
     c0 = CONFIGS["C0"]
-    assert c0.n_agents == 8 and not c0.has_interface
+    assert c0.n_agents == 8 and not c0.has_hub
     assert _mechanisms(c0) == {"world_access": "all", "shared_solution_memory": False,
                                "central_pricing": False, "central_credit": False,
                                "star_comms": False, "collective_goal": False}
@@ -41,7 +41,7 @@ def test_each_config_flips_exactly_one_mechanism_vs_c0():
 
 
 def test_flipped_values_are_the_centralizing_ones():
-    assert CONFIGS["C1"].world_access == "interface"
+    assert CONFIGS["C1"].world_access == "hub"
     assert CONFIGS["C2"].shared_solution_memory is True
     assert CONFIGS["C3"].central_pricing is True
     assert CONFIGS["C4"].central_credit is True
@@ -49,15 +49,15 @@ def test_flipped_values_are_the_centralizing_ones():
     assert CONFIGS["C6"].collective_goal is True
 
 
-def test_interface_exists_only_where_a_hub_holds_the_power():
+def test_hub_exists_only_where_a_hub_holds_the_power():
     # C2/C6 centralize infrastructure or the goal function, not an agent, so
     # they stay leaderless; C1/C3/C4/C5 need a hub to hold the flipped power.
-    assert [c for c in CONFIGS if CONFIGS[c].has_interface] == ["C1", "C3", "C4", "C5"]
+    assert [c for c in CONFIGS if CONFIGS[c].has_hub] == ["C1", "C3", "C4", "C5"]
 
 
 def test_c7_is_the_solo_baseline():
     c7 = CONFIGS["C7"]
-    assert c7.n_agents == 1 and not c7.has_interface
+    assert c7.n_agents == 1 and not c7.has_hub
     assert _mechanisms(c7) == _mechanisms(CONFIGS["C0"])
 
 
@@ -69,7 +69,7 @@ def test_retrieve_access_is_gone():
 def test_agent_ids():
     assert agent_ids(CONFIGS["C0"]) == [f"agent_{i}" for i in range(1, 9)]
     ids = agent_ids(CONFIGS["C1"])
-    assert ids[0] == "interface" and len(ids) == 8
+    assert ids[0] == "hub" and len(ids) == 8
     assert agent_ids(CONFIGS["C7"]) == ["agent_1"]
 
 

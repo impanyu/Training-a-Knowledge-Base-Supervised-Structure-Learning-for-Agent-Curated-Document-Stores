@@ -52,7 +52,7 @@ def test_world_gating_by_level():
     i1 = make("C1")
     assert permission_error(i1, "agent_1", "claim_task", {"task": "t0001"}) is not None
     assert permission_error(i1, "agent_1", "list_tasks", {}) is not None
-    assert permission_error(i1, "interface", "claim_task", {"task": "t0001"}) is None
+    assert permission_error(i1, "hub", "claim_task", {"task": "t0001"}) is None
 
 
 def test_contract_routing_uses_id_shape_not_leading_letter():
@@ -77,14 +77,14 @@ def test_contract_routing_uses_id_shape_not_leading_letter():
     assert not out.startswith("ERROR")
     assert infra0.board.tasks["t0001"].status == "closed"
 
-    # at C1 a non-interface agent addressing the same sentence hits the world
+    # at C1 a non-hub agent addressing the same sentence hits the world
     # gate, not the (wrong) contract branch that would report "unknown contract"
     cfg1 = ExperimentConfig(level=CONFIGS["C1"], seed=0, seed_capital_total=1000)
     infra1 = Infra(cfg1, lib, ["t0001"], retriever=None)
     err = permission_error(infra1, "agent_1", "deliver_work",
                            {"target_id": "compare the premiere years of two operas",
                             "content": "{}"})
-    assert err is not None and "interface" in err
+    assert err is not None and "hub" in err
 
 
 def test_world_delivery_gating_covers_sentence_targets():
@@ -111,8 +111,8 @@ def test_retrieve_is_open_to_everyone_at_every_config():
     """v3 deleted info centralization: retrieval is shared infrastructure."""
     for name in CONFIGS:
         infra = make(name)
-        for who in ("agent_1", "interface"):
-            if who == "interface" and not CONFIGS[name].has_interface:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             assert permission_error(infra, who, "retrieve", {"query": "x"}) is None
             assert "retrieve" in {t["name"] for t in visible_tools(CONFIGS[name], who)}
@@ -121,16 +121,16 @@ def test_retrieve_is_open_to_everyone_at_every_config():
 def test_star_comms_gating():
     i5 = make("C5")
     assert permission_error(i5, "agent_1", "send_message", {"to": "agent_2", "text": "hi"}) is not None
-    assert permission_error(i5, "agent_1", "send_message", {"to": "interface", "text": "hi"}) is None
-    assert permission_error(i5, "interface", "send_message", {"to": "agent_2", "text": "hi"}) is None
+    assert permission_error(i5, "agent_1", "send_message", {"to": "hub", "text": "hi"}) is None
+    assert permission_error(i5, "hub", "send_message", {"to": "agent_2", "text": "hi"}) is None
 
 
 def test_central_credit_gating_at_C4():
     i4 = make("C4")
     err = permission_error(i4, "agent_1", "propose_loan", {"to": "agent_2", "amount": 10})
-    assert err is not None and "interface agent" in err
-    assert permission_error(i4, "agent_1", "propose_loan", {"to": "interface", "amount": 10}) is None
-    err_i = permission_error(i4, "interface", "propose_loan", {"to": "agent_1", "amount": 10})
+    assert err is not None and "hub agent" in err
+    assert permission_error(i4, "agent_1", "propose_loan", {"to": "hub", "amount": 10}) is None
+    err_i = permission_error(i4, "hub", "propose_loan", {"to": "agent_1", "amount": 10})
     assert err_i is not None and "sole lender" in err_i
 
 
@@ -144,12 +144,12 @@ def test_credit_stays_free_where_it_is_not_the_flipped_mechanism():
 def test_star_comms_extends_to_loans_at_C5():
     i5 = make("C5")
     assert permission_error(i5, "agent_1", "propose_loan", {"to": "agent_2", "amount": 10}) is not None
-    assert permission_error(i5, "agent_1", "propose_loan", {"to": "interface", "amount": 10}) is None
+    assert permission_error(i5, "agent_1", "propose_loan", {"to": "hub", "amount": 10}) is None
 
 
 def test_central_pricing_at_C3():
     i3 = make("C3")
-    c = i3.contracts.propose("interface", "agent_1", "solve t0001", 50)
+    c = i3.contracts.propose("hub", "agent_1", "solve t0001", 50)
     assert permission_error(i3, "agent_1", "counter_offer",
                             {"contract_id": c.cid, "price": 80}) is not None
     out = dispatch(i3, "agent_1", "propose_contract", {"to": "agent_2", "task": "subtask"})
@@ -158,27 +158,27 @@ def test_central_pricing_at_C3():
     assert c2.status == "unpriced"
     assert permission_error(i3, "agent_1", "set_price",
                             {"contract_id": "c0002", "price": 30}) is not None
-    assert permission_error(i3, "interface", "set_price",
+    assert permission_error(i3, "hub", "set_price",
                             {"contract_id": "c0002", "price": 30}) is None
-    dispatch(i3, "interface", "set_price", {"contract_id": "c0002", "price": 30})
+    dispatch(i3, "hub", "set_price", {"contract_id": "c0002", "price": 30})
     dispatch(i3, "agent_2", "accept_contract", {"contract_id": "c0002"})
     assert i3.ledger.escrow["c0002"] == 30
     assert i3.ledger.conservation_ok()
 
 
-def test_propose_to_interface_under_central_pricing_is_not_double_notified():
+def test_propose_to_hub_under_central_pricing_is_not_double_notified():
     i3 = make("C3")
-    dispatch(i3, "agent_1", "propose_contract", {"to": "interface", "task": "look up X"})
-    iface = i3.chat.unread("interface")
+    dispatch(i3, "agent_1", "propose_contract", {"to": "hub", "task": "look up X"})
+    iface = i3.chat.unread("hub")
     assert len(iface) == 1
     assert "c0001" in iface[0].text
     dispatch(i3, "agent_1", "propose_contract", {"to": "agent_2", "task": "sub"})
-    assert len(i3.chat.unread("interface")) == 2
+    assert len(i3.chat.unread("hub")) == 2
     assert len(i3.chat.unread("agent_2")) == 1
 
 
 def test_c3_has_no_demand_monopoly_so_workers_still_claim_and_deliver():
-    """C3 flips pricing ONLY: the interface exists but everybody keeps equal
+    """C3 flips pricing ONLY: the hub exists but everybody keeps equal
     access to the task board, unlike the cumulative v2 levels."""
     i3 = make("C3")
     assert permission_error(i3, "agent_1", "list_tasks", {}) is None
@@ -471,12 +471,12 @@ def test_visible_tools_filtered():
     names_c1 = {t["name"] for t in visible_tools(CONFIGS["C1"], "agent_1")}
     assert "claim_task" not in names_c1 and "list_tasks" not in names_c1
     assert {"decompose", "retrieve"} <= names_c1        # v3: retrieval is never gated
-    names_c1i = {t["name"] for t in visible_tools(CONFIGS["C1"], "interface")}
+    names_c1i = {t["name"] for t in visible_tools(CONFIGS["C1"], "hub")}
     assert "claim_task" in names_c1i and "retrieve" in names_c1i
     names_c3 = {t["name"] for t in visible_tools(CONFIGS["C3"], "agent_1")}
     assert "counter_offer" not in names_c3 and "set_price" not in names_c3
     assert "claim_task" in names_c3                     # C3 flips pricing only
-    names_c3i = {t["name"] for t in visible_tools(CONFIGS["C3"], "interface")}
+    names_c3i = {t["name"] for t in visible_tools(CONFIGS["C3"], "hub")}
     assert "set_price" in names_c3i and "counter_offer" not in names_c3i
     assert set(ACTION_SPECS) >= names_c0
 
@@ -546,7 +546,7 @@ def test_pay_unknown_recipient_destroys_nothing():
 
 def test_unknown_agent_error_lists_roster():
     i0 = make("C0")
-    out = dispatch(i0, "agent_1", "pay", {"to": "Interface", "amount": 5})
+    out = dispatch(i0, "agent_1", "pay", {"to": "Hub", "amount": 5})
     assert out.startswith("ERROR") and "valid agents" in out and "agent_2" in out
     assert "valid agents" in dispatch(i0, "agent_1", "send_message",
                                       {"to": "agent_99", "text": "x"})

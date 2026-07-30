@@ -120,9 +120,9 @@ def test_packaged_multi_leaf_task_flow_C0(tmp_path):
 
 
 def test_subcontract_flow_C1(tmp_path):
-    # interface claims, subcontracts to agent_1, agent_1 delivers, interface packages
+    # hub claims, subcontracts to agent_1, agent_1 delivers, hub packages
     scripts = {
-        "interface": [
+        "hub": [
             ("claim_task", {"task": "t0001"}),
             ("propose_contract", {"to": "agent_1", "task": "find the capital of France", "price": 40}),
             ("check_balance", {}),                      # waits while agent_1 works
@@ -130,7 +130,7 @@ def test_subcontract_flow_C1(tmp_path):
             ("deliver_work", {"target_id": "t0001", "content": PARIS_1}),
         ],
         "agent_1": [
-            ("check_balance", {}),                      # waits for interface's claim_task (r1)
+            ("check_balance", {}),                      # waits for hub's claim_task (r1)
             ("check_balance", {}),                      # waits for propose_contract (r2)
             ("accept_contract", {"contract_id": "c0001"}),
             ("retrieve", {"query": "capital of France"}),
@@ -142,18 +142,18 @@ def test_subcontract_flow_C1(tmp_path):
     assert summary["questions"][0]["score"] == 1.0
     assert summary["conservation_ok"] is True
     # T17: EVERY turn bills 15 tokens (10 in + 5 out, fixed by ScriptedPolicy),
-    # including idle check_balance turns. t0001 closes on the interface's
+    # including idle check_balance turns. t0001 closes on the hub's
     # round-5 delivery, so all 8 agents took 5 turns => 75 tokens burned each.
     assert summary["rounds_used"] == 5
-    assert summary["balances"]["interface"] == 125 - 75 - 40 + 100
+    assert summary["balances"]["hub"] == 125 - 75 - 40 + 100
     assert summary["balances"]["agent_1"] == 125 - 75 + 40
 
 
 def test_node_bound_subcontract_flow_C1(tmp_path):
-    """Interface hands a whole child subtree over by sentence; the contractor's
-    JSON is merged into the interface's package."""
+    """Hub hands a whole child subtree over by sentence; the contractor's
+    JSON is merged into the hub's package."""
     scripts = {
-        "interface": [
+        "hub": [
             ("claim_task", {"task": "t0001"}),
             ("propose_contract", {"to": "agent_1",
                                   "task": "name the capital and the river", "price": 40}),
@@ -195,17 +195,17 @@ def test_stops_at_max_rounds(tmp_path):
 
 
 def test_central_pricing_flow_C3(tmp_path):
-    """Worker-to-worker contract priced by the interface, start to settlement.
+    """Worker-to-worker contract priced by the hub, start to settlement.
     One action per round, so the seeded shuffle cannot reorder dependencies."""
     scripts = {
         "agent_1": [                                          # payer
             ("propose_contract", {"to": "agent_2", "task": "find the capital of France"}),
-            ("check_balance", {}),                            # waits for interface pricing
+            ("check_balance", {}),                            # waits for hub pricing
             ("check_balance", {}),                            # waits for agent_2 to accept
             ("check_balance", {}),                            # waits for delivery
             ("counter_offer", {"contract_id": "c0001", "price": 999}),  # banned at C3
         ],
-        "interface": [
+        "hub": [
             ("check_balance", {}),                            # waits for the proposal
             ("set_price", {"contract_id": "c0001", "price": 30}),
         ],
@@ -220,7 +220,7 @@ def test_central_pricing_flow_C3(tmp_path):
     summary = sched.run()
 
     c = infra.contracts.get("c0001")
-    assert c.status == "delivered" and c.price == 30          # the interface's price stuck
+    assert c.status == "delivered" and c.price == 30          # the hub's price stuck
     assert c.node_id is None                                  # free-text, so no coverage rule
     assert summary["contract_prices"] == [30]
     assert infra.ledger.escrow == {}
@@ -298,12 +298,12 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
     assert summary["conservation_ok"] is True
 
 
-def test_interface_turns_per_round_knob(tmp_path):
-    infra, sched = build("C1", {}, tmp_path, interface_turns_per_round=3)
+def test_hub_turns_per_round_knob(tmp_path):
+    infra, sched = build("C1", {}, tmp_path, hub_turns_per_round=3)
     sched.cfg.max_rounds = 1
     sched.run()
     round1 = [e for e in _trace(tmp_path) if e["round"] == 1]
-    assert sum(1 for e in round1 if e["agent"] == "interface") == 3
+    assert sum(1 for e in round1 if e["agent"] == "hub") == 3
     assert sum(1 for e in round1 if e["agent"] == "agent_1") == 1
 
 

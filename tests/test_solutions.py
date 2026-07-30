@@ -217,8 +217,8 @@ def test_recall_solutions_is_classified_as_solving():
 
 def test_recall_solutions_is_visible_everywhere_including_solo():
     for name in CONFIGS:
-        for who in ("agent_1", "interface"):
-            if who == "interface" and not CONFIGS[name].has_interface:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             names = {t["name"] for t in visible_tools(CONFIGS[name], who)}
             assert "recall_solutions" in names, (name, who)
@@ -295,8 +295,8 @@ def test_c2_agents_are_told_the_store_is_shared():
     for name in CONFIGS:
         if name == "C2":
             continue
-        for who in ("agent_1", "interface"):
-            if who == "interface" and not CONFIGS[name].has_interface:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             assert shared_line not in role_skill(CONFIGS[name], who), (name, who)
 
@@ -305,8 +305,8 @@ def test_c2_agents_are_told_the_store_is_shared():
 
 def test_every_role_at_every_config_gets_the_reuse_demo():
     for name in CONFIGS:
-        for who in ("agent_1", "interface"):
-            if who == "interface" and not CONFIGS[name].has_interface:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             s = role_skill(CONFIGS[name], who)
             assert "recall_solutions(" in s, (name, who)

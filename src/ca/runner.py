@@ -78,7 +78,7 @@ def main() -> None:
                            max_rounds=args.max_rounds, model=args.model)
     if args.turns is not None:
         slots_per_round = len(agent_ids(level)) + (
-            cfg.interface_turns_per_round - 1 if level.has_interface else 0)
+            cfg.hub_turns_per_round - 1 if level.has_hub else 0)
         cfg.max_rounds = max(1, args.turns // slots_per_round)
     library = load_library(args.library)
     infra = Infra(cfg, library, load_posted(library, args.posted),

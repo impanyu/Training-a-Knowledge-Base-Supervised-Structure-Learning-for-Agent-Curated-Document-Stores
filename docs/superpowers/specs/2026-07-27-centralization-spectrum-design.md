@@ -22,14 +22,14 @@
 
 **v3 转向：不再累积加锁，每种中心化独立测试**——每个配置相对全去中心基线 C0 恰好翻转一个开关，效应可干净归因；选择性组合留作后续实验（开关为独立布尔量，机械上支持任意组合）。
 
-| 配置 | 名称 | 唯一翻转的开关 | interface agent |
+| 配置 | 名称 | 唯一翻转的开关 | hub agent |
 |---|---|---|---|
 | C0 | 全去中心基线 | 无 | 无 |
-| C1 | 需求中心化 | interface 垄断领 task + 对 WORLD 交付 | 有 |
-| C2 | 解题记忆中心化 | 全员共享解题知识库（共享库属基础设施，无需 interface） | 无 |
-| C3 | 定价中心化 | interface 裁定所有合同价（`set_price`，议价禁）；领单交付权人人平等 | 有 |
-| C4 | 信贷中心化 | interface 是唯一出借人；其余全部自由 | 有 |
-| C5 | 通信中心化 | 星型：只能与 interface 通信/交易/借贷；但人人可领单、价格可谈（对手只有 hub） | 有 |
+| C1 | 需求中心化 | hub 垄断领 task + 对 WORLD 交付 | 有 |
+| C2 | 解题记忆中心化 | 全员共享解题知识库（共享库属基础设施，无需 hub） | 无 |
+| C3 | 定价中心化 | hub 裁定所有合同价（`set_price`，议价禁）；领单交付权人人平等 | 有 |
+| C4 | 信贷中心化 | hub 是唯一出借人；其余全部自由 | 有 |
+| C5 | 通信中心化 | 星型：只能与 hub 通信/交易/借贷；但人人可领单、价格可谈（对手只有 hub） | 有 |
 | C6 | 共识中心化 | 根目标改为**全局总余额最大化**（集体效用函数）；动态区展示全局余额+个人余额；产权/交易规则全部保持去中心 | 无 |
 | C7 | 单体基线 | 1 agent，无协作 | — |
 
@@ -71,7 +71,7 @@
 | 接单 | `claim_task` = 接受 WORLD 合同（独占，其他 agent 不再可见） | `accept_contract(id)` → 从发包方余额托管锁款（余额不足则失败） |
 | 交付领钱 | `deliver_work(task, answers_json)` → 逐叶判分 → Σ R(叶)×F1 | `deliver_work(id, content)` → content 送达发包方聊天 + 托管款打给承包方，原子交割 |
 | 付款条件 | 按质付款（判分器裁决） | 交付即付（子任务无法机器判分；质量靠重复博弈约束——劣质承包方被市场淘汰，属预期观察的涌现现象） |
-| 议价 | 不可议价（WORLD 非 agent，明码标价） | 默认自由议价；C3 禁止议价、价格由 interface 裁定（见下） |
+| 议价 | 不可议价（WORLD 非 agent，明码标价） | 默认自由议价；C3 禁止议价、价格由 hub 裁定（见下） |
 | 提交次数 | 每题仅一次交付，交付即关闭（防暴力重试） | — |
 
 - `deliver_work` 只需合同 id：支付对象、金额均从合同登记读出，调用者校验为登记承包方。目标不显式可填是安全设计（消除交错/冒领空间）。
@@ -82,19 +82,19 @@
 
 ```
 A: propose_contract(to=B, task)          ← 不带价格（带了也忽略）
-       ▼  状态 = unpriced，等待 interface 定价
-interface: set_price(contract_id, price) ← 仅 interface 可用（C3 才存在）
+       ▼  状态 = unpriced，等待 hub 定价
+hub: set_price(contract_id, price) ← 仅 hub 可用（C3 才存在）
        ▼  状态 = proposed，等待 B 接受/拒绝
 B: accept_contract（锁 A 的托管）→ deliver_work 照旧；或 reject_contract
-counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自带价格（它即定价者）
+counter_offer 在 C3 对所有人禁用；hub 自己发包时 propose 自带价格（它即定价者）
 ```
 
 **信贷机制（v2 新增）**：
 - `propose_loan(to=出借人, amount)` → 出借人 `accept_loan(loan_id)` → 本金划转借款人。
-- **利率恒为每轮 1%**（系统常数，不参与议价、不属 interface 定价权）。
+- **利率恒为每轮 1%**（系统常数，不参与议价、不属 hub 定价权）。
 - 调度器每轮自动划扣利息（借款人余额不足则欠息滚入本金）；`repay_loan(loan_id, amount)` 随时还本。
 - 借款人破产 = 出借人坏账（信用风险真实存在，属预期观察的涌现现象）。
-- C4（信贷中心化）：出借人只能是 interface。C5 星型下借贷对象因拓扑限制只能是 interface（权利未限，对手唯一）。
+- C4（信贷中心化）：出借人只能是 hub。C5 星型下借贷对象因拓扑限制只能是 hub（权利未限，对手唯一）。
 
 **节点绑定合同（v2）**：`propose_contract` 的 task 字段若指认一个 subtask 节点（句子或短 id）→ 合同为节点绑定：承包方 `deliver_work(contract_id, answers_json)` 必须提交覆盖该节点全部叶子的 JSON {qid: answer}，基础设施做覆盖校验（qid 集合齐全才原子交割托管）；答案质量不判分（重复博弈约束）。task 为自由文本 → 自由合同，交付任意文本（信息买卖等涌现交易保留）。
 
@@ -107,18 +107,18 @@ counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自�
 
 | Action | 说明 | 权限门控 |
 |---|---|---|
-| `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | C1 仅 interface |
-| `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | C1 仅 interface |
+| `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | C1 仅 hub |
+| `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | C1 仅 hub |
 | `decompose(node)` | 揭示 subtask 的下级子节点（子 subtask 显示一句话总结，叶显示原题）；参数：句子或短 id | 所有人 |
 | `retrieve(query)` | 检索语料，top-k 段落 | 所有人（信息中心化已删除） |
 | `work_on(node, thought)` | 对某节点做一步推理，写入私有草稿区 | 所有人 |
-| `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | C1 仅 interface |
+| `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | C1 仅 hub |
 | `deliver_work(contract_id, content)` 内部合同 | 交付合同成果，托管原子交割 | 所有人 |
-| `send_message` / `read_chat` | 点对点通信 | C5 下普通 agent 仅限 interface |
-| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | C3 counter_offer 全禁、非 interface propose 进入 unpriced；C5 合同对象仅限 interface |
-| `set_price(contract_id, price)` | interface 裁定合同价 | 仅 C3 且仅 interface |
-| `propose_loan(to, amount)` / `accept_loan(loan_id)` / `repay_loan(loan_id, amount)` | 借贷生命周期（利率恒 1%/轮） | C4 出借人仅限 interface；C5 借贷对象仅限 interface |
-| `pay(to, amount)` | 自由转账 | C5 仅限与 interface |
+| `send_message` / `read_chat` | 点对点通信 | C5 下普通 agent 仅限 hub |
+| `propose_contract` / `accept_contract` / `reject_contract` / `counter_offer` / `cancel_contract` | 合同生命周期 | C3 counter_offer 全禁、非 hub propose 进入 unpriced；C5 合同对象仅限 hub |
+| `set_price(contract_id, price)` | hub 裁定合同价 | 仅 C3 且仅 hub |
+| `propose_loan(to, amount)` / `accept_loan(loan_id)` / `repay_loan(loan_id, amount)` | 借贷生命周期（利率恒 1%/轮） | C4 出借人仅限 hub；C5 借贷对象仅限 hub |
+| `pay(to, amount)` | 自由转账 | C5 仅限与 hub |
 | `push_goal` / `pop_goal`、`memory_write` / `memory_search`、`check_balance` / `list_agents` | 目标栈 / 长期记忆 / 查询 | 所有人 |
 
 **寻址约定**：task/subtask 节点同时有短 id（t0001）与唯一一句话总结；action 参数二者皆可（句子做规范化+近似匹配，不唯一时报错并列候选）。
@@ -145,13 +145,13 @@ counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自�
 
 - 目标栈全量渲染（实践 2–5 层，不截断）；仅 FIFO 滚动淘汰。
 - 栈根由系统自动压入且不可 pop；其余层 agent 自维护，备注留痕（预期收益、来源合同 id），兼作决策理由 trace。
-- 所有 agent（含 interface）共用同一 system prompt 模板，仅按配置替换"你能做什么"段落。
+- 所有 agent（含 hub）共用同一 system prompt 模板，仅按配置替换"你能做什么"段落。
 - **解题长期记忆（Solution Memory，v3 新增）**：每 agent 一个 KV 库，与自由文本记忆（memory_write/search）完全并行独立。**自动写入**（无需主动存）：`decompose` 时记 `subtask → [子节点名]`；交付答案时（WORLD 打包交付含 F1 标注 / 节点绑定合同交付）记 `question → 答案`；**收到**节点绑定交付物的发包方同样自动入库。**读取走独立 action `recall_solutions(name)`**：递归展开记忆中的分解映射，汇集该子树下全部已知答案并报告缺口——已解过的 subtask 一次调用直接拿全套（shortcut）。C2 配置下该库全员共享。skill 内含使用 demo。
-- **角色 skill（轨迹示范）**：system prompt 末尾附加角色手册——worker 与 interface 各一套 action 轨迹 demo（如 worker：claim→retrieve→work_on→deliver；interface：claim→转包→set_price→对 WORLD 交付），demo 片段按配置裁剪，绝不展示该配置下不可用的 action。注意：skill 增加计费回合的 input 成本，且两角色 skill 长度不同（属角色复杂度的真实成本，六配置内部保持对称）。
+- **角色 skill（轨迹示范）**：system prompt 末尾附加角色手册——worker 与 hub 各一套 action 轨迹 demo（如 worker：claim→retrieve→work_on→deliver；hub：claim→转包→set_price→对 WORLD 交付），demo 片段按配置裁剪，绝不展示该配置下不可用的 action。注意：skill 增加计费回合的 input 成本，且两角色 skill 长度不同（属角色复杂度的真实成本，六配置内部保持对称）。
 
 ## 7. 调度
 
-同步回合制（round-robin）：每轮所有存活 agent 各行动一次；轮内顺序每轮以种子随机打乱。每轮开始时：1) 过期 claim 自动释放；2) 贷款利息自动划扣（1%/轮）。终止条件：task 池清空、达最大轮数、或全员破产（无收入渠道的终态）。interface_turns_per_round 为配置旋钮（默认 1），留给「单点信息处理能力」独立实验。
+同步回合制（round-robin）：每轮所有存活 agent 各行动一次；轮内顺序每轮以种子随机打乱。每轮开始时：1) 过期 claim 自动释放；2) 贷款利息自动划扣（1%/轮）。终止条件：task 池清空、达最大轮数、或全员破产（无收入渠道的终态）。hub_turns_per_round 为配置旋钮（默认 1），留给「单点信息处理能力」独立实验。
 
 选回合制而非异步并发：可复现、六配置公平比较、token 计量无竞态。
 
@@ -178,7 +178,7 @@ counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自�
 | 根目标 | 个人余额 | 个人 | 个人 | 个人 | 个人 | 个人 | **全局总余额** | 个人 |
 | agent 数 | 8 | 1+7 | 8 | 1+7 | 1+7 | 1+7 | 8 | 1 |
 
-*C5 星型下价格仍可谈、借贷仍自由，只是唯一可能的交易对手是 interface（拓扑限制而非权利限制）。
+*C5 星型下价格仍可谈、借贷仍自由，只是唯一可能的交易对手是 hub（拓扑限制而非权利限制）。
 
 ## 10. 任务与数据集（v2：层级任务树）
 
@@ -193,7 +193,7 @@ counter_offer 在 C3 对所有人禁用；interface 自己发包时 propose 自�
 
 **挂牌**：从库中抽 ~30 个节点挂上任务板（深度 2–4、大小混合；树深 ≤4 含根、每节点 ≤3 子 → 单 task ≤27 叶）。task 价 = Σ 叶价，一句话总结即牌面。
 
-**交付与判分**：claim 整棵 task（独占，L1+ 仅 interface）→ `decompose` 逐层揭示 → 打包交付 JSON {qid: answer} 覆盖全部叶 → 逐叶 F1 判分 → Σ R(叶)×F1 一次结清；每 task 一次交付机会。**按 (task, 叶) 重复计价**：同题跨 task 各付各的（专业化红利：第二次遇同类题成本趋零）。
+**交付与判分**：claim 整棵 task（独占，L1+ 仅 hub）→ `decompose` 逐层揭示 → 打包交付 JSON {qid: answer} 覆盖全部叶 → 逐叶 F1 判分 → Σ R(叶)×F1 一次结清；每 task 一次交付机会。**按 (task, 叶) 重复计价**：同题跨 task 各付各的（专业化红利：第二次遇同类题成本趋零）。
 
 **专业化考察**：叶子/子树跨 task 复用 + 语义局部性 → 可测量 agent 是否演化为特定语义子树的专家（专业化指数：按子树聚类的答题集中度 Herfindahl）。
 

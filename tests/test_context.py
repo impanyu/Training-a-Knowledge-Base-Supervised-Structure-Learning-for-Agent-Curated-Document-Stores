@@ -15,9 +15,9 @@ def test_system_prompt_mentions_identity_goal_and_rules():
     sp = system_prompt(infra.cfg.level, "agent_1", infra.agent_ids)
     assert "agent_1" in sp
     assert "maximize" in sp.lower()
-    assert "interface" in sp  # star-comms rule explained
-    sp_i = system_prompt(infra.cfg.level, "interface", infra.agent_ids)
-    assert "you are the interface" in sp_i.lower()
+    assert "hub" in sp  # star-comms rule explained
+    sp_i = system_prompt(infra.cfg.level, "hub", infra.agent_ids)
+    assert "you are the hub" in sp_i.lower()
 
 
 def test_system_prompt_explains_packaged_task_delivery():
@@ -26,22 +26,22 @@ def test_system_prompt_explains_packaged_task_delivery():
 
 
 def test_credit_rule_text_at_central_credit_level():
-    ids = ["interface", "agent_1"]
+    ids = ["hub", "agent_1"]
     sp = system_prompt(CONFIGS["C4"], "agent_1", ids)
-    assert "only borrow from the interface agent" in sp.lower()
-    sp_i = system_prompt(CONFIGS["C4"], "interface", ids)
+    assert "only borrow from the hub agent" in sp.lower()
+    sp_i = system_prompt(CONFIGS["C4"], "hub", ids)
     assert "sole lender" in sp_i.lower()
     sp_l3 = system_prompt(CONFIGS["C3"], "agent_1", ids)
-    assert "only borrow from the interface agent" not in sp_l3.lower()
+    assert "only borrow from the hub agent" not in sp_l3.lower()
 
 
 def test_world_monopoly_text_only_under_demand_centralization():
     """Cumulative-era wording leak check: only C1 may tell anyone that the
-    interface alone can take tasks and deliver to the WORLD."""
-    ids = ["interface", "agent_1"]
+    hub alone can take tasks and deliver to the WORLD."""
+    ids = ["hub", "agent_1"]
     monopoly = "only agent allowed to take tasks"
-    rule = "Only the interface agent can list/claim tasks"
-    assert monopoly in system_prompt(CONFIGS["C1"], "interface", ids)
+    rule = "Only the hub agent can list/claim tasks"
+    assert monopoly in system_prompt(CONFIGS["C1"], "hub", ids)
     assert rule in system_prompt(CONFIGS["C1"], "agent_1", ids)
     for name in ("C3", "C4", "C5"):
         for who in ids:
@@ -162,7 +162,7 @@ def test_render_turn_shows_all_unread_messages():
 
 
 def test_negotiation_hint_only_where_prices_are_negotiable():
-    ids = ["interface", "agent_1"]
+    ids = ["hub", "agent_1"]
     sp0 = system_prompt(CONFIGS["C0"], "agent_1", ids)
     assert "Prices are freely negotiable." in sp0
     assert "negotiate prices" not in sp0

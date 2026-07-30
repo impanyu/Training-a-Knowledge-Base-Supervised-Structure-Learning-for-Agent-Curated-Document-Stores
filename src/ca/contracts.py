@@ -43,7 +43,7 @@ class ContractSystem:
                 price: int | None = None) -> Contract:
         if proposer == contractor:
             raise ContractError("cannot contract with yourself")
-        if price is None:  # central pricing: interface will set the price
+        if price is None:  # central pricing: hub will set the price
             c = Contract(self._next_id(), proposer, contractor, task, 0,
                          status="unpriced", awaiting="")
         else:

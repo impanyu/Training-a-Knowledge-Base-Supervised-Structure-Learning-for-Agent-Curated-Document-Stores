@@ -187,18 +187,18 @@ def test_collective_goal_prompt_C6(tmp_path):
 
 
 def test_c3_pricing_without_demand_monopoly_e2e(tmp_path):
-    """C3 flips pricing ONLY: the interface prices a worker-to-worker contract
+    """C3 flips pricing ONLY: the hub prices a worker-to-worker contract
     via set_price, while a totally unrelated worker still claims and delivers
     a task straight to WORLD (no demand monopoly) -- both coexist in one run."""
     lib = flat_library(2)   # t0001 (agent_3 claims+delivers), t0002 (left open)
     scripts = {
         "agent_1": [                                          # payer
             ("propose_contract", {"to": "agent_2", "task": "find the capital of France"}),
-            ("check_balance", {}),                            # r2: waits for interface pricing
+            ("check_balance", {}),                            # r2: waits for hub pricing
             ("check_balance", {}),                            # r3: waits for agent_2 to accept
             ("counter_offer", {"contract_id": "c0001", "price": 999}),  # r4: banned at C3
         ],
-        "interface": [
+        "hub": [
             ("check_balance", {}),                            # r1: waits for the proposal
             ("set_price", {"contract_id": "c0001", "price": 30}),
         ],
@@ -218,7 +218,7 @@ def test_c3_pricing_without_demand_monopoly_e2e(tmp_path):
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    # the interface-priced contract settled
+    # the hub-priced contract settled
     c = infra.contracts.get("c0001")
     assert c.status == "delivered" and c.price == 30
     assert c.node_id is None                                  # free-text, no coverage rule
