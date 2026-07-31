@@ -320,7 +320,8 @@ def test_turn_view_advertises_the_store_only_when_it_is_non_empty():
     dispatch(i, "agent_1", "decompose", {"node": "t0002"})
     i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
     view = render_turn(i, "agent_1", fifo, goals)
-    assert "Solution memory: 1 answers, 1 decompositions stored" in view
+    assert ("Solution memory: 1 answers stored; decomposed: t0002 "
+            "(recall_solutions to reuse)") in view
     assert "recall_solutions" in view
 
 
@@ -329,6 +330,105 @@ def test_shared_store_is_advertised_to_everyone_at_c2():
     fifo, goals = FifoMemory(k=3), GoalStack("maximize token balance")
     i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
     assert "Solution memory: 1 answers" in render_turn(i, "agent_2", fifo, goals)
+
+
+def _memory_line(view: str) -> str:
+    return next(l for l in view.splitlines() if l.startswith("Solution memory:"))
+
+
+def test_turn_view_lists_decomposed_ids_in_insertion_order():
+    i = make()
+    fifo, goals = FifoMemory(k=3), GoalStack("maximize token balance")
+    dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    dispatch(i, "agent_1", "decompose", {"node": "t0002"})
+    view = render_turn(i, "agent_1", fifo, goals)
+    assert _memory_line(view) == ("Solution memory: 0 answers stored; "
+                                  "decomposed: t0001, t0002 "
+                                  "(recall_solutions to reuse)")
+
+
+def test_turn_view_answers_only_omits_the_decomposed_list():
+    i = make()
+    fifo, goals = FifoMemory(k=3), GoalStack("maximize token balance")
+    i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
+    view = render_turn(i, "agent_1", fifo, goals)
+    assert _memory_line(view) == ("Solution memory: 1 answers stored "
+                                  "(recall_solutions to reuse)")
+
+
+def test_turn_view_truncates_the_decomposed_list_at_twelve():
+    i = make()
+    fifo, goals = FifoMemory(k=3), GoalStack("maximize token balance")
+    for n in range(14):
+        i.solutions.record_decomposition("agent_1", f"t{n:04d}", ["q0001"])
+    line = _memory_line(render_turn(i, "agent_1", fifo, goals))
+    shown = ", ".join(f"t{n:04d}" for n in range(12))
+    assert f"decomposed: {shown} … +2 more (recall_solutions to reuse)" in line
+    assert "t0012" not in line and "t0013" not in line
+
+
+# ---------------- T30: repeat-decompose redirect ----------------
+
+def test_has_decomposition_and_decomposed_ids():
+    sm = SolutionMemory()
+    assert not sm.has_decomposition("a", "t0001")
+    assert sm.decomposed_ids("a") == []
+    sm.record_decomposition("a", "t0001", ["q0001"])
+    sm.record_decomposition("a", "t0002", ["q0002"])
+    assert sm.has_decomposition("a", "t0001")
+    assert not sm.has_decomposition("b", "t0001")
+    assert sm.decomposed_ids("a") == ["t0001", "t0002"]
+    assert sm.decomposed_ids("b") == []
+
+
+def test_repeat_decompose_redirects_to_recall():
+    i = make()
+    assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    again = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert again == ('(t0001 already decomposed — recall_solutions("t0001") '
+                     "returns the stored breakdown)")
+    # by sentence too: the redirect keys on the resolved nid
+    by_sentence = dispatch(i, "agent_1", "decompose",
+                           {"node": "answer the french geography questions"})
+    assert by_sentence == again
+    # private store: another agent still gets the full first-time breakdown
+    assert "breaks down into" in dispatch(i, "agent_2", "decompose", {"node": "t0001"})
+
+
+def test_repeat_decompose_does_not_re_record(monkeypatch):
+    i = make()
+    dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    calls = []
+    monkeypatch.setattr(i.solutions, "record_decomposition",
+                        lambda *a, **k: calls.append(a))
+    dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert calls == []
+    assert i.solutions.mapping("agent_1", "t0001") == ["t0002", "q0003"]
+
+
+def test_leaf_echo_is_never_redirected():
+    i = make()
+    for _ in range(2):
+        out = dispatch(i, "agent_1", "decompose", {"node": "q0003"})
+        assert "[q0003]" in out and "already decomposed" not in out
+
+
+def test_c2_shared_bucket_redirects_other_agents_too():
+    i = make("C2")
+    assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    out = dispatch(i, "agent_2", "decompose", {"node": "t0001"})
+    assert out == ('(t0001 already decomposed — recall_solutions("t0001") '
+                   "returns the stored breakdown)")
+
+
+def test_reuse_demo_teaches_the_repeat_decompose_redirect():
+    for name in CONFIGS:
+        for who in ("agent_1", "hub"):
+            if who == "hub" and not CONFIGS[name].has_hub:
+                continue
+            s = role_skill(CONFIGS[name], who)
+            assert "already decomposed" in s, (name, who)
+            assert 'recall_solutions(name="t0042")' in s, (name, who)
 
 
 def test_solution_store_is_separate_from_free_text_ltm():

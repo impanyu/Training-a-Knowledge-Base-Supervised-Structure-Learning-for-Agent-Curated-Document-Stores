@@ -115,7 +115,11 @@ _RECALL = """
 - BEFORE working on any task/subtask: recall_solutions(name="date the two premieres")
   -> known answers under that subtask appear instantly - claimed tasks sharing
      leaves with past work are nearly-free profit
-- Your decompositions and delivered answers are saved automatically - nothing to do."""
+- Your decompositions and delivered answers are saved automatically - nothing to do.
+- WRONG: decompose(node="t0042") ... then later decompose(node="t0042") again
+  -> "(t0042 already decomposed — recall_solutions(\\"t0042\\") returns the stored breakdown)"
+  RIGHT: check the "decomposed:" list in your status block, then
+  recall_solutions(name="t0042") to re-read the structure for free."""
 
 _RECALL_SHARED = """
 The knowledge base is SHARED: everyone's discoveries appear in it - check it

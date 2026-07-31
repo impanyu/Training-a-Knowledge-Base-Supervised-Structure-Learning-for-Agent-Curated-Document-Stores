@@ -67,6 +67,13 @@ class SolutionMemory:
         found = self._decomp[self._bucket(agent)].get(str(name))
         return list(found) if found is not None else None
 
+    def has_decomposition(self, agent: str, name: str) -> bool:
+        return str(name) in self._decomp[self._bucket(agent)]
+
+    def decomposed_ids(self, agent: str) -> list[str]:
+        """Keys of every stored decomposition, in insertion order."""
+        return list(self._decomp[self._bucket(agent)])
+
     def answer(self, agent: str, qid: str) -> dict | None:
         found = self._answers[self._bucket(agent)].get(str(qid))
         return dict(found) if found is not None else None

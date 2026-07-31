@@ -374,6 +374,11 @@ def _h_decompose(infra, a, inp):
         q = infra.library.questions[ref]
         return f"[{q.qid}] {q.text}"
     node = infra.library.resolve(ref)
+    # repeat friction: the breakdown is already in solution memory, so a full
+    # re-reveal only invites re-deriving it -- point back at the store instead
+    if infra.solutions.has_decomposition(a, node.nid):
+        return (f'({node.nid} already decomposed — recall_solutions("{node.nid}") '
+                "returns the stored breakdown)")
     rows = infra.library.children_view(node.nid)
     # solution memory trigger 1: structure learned is structure stored
     infra.solutions.record_decomposition(
