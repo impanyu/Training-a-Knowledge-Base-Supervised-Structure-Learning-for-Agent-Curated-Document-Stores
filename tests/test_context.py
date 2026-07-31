@@ -96,6 +96,20 @@ def test_render_turn_contains_state():
     assert infra.chat.unread("agent_1")   # render must NOT consume unread
 
 
+def test_render_turn_lists_own_completed_tasks():
+    import json
+    infra = make("C0", )
+    dispatch(infra, "agent_1", "claim_task", {"task": "t0001"})
+    dispatch(infra, "agent_1", "deliver_work",
+             {"target_id": "t0001",
+              "content": json.dumps({"q0001": "Paris", "q0002": "Loire", "q0003": "4"})})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "Tasks you already completed" in out
+    assert "t0001 (paid 600)" in out
+    # not shown to other agents, and absent before any completion
+    assert "already completed" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
+
+
 def test_render_turn_shows_active_task_claims_with_ttl_and_progress():
     infra = make("C0")
     infra.round = 2

@@ -549,6 +549,14 @@ def test_pay_unknown_recipient_destroys_nothing():
     assert i0.ledger.conservation_ok()
 
 
+def test_decompose_and_claim_reject_contract_ids_with_targeted_hint():
+    i0 = make("C0")
+    out = dispatch(i0, "agent_1", "decompose", {"node": "c0001"})
+    assert out.startswith("ERROR") and "contract id" in out and "bound to" in out
+    out = dispatch(i0, "agent_1", "claim_task", {"task": "c0002"})
+    assert out.startswith("ERROR") and "contract id" in out and "accept_contract" in out
+
+
 def test_unknown_agent_error_lists_roster():
     i0 = make("C0")
     out = dispatch(i0, "agent_1", "pay", {"to": "Hub", "amount": 5})

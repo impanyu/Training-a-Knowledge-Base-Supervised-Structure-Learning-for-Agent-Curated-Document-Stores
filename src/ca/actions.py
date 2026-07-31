@@ -357,7 +357,11 @@ def _h_list_tasks(infra, a, inp):
 
 
 def _h_claim_task(infra, a, inp):
-    t = infra.board.claim(a, inp["task"], infra.round)
+    ref = str(inp["task"]).strip()
+    if _CONTRACT_ID_RE.fullmatch(ref):
+        return (f"ERROR: {ref} is a contract id, not a posted task - contracts "
+                "are accepted (accept_contract), not claimed.")
+    t = infra.board.claim(a, ref, infra.round)
     return (f"claimed {_task_line(infra, t.nid)}. Call decompose to reveal its "
             "structure; deliver all of its questions in one JSON package.")
 
@@ -380,6 +384,10 @@ def _known_block(known: dict, missing: list[str]) -> str:
 
 def _h_decompose(infra, a, inp):
     ref = str(inp["node"]).strip()
+    if _CONTRACT_ID_RE.fullmatch(ref):          # namespace mixup seen live (C5)
+        return (f"ERROR: {ref} is a contract id, not a task/subtask - a "
+                "contract cannot be decomposed. Decompose the node it is "
+                "bound to instead (see the contract in your status block).")
     if ref in infra.library.questions:          # a leaf: nothing left to reveal
         q = infra.library.questions[ref]
         rec = infra.solutions.answer(a, ref)

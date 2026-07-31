@@ -133,6 +133,16 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
                 shown += f" … +{len(decomposed) - 12} more"
             line += f"; decomposed: {shown}"
         parts.append(line + " (decompose a node to reuse what is known)")
+    # tasks this agent already delivered: once closed they vanish from every
+    # other view, and agents were observed re-claiming their own finished work
+    done = [t for t in infra.board.tasks.values()
+            if t.status == "closed" and t.claimed_by == agent_id]
+    if done:
+        shown = ", ".join(f"{t.nid} (paid {t.payout})" for t in done[-8:])
+        if len(done) > 8:
+            shown += f" … +{len(done) - 8} more"
+        parts.append(f"Tasks you already completed - do NOT claim or deliver "
+                     f"these again: {shown}")
     mine = [t for t in infra.board.tasks.values()
             if t.status == "claimed" and t.claimed_by == agent_id]
     if mine:
