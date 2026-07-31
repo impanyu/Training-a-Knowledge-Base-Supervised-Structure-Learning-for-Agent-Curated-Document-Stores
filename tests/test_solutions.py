@@ -1,10 +1,11 @@
-"""T26: per-agent solution KV memory (auto-written) + recall_solutions."""
+"""T26/T32: per-agent solution KV memory (auto-written), read back through
+the memory-aware `decompose` -- the single knowledge-navigation action."""
 import json
 
 import pytest
 from fixtures import demo_infra
 
-from ca.actions import ACTION_SPECS, classify, dispatch, visible_tools
+from ca.actions import ACTION_SPECS, dispatch, visible_tools
 from ca.config import CONFIGS
 from ca.context import render_turn
 from ca.memory import FifoMemory, GoalStack
@@ -209,73 +210,89 @@ def test_incomplete_bound_delivery_records_nothing():
     assert i.solutions.stats("agent_1")["answers"] == 0
 
 
-# ---------------- the recall_solutions action ----------------
+# ------- decompose as the single memory-aware navigation action (T32) -------
 
-def test_recall_solutions_is_classified_as_solving():
-    assert classify("recall_solutions", {"name": "t0001"}) == "solving"
-
-
-def test_recall_solutions_is_visible_everywhere_including_solo():
+def test_recall_solutions_is_gone_everywhere():
+    assert "recall_solutions" not in ACTION_SPECS
     for name in CONFIGS:
         for who in ("agent_1", "hub"):
             if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             names = {t["name"] for t in visible_tools(CONFIGS[name], who)}
-            assert "recall_solutions" in names, (name, who)
-    assert "recall_solutions" in ACTION_SPECS
+            assert "recall_solutions" not in names, (name, who)
+            assert "decompose" in names, (name, who)
 
 
-def test_recall_solutions_reports_known_missing_and_unexpanded():
+def test_repeat_decompose_reports_known_unanswered_and_unexpanded():
     i = make()
     dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     dispatch(i, "agent_1", "decompose", {"node": "t0002"})
     i.solutions.record_answer("agent_1", "q0001", "Paris", f1=0.5)
     i.solutions.record_answer("agent_1", "q0003", "4")
-    out = dispatch(i, "agent_1", "recall_solutions", {"name": "t0001"})
-    assert "known 2/3" in out
-    assert '"q0001": "Paris"' in out and "F1 0.50" in out
+    out = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert out.startswith("(t0001 already decomposed) known 2/3 answers beneath:")
+    assert '"q0001": "Paris" (F1 0.50)' in out
     assert '"q0003": "4"' in out
-    assert "missing" in out and "q0002" in out
+    assert "unanswered: q0002" in out
+    assert out.endswith("— decompose deeper or solve the rest")
 
 
-def test_recall_solutions_accepts_sentence_and_qid():
+def test_repeat_decompose_accepts_the_sentence_form():
     i = make()
-    i.solutions.record_decomposition("agent_1", "t0002", ["q0001", "q0002"])
+    dispatch(i, "agent_1", "decompose", {"node": "t0002"})
     i.solutions.record_answer("agent_1", "q0001", "Paris")
-    by_sentence = dispatch(i, "agent_1", "recall_solutions",
-                           {"name": "name the capital and the river"})
-    assert '"q0001": "Paris"' in by_sentence and "t0002" in by_sentence
-    by_qid = dispatch(i, "agent_1", "recall_solutions", {"name": "q0001"})
-    assert "known 1/1" in by_qid and '"q0001": "Paris"' in by_qid
+    by_sentence = dispatch(i, "agent_1", "decompose",
+                           {"node": "name the capital and the river"})
+    assert by_sentence.startswith("(t0002 already decomposed) known 1/2 answers beneath:")
+    assert '"q0001": "Paris"' in by_sentence and "unanswered: q0002" in by_sentence
 
 
-def test_recall_solutions_when_nothing_is_stored():
+def test_leaf_decompose_shows_the_stored_answer():
     i = make()
-    out = dispatch(i, "agent_1", "recall_solutions", {"name": "t0001"})
-    assert out == "(no stored solutions under t0001)"
+    i.solutions.record_answer("agent_1", "q0001", "Paris")
+    out = dispatch(i, "agent_1", "decompose", {"node": "q0001"})
+    assert out == '[q0001] capital of France? — stored answer: "Paris"'
 
 
-def test_recall_solutions_flags_unexpanded_branches():
+def test_leaf_decompose_tags_a_graded_answer_with_its_f1():
     i = make()
-    dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     i.solutions.record_answer("agent_1", "q0003", "4", f1=1.0)
-    out = dispatch(i, "agent_1", "recall_solutions", {"name": "t0001"})
-    assert "known 1/1" in out and "t0002" in out
+    out = dispatch(i, "agent_1", "decompose", {"node": "q0003"})
+    assert out == '[q0003] 2+2? — stored answer: "4" (F1 1.00)'
 
 
-def test_recall_solutions_unknown_name_is_a_friendly_error():
+def test_first_decompose_has_no_reuse_block_when_nothing_is_stored():
     i = make()
-    out = dispatch(i, "agent_1", "recall_solutions", {"name": "utter nonsense here"})
+    out = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert "breaks down into" in out
+    assert "answers beneath" not in out
+
+
+def test_first_decompose_appends_answers_already_stored_beneath():
+    """Leaf reuse across trees: q0003 (shared with t0004) already answered
+    shows up when t0001 is decomposed for the FIRST time."""
+    i = make()
+    i.solutions.record_answer("agent_1", "q0003", "4", f1=1.0)
+    out = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert "breaks down into 2 part(s):" in out
+    assert 'known 1/1 answers beneath: {"q0003": "4" (F1 1.00)}' in out
+
+
+def test_decompose_unknown_name_is_a_friendly_error():
+    i = make()
+    out = dispatch(i, "agent_1", "decompose", {"node": "utter nonsense here"})
     assert out.startswith("ERROR")
 
 
-def test_recall_solutions_does_not_leak_across_agents_at_c0():
+def test_memory_walk_does_not_leak_across_agents_at_c0():
     i = make()
     dispatch(i, "agent_1", "claim_task", {"task": "t0001"})
     dispatch(i, "agent_1", "deliver_work", {"target_id": "t0001", "content": FULL_T1})
-    dispatch(i, "agent_1", "decompose", {"node": "t0002"})
-    assert dispatch(i, "agent_2", "recall_solutions", {"name": "t0002"}) == \
-        "(no stored solutions under t0002)"
+    own = dispatch(i, "agent_1", "decompose", {"node": "t0002"})
+    assert "known 2/2 answers beneath" in own      # first reveal + stored answers
+    other = dispatch(i, "agent_2", "decompose", {"node": "t0002"})
+    assert "breaks down into" in other             # first time for agent_2 too
+    assert "answers beneath" not in other          # agent_1's answers stay private
 
 
 # ---------------- C2 vs C0: the one mechanism C2 flips ----------------
@@ -285,7 +302,7 @@ def test_c2_shares_the_store_across_agents_and_c0_does_not():
         i = make(level)
         dispatch(i, "agent_1", "decompose", {"node": "t0002"})
         i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
-        out = dispatch(i, "agent_2", "recall_solutions", {"name": "t0002"})
+        out = dispatch(i, "agent_2", "decompose", {"node": "t0002"})
         assert ('"q0001": "Paris"' in out) is shared, level
 
 
@@ -309,8 +326,8 @@ def test_every_role_at_every_config_gets_the_reuse_demo():
             if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             s = role_skill(CONFIGS[name], who)
-            assert "recall_solutions(" in s, (name, who)
-            assert "Demo: reuse what you already solved" in s, (name, who)
+            assert "recall_solutions" not in s, (name, who)
+            assert "Demo: decompose is your memory" in s, (name, who)
 
 
 def test_turn_view_advertises_the_store_only_when_it_is_non_empty():
@@ -321,8 +338,8 @@ def test_turn_view_advertises_the_store_only_when_it_is_non_empty():
     i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
     view = render_turn(i, "agent_1", fifo, goals)
     assert ("Solution memory: 1 answers stored; decomposed: t0002 "
-            "(recall_solutions to reuse)") in view
-    assert "recall_solutions" in view
+            "(decompose a node to reuse what is known)") in view
+    assert "recall_solutions" not in view
 
 
 def test_shared_store_is_advertised_to_everyone_at_c2():
@@ -344,7 +361,7 @@ def test_turn_view_lists_decomposed_ids_in_insertion_order():
     view = render_turn(i, "agent_1", fifo, goals)
     assert _memory_line(view) == ("Solution memory: 0 answers stored; "
                                   "decomposed: t0001, t0002 "
-                                  "(recall_solutions to reuse)")
+                                  "(decompose a node to reuse what is known)")
 
 
 def test_turn_view_answers_only_omits_the_decomposed_list():
@@ -353,7 +370,7 @@ def test_turn_view_answers_only_omits_the_decomposed_list():
     i.solutions.record_answer("agent_1", "q0001", "Paris", f1=1.0)
     view = render_turn(i, "agent_1", fifo, goals)
     assert _memory_line(view) == ("Solution memory: 1 answers stored "
-                                  "(recall_solutions to reuse)")
+                                  "(decompose a node to reuse what is known)")
 
 
 def test_turn_view_truncates_the_decomposed_list_at_twelve():
@@ -363,11 +380,11 @@ def test_turn_view_truncates_the_decomposed_list_at_twelve():
         i.solutions.record_decomposition("agent_1", f"t{n:04d}", ["q0001"])
     line = _memory_line(render_turn(i, "agent_1", fifo, goals))
     shown = ", ".join(f"t{n:04d}" for n in range(12))
-    assert f"decomposed: {shown} … +2 more (recall_solutions to reuse)" in line
+    assert f"decomposed: {shown} … +2 more (decompose a node to reuse what is known)" in line
     assert "t0012" not in line and "t0013" not in line
 
 
-# ---------------- T30: repeat-decompose redirect ----------------
+# ---------------- T30/T32: repeat-decompose memory walk ----------------
 
 def test_has_decomposition_and_decomposed_ids():
     sm = SolutionMemory()
@@ -381,13 +398,13 @@ def test_has_decomposition_and_decomposed_ids():
     assert sm.decomposed_ids("b") == []
 
 
-def test_repeat_decompose_redirects_to_recall():
+def test_repeat_decompose_answers_from_the_store_not_a_re_reveal():
     i = make()
     assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     again = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
-    assert again == ('(t0001 already decomposed: t0002, q0003 — '
-                     'recall_solutions("t0001") for stored answers)')
-    # by sentence too: the redirect keys on the resolved nid
+    assert again == ("(t0001 already decomposed: t0002, q0003 — no stored answers "
+                     "beneath yet; decompose a child or solve its questions)")
+    # by sentence too: the repeat path keys on the resolved nid
     by_sentence = dispatch(i, "agent_1", "decompose",
                            {"node": "answer the french geography questions"})
     assert by_sentence == again
@@ -406,45 +423,46 @@ def test_repeat_decompose_does_not_re_record(monkeypatch):
     assert i.solutions.mapping("agent_1", "t0001") == ["t0002", "q0003"]
 
 
-def test_recall_after_decompose_shows_structure_not_empty_store():
-    """The C7 ping-pong loop: decompose said "already decomposed, go recall",
-    recall said "no stored solutions". With structure stored but no answers,
-    recall must show the structure instead of contradicting the redirect."""
+def test_repeat_decompose_without_answers_is_one_self_sufficient_message():
+    """The C7 ping-pong regression, v3: with structure stored but no answers,
+    the ONE repeat-decompose reply must carry both the children ids and the
+    no-answers verdict -- there is no second lookup action left to bounce to."""
     i = make()
     dispatch(i, "agent_1", "decompose", {"node": "t0001"})
-    out = dispatch(i, "agent_1", "recall_solutions", {"name": "t0001"})
-    assert out.startswith("(no stored answers yet under t0001)")
-    assert "not yet decomposed" in out or "unanswered" in out
-    assert "no stored solutions" not in out
+    out = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    assert "t0002" in out and "q0003" in out          # children ids
+    assert "no stored answers" in out                 # verdict, same message
 
 
-def test_leaf_echo_is_never_redirected():
+def test_leaf_echo_is_never_treated_as_a_repeat():
     i = make()
     for _ in range(2):
         out = dispatch(i, "agent_1", "decompose", {"node": "q0003"})
-        assert "[q0003]" in out and "already decomposed" not in out
+        assert out == "[q0003] 2+2?" and "already decomposed" not in out
 
 
-def test_c2_shared_bucket_redirects_other_agents_too():
+def test_c2_shared_bucket_repeat_path_applies_to_other_agents_too():
     i = make("C2")
     assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     out = dispatch(i, "agent_2", "decompose", {"node": "t0001"})
-    assert out == ('(t0001 already decomposed: t0002, q0003 — '
-                   'recall_solutions("t0001") for stored answers)')
+    assert out == ("(t0001 already decomposed: t0002, q0003 — no stored answers "
+                   "beneath yet; decompose a child or solve its questions)")
 
 
-def test_reuse_demo_teaches_the_repeat_decompose_redirect():
+def test_reuse_demo_teaches_both_repeat_decompose_outcomes():
     for name in CONFIGS:
         for who in ("agent_1", "hub"):
             if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             s = role_skill(CONFIGS[name], who)
-            # the WRONG line must show the redirect exactly as _h_decompose
-            # formats it -- a stale format would mis-teach the model
-            assert ('(t0042 already decomposed: t0043, q0017 — '
-                    'recall_solutions("t0042") for stored answers)') in s, (name, who)
-            assert 'recall_solutions(name="t0042")' in s, (name, who)
-            assert "Do NOT bounce" in s, (name, who)
+            # both repeat outcomes must show the format exactly as _h_decompose
+            # emits it -- a stale format would mis-teach the model
+            assert ("(t0042 already decomposed) known 1/1 answers beneath: "
+                    '{"q0017": "1905" (F1 1.00)}; not yet expanded: t0043 — '
+                    "decompose deeper or solve the rest") in s, (name, who)
+            assert ("(t0042 already decomposed: t0043, q0017 — no stored answers "
+                    "beneath yet; decompose a child or solve its questions)") in s, (name, who)
+            assert "SOLVING" in s, (name, who)
 
 
 def test_solution_store_is_separate_from_free_text_ltm():

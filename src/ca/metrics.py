@@ -49,8 +49,8 @@ def compute_metrics(summary: dict, library=None) -> dict:
     debtors = loans.get("debtors", {})
     bankrupt_with_debt = loans.get("bankrupt_with_debt", [])
     sol = summary.get("solutions", {})
-    n_recalls = sum(v.get("n_recalls", 0) for v in sol.values())
-    n_recall_hits = sum(v.get("n_recall_hits", 0) for v in sol.values())
+    n_lookups = sum(v.get("n_lookups", 0) for v in sol.values())
+    n_lookup_hits = sum(v.get("n_lookup_hits", 0) for v in sol.values())
     metrics = {
         "total_f1": total_f1,
         "total_em": total_em,
@@ -70,11 +70,11 @@ def compute_metrics(summary: dict, library=None) -> dict:
         "loan_principal_outstanding": loans.get("total_principal_outstanding", 0),
         "interest_paid_total": loans.get("total_interest_paid", 0),
         "bad_debt": sum(debtors.get(a, 0) for a in bankrupt_with_debt),
-        # T27: solution-reuse (recall_solutions usage and hit rate). Zero-
-        # guarded and present at every config, even ones where the store is
-        # never queried.
-        "n_recalls": n_recalls,
-        "solution_reuse_rate": n_recall_hits / max(1, n_recalls),
+        # T27/T32: solution-reuse (memory-aware decompose usage and hit
+        # rate). Zero-guarded and present at every config, even ones where
+        # the store is never queried.
+        "n_lookups": n_lookups,
+        "solution_reuse_rate": n_lookup_hits / max(1, n_lookups),
         "answers_in_memory_total": sum(v.get("answers", 0) for v in sol.values()),
     }
     if library is not None:

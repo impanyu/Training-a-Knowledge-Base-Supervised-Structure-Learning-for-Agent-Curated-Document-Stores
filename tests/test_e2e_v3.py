@@ -37,7 +37,7 @@ def shared_subtask_library() -> TaskLibrary:
     """t0001 and t0002 both wrap the SAME subtask t0100 (leaves q0010/q0011)
     plus one leaf of their own. The shortcut this exists to test: solving
     t0100 once (while delivering t0001) should let a later claim of t0002
-    skip re-deriving it via recall_solutions."""
+    skip re-deriving it via a repeat (memory-walk) decompose."""
     nodes = [
         TaskNode("t0001", "answer the shared geography plus warmup one", ["t0100", "q0001"]),
         TaskNode("t0002", "answer the shared geography plus warmup two", ["t0100", "q0002"]),
@@ -75,9 +75,10 @@ def _results(trace, agent, action):
 
 def test_solution_shortcut_across_tasks_C0(tmp_path):
     """agent_1 solves+delivers t0001 (which wraps the shared subtask t0100),
-    then claims t0002 (which wraps the SAME t0100), recalls it instead of
-    re-deriving it, and delivers t0002 reusing the recalled answers. Both
-    tasks pay out, conservation holds, and the reuse shows up in metrics."""
+    then claims t0002 (which wraps the SAME t0100), re-decomposes it -- the
+    repeat call walks solution memory instead of re-revealing -- and delivers
+    t0002 reusing the stored answers. Both tasks pay out, conservation holds,
+    and the reuse shows up in metrics."""
     scripts = {
         "agent_1": [
             ("claim_task", {"task": "t0001"}),
@@ -87,7 +88,7 @@ def test_solution_shortcut_across_tasks_C0(tmp_path):
                               "content": json.dumps({"q0010": "Paris", "q0011": "Loire",
                                                      "q0001": "4"})}),
             ("claim_task", {"task": "t0002"}),
-            ("recall_solutions", {"name": "t0100"}),
+            ("decompose", {"node": "t0100"}),                  # repeat: memory walk
             ("deliver_work", {"target_id": "t0002",
                               "content": json.dumps({"q0010": "Paris", "q0011": "Loire",
                                                      "q0002": "6"})}),
@@ -98,10 +99,9 @@ def test_solution_shortcut_across_tasks_C0(tmp_path):
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    recall_out = _results(trace, "agent_1", "recall_solutions")[0]
-    assert not recall_out.startswith("(no stored solutions")
-    assert "known 2/2" in recall_out
-    assert '"q0010": "Paris"' in recall_out and '"q0011": "Loire"' in recall_out
+    lookup_out = _results(trace, "agent_1", "decompose")[2]    # the repeat on t0100
+    assert lookup_out.startswith("(t0100 already decomposed) known 2/2 answers beneath:")
+    assert '"q0010": "Paris"' in lookup_out and '"q0011": "Loire"' in lookup_out
 
     deliveries = _results(trace, "agent_1", "deliver_work")
     assert not deliveries[0].startswith("ERROR") and not deliveries[1].startswith("ERROR")
@@ -115,14 +115,15 @@ def test_solution_shortcut_across_tasks_C0(tmp_path):
 
     m = compute_metrics(summary)
     assert m["solution_reuse_rate"] > 0
-    assert m["n_recalls"] >= 1
+    assert m["n_lookups"] >= 1
 
 
 def test_shared_memory_collective_C2(tmp_path):
     """agent_1 solves+delivers t0001 alone; agent_2 never does any work of its
-    own. At C2 (shared_solution_memory) agent_2's recall_solutions on the
-    shared subtask t0002 returns agent_1's answers. The SAME script at C0
-    (private-per-agent store) gets the empty-store response instead."""
+    own. At C2 (shared_solution_memory) agent_2's decompose of the shared
+    subtask t0002 hits the repeat path and returns agent_1's answers. The
+    SAME script at C0 (private-per-agent store) gets a plain first-time
+    reveal with no answers instead."""
     full_t1 = json.dumps({"q0001": "Paris", "q0002": "Loire", "q0003": "4"})
 
     def run(level, out_dir):
@@ -139,12 +140,12 @@ def test_shared_memory_collective_C2(tmp_path):
                 ("check_balance", {}),
                 ("check_balance", {}),
                 ("check_balance", {}),
-                ("recall_solutions", {"name": "t0002"}),
+                ("decompose", {"node": "t0002"}),
             ],
         }
         # t0004 is posted but never touched, so the board never reaches
         # all_done() -- the scheduler runs the full 5 rounds either way and
-        # agent_2's round-5 recall is guaranteed to land after agent_1's
+        # agent_2's round-5 lookup is guaranteed to land after agent_1's
         # round-4 delivery.
         infra, sched = build(level, scripts, out_dir, library=demo_library(),
                              posted=["t0001", "t0004"], max_rounds=5)
@@ -154,14 +155,16 @@ def test_shared_memory_collective_C2(tmp_path):
     c2_dir = tmp_path / "c2"
     c2_dir.mkdir()
     trace_c2 = run("C2", c2_dir)
-    out_c2 = _results(trace_c2, "agent_2", "recall_solutions")[0]
+    out_c2 = _results(trace_c2, "agent_2", "decompose")[0]
+    assert out_c2.startswith("(t0002 already decomposed) known 2/2 answers beneath:")
     assert "Paris" in out_c2 and "Loire" in out_c2
 
     c0_dir = tmp_path / "c0"
     c0_dir.mkdir()
     trace_c0 = run("C0", c0_dir)
-    out_c0 = _results(trace_c0, "agent_2", "recall_solutions")[0]
-    assert out_c0 == "(no stored solutions under t0002)"
+    out_c0 = _results(trace_c0, "agent_2", "decompose")[0]
+    assert "breaks down into" in out_c0                        # first time, full reveal
+    assert "Paris" not in out_c0 and "answers beneath" not in out_c0
 
 
 def test_collective_goal_prompt_C6(tmp_path):

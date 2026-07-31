@@ -291,7 +291,7 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
         ("claim_task", {"task": "t0001"}),
         ("decompose", {"node": "t0001"}),
         ("decompose", {"node": "t0002"}),
-        ("recall_solutions", {"name": "t0001"}),
+        ("decompose", {"node": "t0001"}),      # repeat: memory-walk lookup
         ("deliver_work", {"target_id": "t0001",
                           "content": json.dumps({"q0001": "Paris", "q0002": "Loire",
                                                  "q0003": "4"})}),
@@ -310,7 +310,7 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
     # cumulative counters never go down tick over tick
     for key in ("minted", "burned", "solving_total", "admin_total", "n_answered",
                 "total_f1", "n_tasks_closed", "n_contracts", "n_loans",
-                "interest_paid_total", "n_recalls"):
+                "interest_paid_total", "n_lookups"):
         vals = [s[key] for s in lines]
         assert vals == sorted(vals), key
     assert [s["board"]["closed"] for s in lines] == [0, 0, 0, 0, 0, 1]
@@ -331,7 +331,7 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
     assert last["n_loans"] == m["n_loans"]
     assert last["loan_principal_outstanding"] == m["loan_principal_outstanding"]
     assert last["interest_paid_total"] == m["interest_paid_total"]
-    assert last["n_recalls"] == m["n_recalls"]
+    assert last["n_lookups"] == m["n_lookups"]
     assert last["answers_in_memory_total"] == m["answers_in_memory_total"]
 
 

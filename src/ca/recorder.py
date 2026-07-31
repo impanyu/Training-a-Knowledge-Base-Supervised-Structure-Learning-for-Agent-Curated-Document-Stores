@@ -20,9 +20,9 @@ end of that round (a crash mid-round loses only that round's line):
     board                          {open, claimed, closed} posted-task counts
     n_contracts / contracts_by_status {status: count}
     n_loans / loan_principal_outstanding / interest_paid_total
-    solutions                      {agent: {n_recalls, n_recall_hits,
+    solutions                      {agent: {n_lookups, n_lookup_hits,
                                    answers_in_memory, decompositions_in_memory}}
-    n_recalls / n_recall_hits / answers_in_memory_total
+    n_lookups / n_lookup_hits / answers_in_memory_total
 
 Formulas mirror ca.metrics on the final round (answers_in_memory_total sums
 per-agent stats, so at C2 the shared bucket is counted once per agent, exactly
@@ -30,6 +30,8 @@ as compute_metrics does)."""
 import json
 from collections import defaultdict
 from pathlib import Path
+
+from ca.actions import LOOKUP_HIT_MARKER
 
 
 class Recorder:
@@ -40,23 +42,21 @@ class Recorder:
         self._f = open(self.dir / "trace.jsonl", mode)  # fresh trace per run
         self._ts = open(self.dir / "timeseries.jsonl", mode)
         self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
-        # T27: solution-reuse tallies, counted live off the event stream so
+        # T27/T32: lookup tallies, counted live off the event stream so
         # write_summary need not re-scan the trace file.
-        self._recalls = defaultdict(lambda: {"n_recalls": 0, "n_recall_hits": 0})
+        self._lookups = defaultdict(lambda: {"n_lookups": 0, "n_lookup_hits": 0})
 
     def log(self, event: dict) -> None:
         spent = event["tokens_in"] + event["tokens_out"]
         self._tokens[event["agent"]][event["category"]] += spent
-        if event["action"] == "recall_solutions":
-            tally = self._recalls[event["agent"]]
-            tally["n_recalls"] += 1
-            # a "hit" is a recall whose result names at least one known
-            # answer: does NOT start with "ERROR" (unresolvable/bankrupt) and
-            # does NOT start with "(no stored" (empty store, or structure
-            # without answers -- "(no stored answers yet").
-            result_str = str(event["result"])
-            if not result_str.startswith("ERROR") and not result_str.startswith("(no stored"):
-                tally["n_recall_hits"] += 1
+        if event["action"] == "decompose":
+            tally = self._lookups[event["agent"]]
+            tally["n_lookups"] += 1
+            # a "hit" is a decompose whose result surfaces at least one
+            # stored answer -- the reuse-block header is the stable marker
+            # (errors, plain reveals and answerless repeats never carry it)
+            if LOOKUP_HIT_MARKER in str(event["result"]):
+                tally["n_lookup_hits"] += 1
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
 
@@ -90,7 +90,7 @@ class Recorder:
             contracts_by_status[c.status] += 1
         loans = list(infra.loans.loans.values())
         solutions = {
-            a: {**self._recalls[a],
+            a: {**self._lookups[a],
                 "answers_in_memory": infra.solutions.stats(a)["answers"],
                 "decompositions_in_memory": infra.solutions.stats(a)["decompositions"]}
             for a in agents
@@ -129,8 +129,8 @@ class Recorder:
                                               if l.status == "active"),
             "interest_paid_total": infra.loans.total_interest_paid,
             "solutions": solutions,
-            "n_recalls": sum(v["n_recalls"] for v in solutions.values()),
-            "n_recall_hits": sum(v["n_recall_hits"] for v in solutions.values()),
+            "n_lookups": sum(v["n_lookups"] for v in solutions.values()),
+            "n_lookup_hits": sum(v["n_lookup_hits"] for v in solutions.values()),
             "answers_in_memory_total": sum(v["answers_in_memory"]
                                            for v in solutions.values()),
         }
@@ -178,9 +178,9 @@ class Recorder:
                 "bankrupt_with_debt": [a for a in debtors if infra.ledger.is_bankrupt(a)],
             },
             # per-agent solution-memory footprint: what's stored (T26) plus
-            # how much it got reused this run (T27).
+            # how much it got looked up and reused this run (T27/T32).
             "solutions": {
-                a: {**infra.solutions.stats(a), **self._recalls[a]}
+                a: {**infra.solutions.stats(a), **self._lookups[a]}
                 for a in infra.agent_ids
             },
             "minted": infra.ledger.minted,
@@ -193,13 +193,13 @@ class Recorder:
 
     def to_state(self) -> dict:
         return {"tokens": {a: dict(v) for a, v in self._tokens.items()},
-                "recalls": {a: dict(v) for a, v in self._recalls.items()}}
+                "lookups": {a: dict(v) for a, v in self._lookups.items()}}
 
     def from_state(self, state: dict) -> None:
         for a, v in state["tokens"].items():
             self._tokens[a].update(v)
-        for a, v in state["recalls"].items():
-            self._recalls[a].update(v)
+        for a, v in state["lookups"].items():
+            self._lookups[a].update(v)
 
     def close(self):
         self._f.close()

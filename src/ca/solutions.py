@@ -8,10 +8,10 @@ Fully parallel to, and independent of, the free-text `LongTermMemory`
 
 Nothing is written by an explicit agent action: the store fills itself at the
 three moments an agent demonstrably learns something (decomposing a node,
-delivering answers, receiving a node-bound deliverable). Reading it back is
-the one deliberate act -- the `recall_solutions` action -- which walks the
-stored decompositions recursively so a subtask solved once can be re-served
-whole.
+delivering answers, receiving a node-bound deliverable). Reading it back
+happens through `decompose` (T32): a first call reveals structure and surfaces
+any answers stored beneath, a repeat call walks the stored decompositions
+recursively (`recall`) so a subtask solved once can be re-served whole.
 
 Keys are ids only (t#### / q####), never sentences: this module is
 library-agnostic on purpose, and the ACTIONS layer resolves whatever the agent

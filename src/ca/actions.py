@@ -7,7 +7,6 @@ from ca.contracts import ContractError
 from ca.economy import InsufficientFunds
 from ca.infra import Infra
 from ca.loans import LoanError
-from ca.solutions import is_question
 from ca.taskboard import BoardError
 from ca.tasktree import TreeError
 
@@ -34,9 +33,12 @@ ACTION_SPECS: dict[str, dict] = {
         "description": ("Reveal the direct children of a task or subtask: child subtasks are "
                         "shown as [t####] «one-sentence summary» (n questions, reward r), child "
                         "leaves as [q####] the full question text. Questions only become visible "
-                        "once you decompose down to them. `node` accepts a short id (t0012) or "
-                        "the one-sentence summary; passing a q-id just re-prints that question. "
-                        "COSTS TOKENS."),
+                        "once you decompose down to them. Memory-aware: answers you already hold "
+                        "beneath the node are reported alongside, a REPEAT call on the same node "
+                        "returns the deepest stored knowledge instead of re-revealing, and "
+                        "passing a q-id re-prints that question with its stored answer if you "
+                        "have one. `node` accepts a short id (t0012) or the one-sentence "
+                        "summary. COSTS TOKENS."),
         "input_schema": _schema({"node": _S}, ["node"]),
     },
     "deliver_work": {
@@ -56,16 +58,6 @@ ACTION_SPECS: dict[str, dict] = {
                         "to a subtask node, its content must likewise be a JSON map covering that "
                         "node's leaves."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
-    },
-    "recall_solutions": {
-        "description": ("Look up what you have ALREADY solved under a task, subtask or "
-                        "question, reusing your automatically-saved decompositions and "
-                        "answers. `name` accepts a short id (t0012), a one-sentence "
-                        "summary, or a question id (q0031). Expands the subtree "
-                        "recursively and reports every known answer plus what is still "
-                        "missing - a subtask you solved before comes back whole, for the "
-                        "price of one action instead of re-solving it. COSTS TOKENS."),
-        "input_schema": _schema({"name": _S}, ["name"]),
     },
     # -------- admin (coordination) --------
     "list_tasks": {
@@ -187,7 +179,7 @@ def classify(name: str, inp: dict) -> str:
     """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
     its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
     work the tokens paid for, for recorder tallies / coordination_overhead."""
-    if name in ("retrieve", "work_on", "decompose", "recall_solutions"):
+    if name in ("retrieve", "work_on", "decompose"):
         return "solving"
     if name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")):
         return "solving"
@@ -370,19 +362,49 @@ def _h_claim_task(infra, a, inp):
             "structure; deliver all of its questions in one JSON package.")
 
 
+# the reuse-block header is the stable marker the recorder keys its
+# lookup-hit tally on ("known {n}/{m} answers beneath: {...}")
+LOOKUP_HIT_MARKER = "answers beneath:"
+
+
+def _answer_tag(rec: dict) -> str:
+    return f" (F1 {rec['f1']:.2f})" if "f1" in rec else ""
+
+
+def _known_block(known: dict, missing: list[str]) -> str:
+    items = [f'"{qid}": "{rec["answer"]}"{_answer_tag(rec)}'
+             for qid, rec in known.items()]
+    return (f"known {len(known)}/{len(known) + len(missing)} "
+            f"{LOOKUP_HIT_MARKER} {{{', '.join(items)}}}")
+
+
 def _h_decompose(infra, a, inp):
     ref = str(inp["node"]).strip()
     if ref in infra.library.questions:          # a leaf: nothing left to reveal
         q = infra.library.questions[ref]
+        rec = infra.solutions.answer(a, ref)
+        if rec is not None:
+            return f'[{q.qid}] {q.text} — stored answer: "{rec["answer"]}"{_answer_tag(rec)}'
         return f"[{q.qid}] {q.text}"
     node = infra.library.resolve(ref)
-    # repeat friction: the breakdown is already in solution memory, so answer
-    # from the store inline -- a bare "go recall" pointer proved loop-prone
-    # when the store held structure but no answers yet
     kids = infra.solutions.decomposition(a, node.nid)
     if kids is not None:
-        return (f"({node.nid} already decomposed: {', '.join(kids)} — "
-                f'recall_solutions("{node.nid}") for stored answers)')
+        # repeat: no re-reveal -- walk solution memory and answer with the
+        # deepest stored knowledge, in ONE self-sufficient message (a bare
+        # "go recall" pointer proved loop-prone when the store held structure
+        # but no answers yet)
+        res = infra.solutions.recall(a, node.nid)
+        known, missing, unexpanded = res["known"], res["missing"], res["unexpanded"]
+        if not known:
+            return (f"({node.nid} already decomposed: {', '.join(kids)} — "
+                    "no stored answers beneath yet; decompose a child or "
+                    "solve its questions)")
+        parts = [f"({node.nid} already decomposed) {_known_block(known, missing)}"]
+        if missing:
+            parts.append("unanswered: " + ", ".join(missing))
+        if unexpanded:
+            parts.append("not yet expanded: " + ", ".join(unexpanded))
+        return "; ".join(parts) + " — decompose deeper or solve the rest"
     rows = infra.library.children_view(node.nid)
     # solution memory trigger 1: structure learned is structure stored
     infra.solutions.record_decomposition(
@@ -394,50 +416,12 @@ def _h_decompose(infra, a, inp):
                          f"({r['leaf_count']} questions, reward {r['price']})")
         else:
             lines.append(f"  [{r['qid']}] {r['text']}")
+    # answers can exist beneath even on a first visit (shared C2 bucket, leaf
+    # reuse across trees): surface them right away
+    res = infra.solutions.recall(a, node.nid)
+    if res["known"]:
+        lines.append(_known_block(res["known"], res["missing"]))
     return "\n".join(lines)
-
-
-def _solution_key(infra, ref: str) -> str:
-    """What the agent typed -> a solution-store key. The store holds ids only,
-    so sentences are resolved here (fuzzily, as everywhere an agent names a
-    node it can see). A bare q-id passes straight through even if the library
-    does not know it: recall must be able to say 'never solved' about it."""
-    r = str(ref).strip()
-    if r in infra.library.questions or is_question(r):
-        return r
-    return infra.library.resolve(r).nid
-
-
-def _h_recall_solutions(infra, a, inp):
-    key = _solution_key(infra, inp["name"])
-    res = infra.solutions.recall(a, key)
-    known, missing, unexpanded = res["known"], res["missing"], res["unexpanded"]
-    if not known:
-        # structure without answers is still knowledge: show it rather than
-        # claim the store is empty (that contradiction caused recall loops).
-        # A never-decomposed key reports itself as unexpanded -- that is NOT
-        # stored knowledge, so it keeps the plain empty-store reply.
-        if missing or infra.solutions.has_decomposition(a, key):
-            parts = [f"(no stored answers yet under {key})"]
-            if missing:
-                parts.append("known leaves, unanswered: " + ", ".join(missing))
-            if unexpanded:
-                parts.append("not yet decomposed (may hide more leaves): "
-                             + ", ".join(unexpanded))
-            return "; ".join(parts)
-        return f"(no stored solutions under {key})"
-    items = []
-    for qid, rec in known.items():
-        tag = f" (F1 {rec['f1']:.2f})" if "f1" in rec else ""
-        items.append(f'"{qid}": "{rec["answer"]}"{tag}')
-    parts = [f"known {len(known)}/{len(known) + len(missing)} answers under "
-             f"{key}: {{{', '.join(items)}}}"]
-    if missing:
-        parts.append("missing: " + ", ".join(missing))
-    if unexpanded:
-        parts.append("not yet decomposed (may hide more leaves): "
-                     + ", ".join(unexpanded))
-    return "; ".join(parts)
 
 
 def _h_send_message(infra, a, inp):
@@ -597,7 +581,6 @@ def _h_list_agents(infra, a, inp):
 _HANDLERS = {
     "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
     "list_tasks": _h_list_tasks, "claim_task": _h_claim_task, "decompose": _h_decompose,
-    "recall_solutions": _h_recall_solutions,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,

@@ -132,7 +132,7 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
             if len(decomposed) > 12:
                 shown += f" … +{len(decomposed) - 12} more"
             line += f"; decomposed: {shown}"
-        parts.append(line + " (recall_solutions to reuse)")
+        parts.append(line + " (decompose a node to reuse what is known)")
     mine = [t for t in infra.board.tasks.values()
             if t.status == "claimed" and t.claimed_by == agent_id]
     if mine:

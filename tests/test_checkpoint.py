@@ -58,7 +58,7 @@ SCRIPTS = {
         ("claim_task", {"task": "t0001"}),
         ("decompose", {"node": "t0001"}),
         ("decompose", {"node": "t0002"}),
-        ("recall_solutions", {"name": "t0001"}),
+        ("decompose", {"node": "t0001"}),      # repeat: memory-walk lookup
         ("deliver_work", {"target_id": "t0001", "content": T0001_MAP}),
     ],
     "agent_2": [
@@ -105,7 +105,7 @@ SCRIPTS = {
     ],
     "agent_8": [
         ("list_tasks", {}),
-        ("recall_solutions", {"name": "t0001"}),
+        ("decompose", {"node": "t0001"}),
     ],
 }
 
@@ -230,8 +230,10 @@ def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec.log({"round": 1, "agent": "agent_1", "action": "retrieve", "input": {},
              "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5,
              "balance_after": 0})
-    rec.log({"round": 1, "agent": "agent_1", "action": "recall_solutions", "input": {},
-             "result": "q0001: Paris", "category": "solving", "tokens_in": 1,
+    rec.log({"round": 1, "agent": "agent_1", "action": "decompose", "input": {},
+             "result": '(t0001 already decomposed) known 1/1 answers beneath: '
+                       '{"q0001": "Paris"} — decompose deeper or solve the rest',
+             "category": "solving", "tokens_in": 1,
              "tokens_out": 1, "balance_after": 0})
     state = json.loads(json.dumps(rec.to_state()))
     rec.close()
@@ -239,7 +241,7 @@ def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec2 = Recorder(str(tmp_path), append=True)
     rec2.from_state(state)
     assert rec2._tokens["agent_1"] == {"solving": 17, "admin": 0}
-    assert rec2._recalls["agent_1"] == {"n_recalls": 1, "n_recall_hits": 1}
+    assert rec2._lookups["agent_1"] == {"n_lookups": 1, "n_lookup_hits": 1}
     rec2.log({"round": 2, "agent": "agent_1", "action": "check_balance", "input": {},
               "result": "0", "category": "admin", "tokens_in": 1, "tokens_out": 1,
               "balance_after": 0})

@@ -1,6 +1,6 @@
-"""T27: Recorder solution-reuse tallies -- per-agent `solutions` summary block
-(answers/decompositions stored, from infra.solutions.stats) plus n_recalls /
-n_recall_hits counted live off the event stream in `log()`.
+"""T27/T32: Recorder lookup tallies -- per-agent `solutions` summary block
+(answers/decompositions stored, from infra.solutions.stats) plus n_lookups /
+n_lookup_hits counted live off the decompose events in `log()`.
 
 T28: per-round cumulative snapshots (`log_round`) -> timeseries.jsonl."""
 import json
@@ -16,39 +16,44 @@ def _event(agent, action, result, round_no=1):
             "balance_after": 0}
 
 
-def test_solutions_block_reflects_stats_and_recall_tallies(tmp_path):
+def test_solutions_block_reflects_stats_and_lookup_tallies(tmp_path):
     infra = demo_infra("C0")
     infra.solutions.record_decomposition("agent_1", "t0001", ["t0002", "q0003"])
     infra.solutions.record_answer("agent_1", "q0003", "4", f1=1.0)
     rec = Recorder(str(tmp_path))
-    rec.log(_event("agent_1", "recall_solutions",
-                   'known 1/1 answers under t0001: {"q0003": "4" (F1 1.00)}'))
-    rec.log(_event("agent_1", "recall_solutions", "(no stored solutions under t0002)"))
-    rec.log(_event("agent_2", "recall_solutions", "(no stored solutions under t0001)"))
+    rec.log(_event("agent_1", "decompose",
+                   '(t0001 already decomposed) known 1/1 answers beneath: '
+                   '{"q0003": "4" (F1 1.00)} — decompose deeper or solve the rest'))
+    rec.log(_event("agent_1", "decompose",
+                   "(t0002 already decomposed: q0001, q0002 — no stored answers "
+                   "beneath yet; decompose a child or solve its questions)"))
+    rec.log(_event("agent_2", "decompose",
+                   "[t0001] «...» breaks down into 2 part(s): ..."))
     summary = rec.write_summary(infra, rounds_used=1)
     rec.close()
 
     assert summary["solutions"]["agent_1"] == {
-        "answers": 1, "decompositions": 1, "n_recalls": 2, "n_recall_hits": 1,
+        "answers": 1, "decompositions": 1, "n_lookups": 2, "n_lookup_hits": 1,
     }
     assert summary["solutions"]["agent_2"] == {
-        "answers": 0, "decompositions": 0, "n_recalls": 1, "n_recall_hits": 0,
+        "answers": 0, "decompositions": 0, "n_lookups": 1, "n_lookup_hits": 0,
     }
-    # every agent gets an entry, even one that never called recall_solutions
+    # every agent gets an entry, even one that never decomposed anything
     assert summary["solutions"]["agent_3"] == {
-        "answers": 0, "decompositions": 0, "n_recalls": 0, "n_recall_hits": 0,
+        "answers": 0, "decompositions": 0, "n_lookups": 0, "n_lookup_hits": 0,
     }
 
 
-def test_non_recall_events_do_not_affect_the_tally(tmp_path):
+def test_non_decompose_events_do_not_affect_the_tally(tmp_path):
     infra = demo_infra("C0")
     rec = Recorder(str(tmp_path))
     rec.log(_event("agent_1", "check_balance", "balance: 100"))
-    rec.log(_event("agent_1", "decompose", "[t0002] ..."))
+    # the marker only counts on decompose events, wherever else it may echo
+    rec.log(_event("agent_1", "retrieve", 'docs say known 1/1 answers beneath: ...'))
     summary = rec.write_summary(infra, rounds_used=1)
     rec.close()
-    assert summary["solutions"]["agent_1"]["n_recalls"] == 0
-    assert summary["solutions"]["agent_1"]["n_recall_hits"] == 0
+    assert summary["solutions"]["agent_1"]["n_lookups"] == 0
+    assert summary["solutions"]["agent_1"]["n_lookup_hits"] == 0
 
 
 def test_shared_c2_bucket_is_reflected_per_agent_via_stats(tmp_path):
@@ -63,28 +68,27 @@ def test_shared_c2_bucket_is_reflected_per_agent_via_stats(tmp_path):
     assert summary["solutions"]["agent_2"]["answers"] == 1
 
 
-def test_error_recalls_are_not_hits(tmp_path):
-    """ERROR results from recall_solutions should NOT be counted as hits,
-    even though they are not "(no stored solutions" responses."""
+def test_error_and_answerless_lookups_are_not_hits(tmp_path):
+    """Every decompose turn counts as a lookup, but only results that surface
+    at least one stored answer count as hits."""
     infra = demo_infra("C0")
     rec = Recorder(str(tmp_path))
-    # Log an ERROR result (e.g. bankrupt agent, unresolvable name)
-    rec.log(_event("agent_1", "recall_solutions",
-                   'ERROR: bankrupt: agent_2 has no active balance'))
-    # Log an empty-store result (should not be a hit)
-    rec.log(_event("agent_1", "recall_solutions",
-                   "(no stored solutions under t0001)"))
-    # Log a valid result (should be a hit)
-    rec.log(_event("agent_1", "recall_solutions",
-                   'known 2/3 answers: {"q0001": "42", "q0002": "yes"}'))
+    # ERROR result (e.g. unresolvable name, bankrupt agent)
+    rec.log(_event("agent_1", "decompose", "ERROR: no node matching «nonsense»"))
+    # repeat with structure but zero stored answers
+    rec.log(_event("agent_1", "decompose",
+                   "(t0001 already decomposed: t0002, q0003 — no stored answers "
+                   "beneath yet; decompose a child or solve its questions)"))
+    # a result that surfaces stored answers (should be the only hit)
+    rec.log(_event("agent_1", "decompose",
+                   '(t0002 already decomposed) known 2/3 answers beneath: '
+                   '{"q0001": "42", "q0002": "yes"}; unanswered: q0004 — '
+                   "decompose deeper or solve the rest"))
     summary = rec.write_summary(infra, rounds_used=1)
     rec.close()
 
-    # All three should increment n_recalls
-    assert summary["solutions"]["agent_1"]["n_recalls"] == 3
-    # Only the valid result should increment n_recall_hits
-    # (ERROR and "(no stored solutions" should not)
-    assert summary["solutions"]["agent_1"]["n_recall_hits"] == 1
+    assert summary["solutions"]["agent_1"]["n_lookups"] == 3
+    assert summary["solutions"]["agent_1"]["n_lookup_hits"] == 1
 
 
 def test_log_round_snapshot_shape_and_content(tmp_path):
@@ -119,7 +123,7 @@ def test_log_round_snapshot_shape_and_content(tmp_path):
     assert snap["n_contracts"] == 0 and snap["contracts_by_status"] == {}
     assert snap["n_loans"] == 0 and snap["loan_principal_outstanding"] == 0
     assert snap["interest_paid_total"] == 0
-    assert snap["n_recalls"] == 0 and snap["n_recall_hits"] == 0
+    assert snap["n_lookups"] == 0 and snap["n_lookup_hits"] == 0
     assert snap["answers_in_memory_total"] == 0
 
 
@@ -131,7 +135,8 @@ def test_log_round_attributes_answers_and_tasks_to_deliverer(tmp_path):
     infra.solutions.record_answer("agent_3", "q0003", "4", f1=1.0)
     infra.solutions.record_answer("agent_3", "q0004", "6", f1=1.0)
     rec = Recorder(str(tmp_path))
-    rec.log(_event("agent_3", "recall_solutions", "(no stored solutions under t0004)"))
+    rec.log(_event("agent_3", "decompose",
+                   "[t0004] «...» breaks down into 2 part(s): ..."))
     snap1 = rec.log_round(infra, 1)
     snap2 = rec.log_round(infra, 2)
     rec.close()
@@ -145,7 +150,7 @@ def test_log_round_attributes_answers_and_tasks_to_deliverer(tmp_path):
     assert snap1["minted"] == 700 and snap1["total_balance"] == 1700
     # delivering auto-records answers into agent_3's solution memory
     assert snap1["solutions"]["agent_3"] == {
-        "n_recalls": 1, "n_recall_hits": 0, "answers_in_memory": 2,
+        "n_lookups": 1, "n_lookup_hits": 0, "answers_in_memory": 2,
         "decompositions_in_memory": 0,
     }
     assert snap1["answers_in_memory_total"] == 2

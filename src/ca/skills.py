@@ -111,23 +111,25 @@ Every worker who runs low on tokens must borrow from you - keep an eye on loan
 requests and fund the ones worth funding."""
 
 _RECALL = """
-### Demo: reuse what you already solved
-- BEFORE working on any task/subtask: recall_solutions(name="date the two premieres")
-  -> known answers under that subtask appear instantly - claimed tasks sharing
-     leaves with past work are nearly-free profit
-- Your decompositions and delivered answers are saved automatically - nothing to do.
-- WRONG: decompose(node="t0042") ... then later decompose(node="t0042") again
-  -> (t0042 already decomposed: t0043, q0017 — recall_solutions("t0042") for stored answers)
-  A repeat decompose only replays ids you already have. Do NOT bounce between
-  decompose and recall_solutions on the same node - once you hold the ids and
-  recall shows no stored answers, the remaining work is SOLVING: retrieve and
-  answer the leaves, then deliver.
-  RIGHT: check the "decomposed:" list in your status block, then
-  recall_solutions(name="t0042") to re-read what is known for free."""
+### Demo: decompose is your memory - reuse what you already solved
+Your decompositions and delivered answers are saved automatically; decompose
+reads them back. BEFORE working on any task/subtask, decompose it to see what
+is already solved - claimed tasks sharing leaves with past work are
+nearly-free profit.
+- The FIRST decompose(node="t0042") reveals its children, and any answers
+  already stored beneath (e.g. from other tasks sharing its leaves) are
+  appended: known 1/1 answers beneath: {"q0017": "1905" (F1 1.00)}
+- A REPEAT decompose(node="t0042") skips the re-reveal and returns the
+  deepest stored knowledge instead - one of:
+  -> (t0042 already decomposed) known 1/1 answers beneath: {"q0017": "1905" (F1 1.00)}; not yet expanded: t0043 — decompose deeper or solve the rest
+  -> (t0042 already decomposed: t0043, q0017 — no stored answers beneath yet; decompose a child or solve its questions)
+  The second form means the remaining work is SOLVING: retrieve and answer
+  the leaves, then deliver - do NOT decompose the same node a third time."""
 
 _RECALL_SHARED = """
-The knowledge base is SHARED: everyone's discoveries appear in it - check it
-FIRST, someone may have already solved your leaves."""
+The knowledge base is SHARED: everyone's discoveries appear in it, and
+decompose consults it the same way - decompose a node FIRST, someone may have
+already solved your leaves."""
 
 _COLLECTIVE = """
 ### Collective mode

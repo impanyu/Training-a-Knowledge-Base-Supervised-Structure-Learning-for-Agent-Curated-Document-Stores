@@ -109,7 +109,7 @@ counter_offer 在 C3 对所有人禁用；hub 自己发包时 propose 自带价�
 |---|---|---|
 | `list_tasks(offset?)` | 分页列出挂牌 task（短 id + 一句话总结 + 叶数 + 总悬赏，按价排序） | C1 仅 hub |
 | `claim_task(task)` | 独占领取一棵 task 树（参数：句子或短 id） | C1 仅 hub |
-| `decompose(node)` | 揭示 subtask 的下级子节点（子 subtask 显示一句话总结，叶显示原题）；参数：句子或短 id | 所有人 |
+| `decompose(node)` | 唯一的知识导航 action（T32）：首次调用揭示下级子节点（子 subtask 显示一句话总结，叶显示原题），并附带子树下已存答案；重复调用不再重展，递归汇集记忆中该子树下全部已知答案并报告缺口；传叶 q-id 回显原题及已存答案。参数：句子或短 id | 所有人 |
 | `retrieve(query)` | 检索语料，top-k 段落 | 所有人（信息中心化已删除） |
 | `work_on(node, thought)` | 对某节点做一步推理，写入私有草稿区 | 所有人 |
 | `deliver_work(task, answers_json)` 对 WORLD | 打包交付整棵 task：JSON {qid: answer} 覆盖全部叶子 → 逐叶判分 → Σ R(叶)×F1 一次结清；每 task 一次机会 | C1 仅 hub |
@@ -146,7 +146,7 @@ counter_offer 在 C3 对所有人禁用；hub 自己发包时 propose 自带价�
 - 目标栈全量渲染（实践 2–5 层，不截断）；仅 FIFO 滚动淘汰。
 - 栈根由系统自动压入且不可 pop；其余层 agent 自维护，备注留痕（预期收益、来源合同 id），兼作决策理由 trace。
 - 所有 agent（含 hub）共用同一 system prompt 模板，仅按配置替换"你能做什么"段落。
-- **解题长期记忆（Solution Memory，v3 新增）**：每 agent 一个 KV 库，与自由文本记忆（memory_write/search）完全并行独立。**自动写入**（无需主动存）：`decompose` 时记 `subtask → [子节点名]`；交付答案时（WORLD 打包交付含 F1 标注 / 节点绑定合同交付）记 `question → 答案`；**收到**节点绑定交付物的发包方同样自动入库。**读取走独立 action `recall_solutions(name)`**：递归展开记忆中的分解映射，汇集该子树下全部已知答案并报告缺口——已解过的 subtask 一次调用直接拿全套（shortcut）。C2 配置下该库全员共享。skill 内含使用 demo。
+- **解题长期记忆（Solution Memory，v3 新增）**：每 agent 一个 KV 库，与自由文本记忆（memory_write/search）完全并行独立。**自动写入**（无需主动存）：`decompose` 时记 `subtask → [子节点名]`；交付答案时（WORLD 打包交付含 F1 标注 / 节点绑定合同交付）记 `question → 答案`；**收到**节点绑定交付物的发包方同样自动入库。**读取并入 `decompose`（T32，原 `recall_solutions` 已删除）**：首次 decompose 揭示结构并附带子树下已存答案；重复 decompose 不再重展，递归展开记忆中的分解映射，汇集该子树下全部已知答案并报告缺口（未答叶、未展开分支）——已解过的 subtask 一次调用直接拿全套（shortcut）。C2 配置下该库全员共享。skill 内含使用 demo。
 - **角色 skill（轨迹示范）**：system prompt 末尾附加角色手册——worker 与 hub 各一套 action 轨迹 demo（如 worker：claim→retrieve→work_on→deliver；hub：claim→转包→set_price→对 WORLD 交付），demo 片段按配置裁剪，绝不展示该配置下不可用的 action。注意：skill 增加计费回合的 input 成本，且两角色 skill 长度不同（属角色复杂度的真实成本，六配置内部保持对称）。
 
 ## 7. 调度
