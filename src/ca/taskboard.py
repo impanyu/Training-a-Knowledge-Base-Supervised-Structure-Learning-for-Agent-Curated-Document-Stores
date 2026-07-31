@@ -92,6 +92,10 @@ class TaskBoard:
 
     def claim(self, agent: str, ref: str, round_no: int = 0) -> PostedTask:
         t = self.get(ref)
+        if t.status == "claimed":
+            raise BoardError(f"{t.nid} is already claimed by another agent - "
+                             "call list_tasks to see what is open NOW and pick "
+                             "a different task instead of a popular one")
         if t.status != "open":
             raise BoardError(f"{t.nid} is {t.status}")
         if t.claim_counts.get(agent, 0) >= 2:

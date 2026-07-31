@@ -47,7 +47,7 @@ def test_claim_hides_from_open_list_and_blocks_others():
     led, tb = setup()
     tb.claim("a", "t0001")
     assert [t.nid for t in tb.list_open()] == ["t0004"]
-    with pytest.raises(BoardError):
+    with pytest.raises(BoardError, match="already claimed by another agent"):
         tb.claim("b", "t0001")
 
 
