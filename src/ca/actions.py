@@ -374,11 +374,13 @@ def _h_decompose(infra, a, inp):
         q = infra.library.questions[ref]
         return f"[{q.qid}] {q.text}"
     node = infra.library.resolve(ref)
-    # repeat friction: the breakdown is already in solution memory, so a full
-    # re-reveal only invites re-deriving it -- point back at the store instead
-    if infra.solutions.has_decomposition(a, node.nid):
-        return (f'({node.nid} already decomposed — recall_solutions("{node.nid}") '
-                "returns the stored breakdown)")
+    # repeat friction: the breakdown is already in solution memory, so answer
+    # from the store inline -- a bare "go recall" pointer proved loop-prone
+    # when the store held structure but no answers yet
+    kids = infra.solutions.decomposition(a, node.nid)
+    if kids is not None:
+        return (f"({node.nid} already decomposed: {', '.join(kids)} — "
+                f'recall_solutions("{node.nid}") for stored answers)')
     rows = infra.library.children_view(node.nid)
     # solution memory trigger 1: structure learned is structure stored
     infra.solutions.record_decomposition(
@@ -409,6 +411,18 @@ def _h_recall_solutions(infra, a, inp):
     res = infra.solutions.recall(a, key)
     known, missing, unexpanded = res["known"], res["missing"], res["unexpanded"]
     if not known:
+        # structure without answers is still knowledge: show it rather than
+        # claim the store is empty (that contradiction caused recall loops).
+        # A never-decomposed key reports itself as unexpanded -- that is NOT
+        # stored knowledge, so it keeps the plain empty-store reply.
+        if missing or infra.solutions.has_decomposition(a, key):
+            parts = [f"(no stored answers yet under {key})"]
+            if missing:
+                parts.append("known leaves, unanswered: " + ", ".join(missing))
+            if unexpanded:
+                parts.append("not yet decomposed (may hide more leaves): "
+                             + ", ".join(unexpanded))
+            return "; ".join(parts)
         return f"(no stored solutions under {key})"
     items = []
     for qid, rec in known.items():

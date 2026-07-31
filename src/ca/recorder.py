@@ -51,10 +51,11 @@ class Recorder:
             tally = self._recalls[event["agent"]]
             tally["n_recalls"] += 1
             # a "hit" is a recall whose result names at least one known
-            # answer: does NOT start with "ERROR" (unresolvable/bankrupt)
-            # and does NOT start with "(no stored solutions" (empty store).
+            # answer: does NOT start with "ERROR" (unresolvable/bankrupt) and
+            # does NOT start with "(no stored" (empty store, or structure
+            # without answers -- "(no stored answers yet").
             result_str = str(event["result"])
-            if not result_str.startswith("ERROR") and not result_str.startswith("(no stored solutions"):
+            if not result_str.startswith("ERROR") and not result_str.startswith("(no stored"):
                 tally["n_recall_hits"] += 1
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()

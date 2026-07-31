@@ -385,8 +385,8 @@ def test_repeat_decompose_redirects_to_recall():
     i = make()
     assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     again = dispatch(i, "agent_1", "decompose", {"node": "t0001"})
-    assert again == ('(t0001 already decomposed — recall_solutions("t0001") '
-                     "returns the stored breakdown)")
+    assert again == ('(t0001 already decomposed: t0002, q0003 — '
+                     'recall_solutions("t0001") for stored answers)')
     # by sentence too: the redirect keys on the resolved nid
     by_sentence = dispatch(i, "agent_1", "decompose",
                            {"node": "answer the french geography questions"})
@@ -406,6 +406,18 @@ def test_repeat_decompose_does_not_re_record(monkeypatch):
     assert i.solutions.mapping("agent_1", "t0001") == ["t0002", "q0003"]
 
 
+def test_recall_after_decompose_shows_structure_not_empty_store():
+    """The C7 ping-pong loop: decompose said "already decomposed, go recall",
+    recall said "no stored solutions". With structure stored but no answers,
+    recall must show the structure instead of contradicting the redirect."""
+    i = make()
+    dispatch(i, "agent_1", "decompose", {"node": "t0001"})
+    out = dispatch(i, "agent_1", "recall_solutions", {"name": "t0001"})
+    assert out.startswith("(no stored answers yet under t0001)")
+    assert "not yet decomposed" in out or "unanswered" in out
+    assert "no stored solutions" not in out
+
+
 def test_leaf_echo_is_never_redirected():
     i = make()
     for _ in range(2):
@@ -417,8 +429,8 @@ def test_c2_shared_bucket_redirects_other_agents_too():
     i = make("C2")
     assert "breaks down into" in dispatch(i, "agent_1", "decompose", {"node": "t0001"})
     out = dispatch(i, "agent_2", "decompose", {"node": "t0001"})
-    assert out == ('(t0001 already decomposed — recall_solutions("t0001") '
-                   "returns the stored breakdown)")
+    assert out == ('(t0001 already decomposed: t0002, q0003 — '
+                   'recall_solutions("t0001") for stored answers)')
 
 
 def test_reuse_demo_teaches_the_repeat_decompose_redirect():
@@ -428,10 +440,11 @@ def test_reuse_demo_teaches_the_repeat_decompose_redirect():
                 continue
             s = role_skill(CONFIGS[name], who)
             # the WRONG line must show the redirect exactly as _h_decompose
-            # emits it -- a stale format would mis-teach the model
-            assert ('(t0042 already decomposed — recall_solutions("t0042") '
-                    "returns the stored breakdown)") in s, (name, who)
+            # formats it -- a stale format would mis-teach the model
+            assert ('(t0042 already decomposed: t0043, q0017 — '
+                    'recall_solutions("t0042") for stored answers)') in s, (name, who)
             assert 'recall_solutions(name="t0042")' in s, (name, who)
+            assert "Do NOT bounce" in s, (name, who)
 
 
 def test_solution_store_is_separate_from_free_text_ltm():

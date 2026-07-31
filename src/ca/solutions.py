@@ -74,6 +74,10 @@ class SolutionMemory:
         """Keys of every stored decomposition, in insertion order."""
         return list(self._decomp[self._bucket(agent)])
 
+    def decomposition(self, agent: str, name: str) -> list[str] | None:
+        found = self._decomp[self._bucket(agent)].get(str(name))
+        return list(found) if found is not None else None
+
     def answer(self, agent: str, qid: str) -> dict | None:
         found = self._answers[self._bucket(agent)].get(str(qid))
         return dict(found) if found is not None else None

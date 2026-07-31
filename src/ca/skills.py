@@ -117,9 +117,13 @@ _RECALL = """
      leaves with past work are nearly-free profit
 - Your decompositions and delivered answers are saved automatically - nothing to do.
 - WRONG: decompose(node="t0042") ... then later decompose(node="t0042") again
-  -> (t0042 already decomposed — recall_solutions("t0042") returns the stored breakdown)
+  -> (t0042 already decomposed: t0043, q0017 — recall_solutions("t0042") for stored answers)
+  A repeat decompose only replays ids you already have. Do NOT bounce between
+  decompose and recall_solutions on the same node - once you hold the ids and
+  recall shows no stored answers, the remaining work is SOLVING: retrieve and
+  answer the leaves, then deliver.
   RIGHT: check the "decomposed:" list in your status block, then
-  recall_solutions(name="t0042") to re-read the structure for free."""
+  recall_solutions(name="t0042") to re-read what is known for free."""
 
 _RECALL_SHARED = """
 The knowledge base is SHARED: everyone's discoveries appear in it - check it
