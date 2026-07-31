@@ -427,7 +427,10 @@ def test_reuse_demo_teaches_the_repeat_decompose_redirect():
             if who == "hub" and not CONFIGS[name].has_hub:
                 continue
             s = role_skill(CONFIGS[name], who)
-            assert "already decomposed" in s, (name, who)
+            # the WRONG line must show the redirect exactly as _h_decompose
+            # emits it -- a stale format would mis-teach the model
+            assert ('(t0042 already decomposed — recall_solutions("t0042") '
+                    "returns the stored breakdown)") in s, (name, who)
             assert 'recall_solutions(name="t0042")' in s, (name, who)
 
 
