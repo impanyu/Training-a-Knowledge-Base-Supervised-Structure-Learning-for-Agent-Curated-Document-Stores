@@ -12,20 +12,26 @@ ordinary market participant in every other respect.
 from ca.config import LevelConfig
 
 _SOLO_ANSWER = """
-### Demo: taking a task from the WORLD and answering it yourself
+### Demo: the solving pipeline (claim -> decompose -> solve unsolved leaves -> deliver)
 1. list_tasks -> "[t0007] «identify the composers behind three operas» (3 questions, reward 6000)"
 2. claim_task(task="t0007")                           # id or the sentence itself
 3. decompose(node="t0007")                            # COSTS TOKENS
    -> "  [t0012] «date the two premieres» (2 questions, reward 4000)"
    -> "  [q0033] Who composed Salome?"
+   -> "known 1/3 answers beneath: {"q0031": "1911" (F1 1.00)}"
+   Answers you already hold are attached automatically - those leaves are DONE,
+   copy them into your package for free and spend tokens only on the rest.
 4. decompose(node="t0012")  -> "[q0031] ...", "[q0032] ..."   # keep going until
-   every leaf question is visible: you cannot deliver a task you have not opened
-5. retrieve(query="composer of Salome")               # COSTS TOKENS
-6. work_on(task_id="q0033", thought="Salome -> Richard Strauss; 2 leaves left")
+   every UNSOLVED leaf question is visible: you cannot answer a question you
+   have not opened, and you must not re-solve one you already hold
+5. per unsolved leaf: retrieve(query="composer of Salome")    # COSTS TOKENS
+6. work_on(task_id="q0033", thought="Salome -> Richard Strauss; q0032 left")
+   # persists reasoning across turns - your recent-actions window is short
 7. deliver_work(target_id="t0007",
        content='{"q0031": "1911", "q0032": "1905", "q0033": "Richard Strauss"}')
-   -> ONE graded attempt: EVERY leaf q-id present, each value the SHORT answer
-      only (a name / date / phrase), never a sentence. Paid = sum(price x F1).
+   -> merge STORED answers and FRESH answers into ONE map. ONE graded attempt:
+      EVERY leaf q-id present, each value the SHORT answer only (a name / date /
+      phrase), never a sentence. Paid = sum(price x F1).
       A non-JSON or incomplete map is refused for free - the attempt survives.
 Estimate cost vs reward BEFORE claiming; skip tasks you cannot answer profitably.
 CUT LOSSES: if a leaf is not converging after 2-3 retrieves, put your best guess
