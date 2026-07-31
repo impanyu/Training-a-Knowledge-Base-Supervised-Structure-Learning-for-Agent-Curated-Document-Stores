@@ -70,8 +70,10 @@ ACTION_SPECS: dict[str, dict] = {
     # -------- admin (coordination) --------
     "list_tasks": {
         "description": ("List open tasks on the WORLD's task board as "
-                        "[t####] «one-sentence summary» (n questions, reward R), sorted by "
-                        "reward (highest first). Shows one page; pass `offset` to see further "
+                        "[t####] «one-sentence summary» (n questions, reward R). Order is "
+                        "arbitrary but stable for you (other agents see a different order, "
+                        "so the reward listed next to each task is what matters, not its "
+                        "position). Shows one page; pass `offset` to see further "
                         "pages. Use decompose to see what a task actually contains."),
         "input_schema": _schema({"offset": _I}, []),
     },
@@ -346,7 +348,7 @@ def _h_deliver_work(infra, a, inp):
 
 
 def _h_list_tasks(infra, a, inp):
-    tasks = infra.board.list_open()
+    tasks = infra.board.list_open(a)
     if not tasks:
         return "(no open tasks)"
     top = infra.cfg.list_top_n

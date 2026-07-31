@@ -226,8 +226,11 @@ def test_list_tasks_shows_sentence_leafcount_and_reward():
     i0 = make("C0")
     out = dispatch(i0, "agent_1", "list_tasks", {})
     lines = out.splitlines()
-    assert lines[0] == "[t0004] «resolve the two arithmetic warmup questions» (2 questions, reward 700)"
-    assert lines[1] == "[t0001] «answer the french geography questions» (3 questions, reward 600)"
+    # per-viewer stable shuffle: both tasks present with full detail, any order
+    assert sorted(lines) == sorted([
+        "[t0004] «resolve the two arithmetic warmup questions» (2 questions, reward 700)",
+        "[t0001] «answer the french geography questions» (3 questions, reward 600)"])
+    assert dispatch(i0, "agent_1", "list_tasks", {}) == out    # stable per viewer
     assert "q0001" not in out          # leaves stay hidden until decompose
 
 
@@ -236,10 +239,13 @@ def test_list_tasks_pagination_offset():
     first = dispatch(infra, "agent_1", "list_tasks", {})
     lines = first.splitlines()
     assert len(lines) == 21                                   # 20 tasks + overflow note
-    assert lines[0].startswith("[t0025]")                     # most valuable first
     assert lines[-1] == "... and 5 more (call list_tasks with offset=20 to see them)"
     second = dispatch(infra, "agent_1", "list_tasks", {"offset": 20})
     assert second.count("[t0") == 5 and "more" not in second
+    # stable per-viewer order => the two pages partition all 25 exactly once
+    import re
+    seen = re.findall(r"\[t\d{4}\]", first) + re.findall(r"\[t\d{4}\]", second)
+    assert len(seen) == 25 and len(set(seen)) == 25
     empty = dispatch(infra, "agent_1", "list_tasks", {"offset": 99})
     assert "25 open in total" in empty
 

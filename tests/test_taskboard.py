@@ -57,6 +57,16 @@ def test_claim_accepts_the_sentence_as_well_as_the_id():
     assert t.nid == "t0001"
 
 
+def test_list_open_with_viewer_is_a_stable_per_agent_shuffle():
+    led, tb = setup()
+    a1, a2 = tb.list_open("agent_1"), tb.list_open("agent_2")
+    assert {t.nid for t in a1} == {t.nid for t in a2}          # same set...
+    assert tb.list_open("agent_1") == a1                       # ...stable per viewer
+    # with only 2 tasks the orders may coincide; assert divergence over many viewers
+    orders = {tuple(t.nid for t in tb.list_open(f"agent_{i}")) for i in range(12)}
+    assert len(orders) > 1                                     # herd symmetry broken
+
+
 def test_list_open_is_sorted_by_price_descending():
     led, tb = setup()
     assert [t.nid for t in tb.list_open()] == ["t0004", "t0001"]   # 700, 600

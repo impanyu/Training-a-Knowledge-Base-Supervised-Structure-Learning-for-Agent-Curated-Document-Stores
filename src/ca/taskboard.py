@@ -6,6 +6,7 @@ Sum(price(leaf) x F1(leaf)) in a single settlement. Pay is per (task, leaf), so
 the same question under two posted tasks earns twice -- that repeat is the
 specialization dividend the experiment is meant to measure.
 """
+import zlib
 from dataclasses import dataclass, field
 
 from ca.economy import Ledger
@@ -86,9 +87,16 @@ class TaskBoard:
 
     # ---------- lifecycle ----------
 
-    def list_open(self) -> list[PostedTask]:
-        return sorted((t for t in self.tasks.values() if t.status == "open"),
-                      key=lambda t: (-self.price(t.nid), t.nid))
+    def list_open(self, viewer: str | None = None) -> list[PostedTask]:
+        """Open tasks. Without a viewer: price-descending (stable, for tests
+        and summaries). With a viewer: a per-viewer stable shuffle -- every
+        agent sees the same SET (with prices), but in its own fixed order, so
+        the whole economy does not stampede the same top-priced tree."""
+        open_tasks = (t for t in self.tasks.values() if t.status == "open")
+        if viewer is None:
+            return sorted(open_tasks, key=lambda t: (-self.price(t.nid), t.nid))
+        return sorted(open_tasks,
+                      key=lambda t: zlib.crc32(f"{viewer}:{t.nid}".encode()))
 
     def claim(self, agent: str, ref: str, round_no: int = 0) -> PostedTask:
         t = self.get(ref)
