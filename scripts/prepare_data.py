@@ -16,7 +16,11 @@ from ca.retrieval import ChromaBackend  # noqa: E402
 # Pricing rule (spec §8): R(q) ~= 1.5x the average billable token burn to solve a
 # question of that tier, so solving is profitable. Calibrated from pilot round 1
 # (2026-07: clean 2-hop solve ~11-15k billable tokens incl. context growth).
-PRICES = {"2hop": 18000, "3hop": 30000, "4hop": 45000}
+# 2026-07-31 profit-regime recalibration: 3.5x the original 1.5x-marginal rule.
+# Measured at the 60-tick main run, mint covered only 21-38% of burn (admin tax,
+# unfinished trees, F1 discounts); 3.5x makes profitability attainable for the
+# best economies while bad ones still lose money.
+PRICES = {"2hop": 63000, "3hop": 105000, "4hop": 157500}
 
 
 def build_pool_and_corpus(hotpot_n: int, musique_n: int, seed: int) -> tuple[list[dict], list[dict]]:
