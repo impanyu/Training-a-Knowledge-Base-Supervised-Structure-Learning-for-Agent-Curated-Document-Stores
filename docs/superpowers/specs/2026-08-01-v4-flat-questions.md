@@ -164,3 +164,70 @@ long-term memory** (notes and answers), flag `shared_memory`.
 - `memory_hit_rate` = claims whose result carried a stored answer / all claims
 - `improvement_rate` = repeat deliveries whose F1 beat the stored F1 / repeat
   deliveries that had a stored answer (new: quotas make second attempts possible)
+
+---
+
+# v4.1 addendum: jobs (2026-08-03)
+
+The 10-tick v4 calibration found the market had vanished: in 7 of 8
+configurations agents exchanged **zero** messages, contracts and loans, because
+a single question is solved alone in ~3 turns while hiring someone costs more
+than that. C3/C4/C5 became behaviourally identical to C0 — the independent
+variable had nothing to act on. v4.1 restores the economic reason for
+organization **without restoring hierarchy**.
+
+## 7. Jobs
+
+A posted task is a **job**: 6–10 questions drawn from ONE topic cluster. Flat
+list of qids, no tree, no sentences, no `decompose`.
+
+```json
+{"jid": "j0007", "qids": ["q0042", ...], "price": <sum of member prices>}
+```
+
+- ~185 jobs over the 500-question bank, mean size 8 → ~1478 (job, question)
+  units, so a question sits in ~3 jobs on average. Job membership *is* the
+  repeat mechanism; the per-question `quota` field is retired.
+- `claim_job(jid)` reveals every member question's text, and attaches any
+  answer already in memory (per question, with its F1) — the same auto-recall
+  as v4, now the main reason a shared store pays.
+- **Delivery is all-or-nothing**: one JSON map `{qid: answer}` covering every
+  member question, graded per question, paid `sum(price x F1)` in one
+  settlement. ONE graded attempt per claim; a malformed or incomplete map is
+  rejected **without consuming the attempt** (the v3 rule that worked).
+- Expiry returns the job to the pool; two strikes per (job, agent).
+
+**`claim_ttl` rises to 20 rounds.** This is the design lever that creates the
+market, and it is calibrated, not guessed: at the measured 2.9 turns per answer
+a solo agent needs ~23 rounds for a job of 8, while a delegating holder needs
+~18 (claim + 5 contracts + collection + 3 questions of its own + assembly).
+Twenty rounds sits between: **going it alone does not fit, delegating does.**
+Contracts already bind to a single qid, so subcontracting one question out of a
+job needs no new machinery.
+
+## 8. Structure amnesia, prevented by construction
+
+v3's worst pathology was agents forgetting what a claimed task contained. Here
+the per-turn dynamic block renders, for each active claim, the job's full
+question list with per-question status — `answered (F1 0.9, in memory)` /
+`unanswered` — so the working set is never more than one glance away and never
+scrolls out of the FIFO.
+
+## 9. Intermediate results are the agent's own decomposition
+
+The bank keeps its 500 stand-alone questions; multi-hop sub-questions are NOT
+posted separately. Instead the role handbooks **teach agents to `memory_write`
+intermediate findings** ("Lion Air's airport = Juanda International"), which the
+vector store then surfaces by meaning while working related questions. The
+decomposition of a hard question thus becomes a private (or, at C2, collective)
+asset the agents build themselves, rather than infrastructure the WORLD hands
+them.
+
+## 10. Metric changes
+
+- `demand_absorbed` — delivered (job, question) units / total units
+- `job_completion_rate` — jobs closed / jobs posted
+- `delegation_rate` (new) — member questions of delivered jobs that were
+  answered by someone other than the claimant / all delivered member questions
+- `memory_hit_rate`, `improvement_rate`, specialization (over topics),
+  coverage, coordination overhead — unchanged in definition
