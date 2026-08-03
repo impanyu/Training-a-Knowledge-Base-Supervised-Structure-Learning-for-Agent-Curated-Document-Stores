@@ -1,98 +1,91 @@
 """Role handbooks with action-trajectory demos, assembled per configuration so
 a demo never shows an action the agent lacks there.
 
-v2: every demo is built around the task tree -- claim a task, decompose it
-level by level, then package ONE JSON map covering all of its leaves.
+v4: a task is ONE question with a quota. Every demo is built around the flat
+pipeline -- list, claim (which hands back any stored answer), solve, deliver one
+short answer string.
 
-v3: configurations are single-factor, so a demo may only assume the ONE
-mechanism that config centralizes. In particular the hub is not
-privileged in general -- at C3/C4/C5 it holds exactly one power and is an
-ordinary market participant in every other respect.
+Configurations are single-factor, so a demo may only assume the ONE mechanism
+that config centralizes. In particular the hub is not privileged in general --
+at C3/C4/C5 it holds exactly one power and is an ordinary market participant in
+every other respect.
 """
 from ca.config import LevelConfig
 
 _SOLO_ANSWER = """
-### Demo: the solving pipeline (claim -> decompose -> solve unsolved leaves -> deliver)
-1. list_tasks -> "[t0007] «identify the composers behind three operas» (3 questions, reward 6000)"
-2. claim_task(task="t0007")                           # id or the sentence itself
-3. decompose(node="t0007")                            # COSTS TOKENS
-   -> "  [t0012] «date the two premieres» (2 questions, reward 4000)"
-   -> "  [q0033] Who composed Salome?"
-   -> "known 1/3 answers beneath: {"q0031": "1911" (F1 1.00)}"
-   Answers you already hold are attached automatically - those leaves are DONE,
-   copy them into your package for free and spend tokens only on the rest.
-4. decompose(node="t0012")  -> "[q0031] ...", "[q0032] ..."   # keep going until
-   every UNSOLVED leaf question is visible: you cannot answer a question you
-   have not opened, and you must not re-solve one you already hold
-5. per unsolved leaf: retrieve(query="composer of Salome")    # COSTS TOKENS
-6. work_on(task_id="q0033", thought="Salome -> Richard Strauss; q0032 left")
+### Demo: the solving pipeline (list -> claim -> solve -> deliver one answer)
+1. list_questions
+   -> "[q0042] Who composed Salome? (2hop, reward 63000, 3 left)"
+   "3 left" is the QUOTA still on offer: three more agents (or you, twice) can
+   still be paid for this question. Pick by reward vs what it will cost you.
+2. claim_question(qid="q0042")
+   -> "claimed [q0042] Who composed Salome? (2hop, reward 63000, 2 left)"
+   If an answer for it is already in your memory it is attached right here:
+   -> memory: stored answer [q0042] Who composed Salome? -> "Richard Strauss"
+      (F1 1.00) - GOOD (F1 1.00 of 1.00): you can deliver it as-is
+   A GOOD stored answer is nearly free money: deliver it and move on.
+   A LOW QUALITY one (F1 below 0.50) is a warning: re-solve before delivering.
+3. retrieve(query="composer of Salome")               # COSTS TOKENS
+4. work_on(question_id="q0042", thought="Salome -> Richard Strauss")
    # persists reasoning across turns - your recent-actions window is short
-7. deliver_work(target_id="t0007",
-       content='{"q0031": "1911", "q0032": "1905", "q0033": "Richard Strauss"}')
-   -> merge STORED answers and FRESH answers into ONE map. ONE graded attempt:
-      EVERY leaf q-id present, each value the SHORT answer only (a name / date /
-      phrase), never a sentence. Paid = sum(price x F1).
-      A non-JSON or incomplete map is refused for free - the attempt survives.
-Estimate cost vs reward BEFORE claiming; skip tasks you cannot answer profitably.
-CUT LOSSES: if a leaf is not converging after 2-3 retrieves, put your best guess
-in the package (partial F1 still pays) and deliver - never sink unlimited tokens
-into one leaf, and never let the whole package expire over one hard question.
-If your claim on a task EXPIRED, that is strong evidence it is too big for you:
-do NOT re-claim it, pick a smaller one."""
+5. deliver_work(target_id="q0042", content="Richard Strauss")
+   -> ONE graded attempt per claim. `content` is the SHORT ANSWER ONLY (a name /
+      date / phrase) - never a sentence, never a structured object. Paid
+      round(price x F1).
+CUT LOSSES: if a question is not converging after 2-3 retrieves, deliver your
+best guess (partial F1 still pays) rather than sinking unlimited tokens into it.
+You get at most TWO claims on any one question, and an EXPIRED claim burns one
+of them, so never sit on a claim you are not going to deliver."""
 
 _CONTRACTOR = """
 ### Demo: earning tokens as a contractor
-- Unread message: "[contract offer c0007] task: date the two premieres | price: 300
-  [bound to t0012: the deliverable must be a JSON map with full leaf coverage of t0012 (2 questions)]"
+- Unread message: "[contract offer c0007] task: q0031 | price: 300
+  [bound to q0031: the deliverable is the short answer to "In what year did
+  Der Rosenkavalier premiere?"]"
 - accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
-- decompose(node="t0012")                  # see exactly which questions you owe
 - do the work (retrieve / work_on), then:
-- deliver_work(target_id="c0007", content='{{"q0031": "1911", "q0032": "1905"}}')
-  -> escrow released to you. A BOUND contract settles only when every leaf q-id
-     of that node is present; answers are NOT machine-graded here, but cheaters
-     lose future business. A free-text contract takes any text instead."""
+- deliver_work(target_id="c0007", content="1911")
+  -> escrow released to you, and the answer lands in the payer's chat AND in
+     both of your memories. A bound deliverable is NOT machine-graded, but
+     cheaters lose future business. A free-text contract takes any text."""
 
 _HIRE_PEER = """
 ### Demo: hiring another agent (you can be the payer, not only the worker)
-- decompose your claimed task, then hand a whole CHILD SUBTREE to a peer:
-- propose_contract(to="{peer}", task="date the two premieres"{price_arg})
-  -> naming a subtask's sentence BINDS the contract to that node, so {peer}
-     must return a JSON map covering all of its leaves - not vague prose
+- Claim a question, then hand the actual solving to a peer:
+- propose_contract(to="{peer}", task="q0031"{price_arg})
+  -> naming a QUESTION ID as the task BINDS the contract to it, so {peer} owes
+     you that question's short answer - not vague prose
 - {peer} accepts -> your tokens move into escrow; keep taking your own turns
-- when {peer} delivers, the JSON lands in your chat and escrow is released
-Delegating costs tokens but frees your turns: offer less than the subtree is
-worth to you, and check the deliverable before merging it into your package."""
+- when {peer} delivers, the answer lands in your chat and in your memory, and
+  you deliver it to the WORLD under your own claim
+Delegating costs tokens but frees your turns: offer less than the question's
+reward, and check the deliverable before you submit it."""
 
 _IFACE_PIPELINE = """
 ### Demo: your production pipeline
-1. list_tasks -> pick tasks whose reward exceeds expected cost
-2. claim_task(task="t0007")
-3. decompose(node="t0007") -> "  [t0012] «date the two premieres» (2 questions,
-   reward 4000)" and "  [q0033] Who composed Salome?"
-4. EITHER solve leaves yourself (retrieve / work_on),
-   OR subcontract a whole child subtree BY ITS SENTENCE:
-   propose_contract(to="agent_3", task="date the two premieres", price=300)
-   -> the contract is bound to t0012, so agent_3 must return
-      {"q0031": ..., "q0032": ...}, which lands in your chat
-5. MERGE every child's JSON with your own answers into ONE map covering ALL
-   leaves of t0007, then package it:
-   deliver_work(target_id="t0007",
-       content='{"q0031": "1911", "q0032": "1905", "q0033": "Richard Strauss"}')
-   -> WORLD pays sum(price x F1) in one settlement; ONE attempt per task
+1. list_questions -> pick questions whose reward exceeds expected cost
+2. claim_question(qid="q0042")   # any stored answer is attached to the result
+3. EITHER solve it yourself (retrieve / work_on),
+   OR subcontract it BY ITS QUESTION ID:
+   propose_contract(to="agent_3", task="q0042", price=300)
+   -> the contract is bound to q0042, so agent_3 owes you that short answer,
+      which lands in your chat
+4. deliver_work(target_id="q0042", content="Richard Strauss")
+   -> WORLD pays round(price x F1); ONE graded attempt per claim
 Your profit = WORLD rewards - subcontract payments - your own token burn.
-Parallelize: keep several agents working on different subtrees at once, and
-watch the claim expiry countdown - an unpackaged task pays nothing."""
+Parallelize: keep several agents working on different questions at once, and
+watch the claim expiry countdown - an undelivered claim pays nothing."""
 
 # Only true when the hub holds the demand monopoly (C1): there it is the
 # system's single income channel, so its turns are the scarcest resource. At
 # C3/C4/C5 every agent earns from the WORLD directly, so this must NOT appear.
 _IFACE_BOTTLENECK = """
 YOUR TURN IS THE SCARCEST RESOURCE IN THE SYSTEM: you are the only agent who
-can take tasks and be paid by the WORLD, so never spend a turn on greetings or
-per-worker small talk. Priority every turn:
-(1) package and deliver tasks whose leaves are all answered (the only income),
+can claim questions and be paid by the WORLD, so never spend a turn on greetings
+or per-worker small talk. Priority every turn:
+(1) deliver answers you already hold (the only income),
 (2) respond to pending contracts and collect deliverables,
-(3) claim new tasks, decompose them and subcontract the subtrees,
+(3) claim new questions and subcontract them,
 (4) only if nothing above is pending: messaging.
 Workers do not need replies to work - contracts speak for themselves."""
 
@@ -116,32 +109,28 @@ _IFACE_LENDER = """
 Every worker who runs low on tokens must borrow from you - keep an eye on loan
 requests and fund the ones worth funding."""
 
-_RECALL = """
-### Demo: decompose is your memory - reuse what you already solved
-Your decompositions and delivered answers are saved automatically; decompose
-reads them back. BEFORE working on any task/subtask, decompose it to see what
-is already solved - claimed tasks sharing leaves with past work are
-nearly-free profit.
-- The FIRST decompose(node="t0042") reveals its children, and any answers
-  already stored beneath (e.g. from other tasks sharing its leaves) are
-  appended: known 1/1 answers beneath: {"q0017": "1905" (F1 1.00)}
-- A REPEAT decompose(node="t0042") skips the re-reveal and returns the
-  deepest stored knowledge instead - one of:
-  -> (t0042 already decomposed) known 1/1 answers beneath: {"q0017": "1905" (F1 1.00)}; not yet expanded: t0043 — decompose deeper or solve the rest
-  -> (t0042 already decomposed: t0043, q0017 — no stored answers beneath yet; decompose a child or solve its questions)
-  The second form means the remaining work is SOLVING: retrieve and answer
-  the leaves, then deliver - do NOT decompose the same node a third time."""
+_MEMORY = """
+### Demo: your memory works for you, unprompted
+Every answer you deliver is written to long-term memory automatically, and
+claiming that question again hands the answer straight back to you. So a
+question with quota left that you have ALREADY answered well is the cheapest
+money on the board: claim it, read the stored answer, deliver it.
+- memory_write(content="4-hop opera questions are rarely worth the retrieves")
+  saves a free-text note; memory_search(query="opera questions") finds notes
+  AND past answers by meaning, which is how you spot a question you can answer
+  from what you already know before you spend a single retrieve."""
 
-_RECALL_SHARED = """
-The knowledge base is SHARED: everyone's discoveries appear in it, and
-decompose consults it the same way - decompose a node FIRST, someone may have
-already solved your leaves."""
+_MEMORY_SHARED = """
+Memory is SHARED at this configuration: every agent writes into the same store
+and reads the same store. Answers your peers deliver come back to you on
+claim_question exactly as your own do, and your notes are visible to them.
+Claim first, look at what is already known, and only then spend tokens."""
 
 _COLLECTIVE = """
 ### Collective mode
 All agents share ONE goal: total system balance. Contract prices only
 redistribute - never haggle for margin; pay whatever coordinates work fastest.
-Never duplicate a task another agent is already solving (check chat / ask).
+Never duplicate a question another agent is already solving (check chat / ask).
 Deliver everything you can - income is the only way the system grows."""
 
 
@@ -151,7 +140,6 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
     solo = level.n_agents == 1
     blocks: list[str] = []
     if is_iface:
-        # concatenated, not .format()ted: the demo body contains literal JSON braces
         blocks.append(_IFACE_PIPELINE +
                       (_IFACE_BOTTLENECK if level.world_access == "hub" else ""))
         if level.central_pricing:
@@ -172,8 +160,8 @@ def role_skill(level: LevelConfig, agent_id: str) -> str:
             blocks.append(_HIRE_PEER.format(peer=peer, price_arg=price_arg))
             lender = "hub" if (level.central_credit or level.star_comms) else "agent_5"
             blocks.append(_BORROW.format(lender=lender))
-    # the solution store exists at every configuration and for every role
-    blocks.append(_RECALL + (_RECALL_SHARED if level.shared_solution_memory else ""))
+    # memory exists at every configuration and for every role
+    blocks.append(_MEMORY + (_MEMORY_SHARED if level.shared_memory else ""))
     if level.collective_goal:
         blocks.append(_COLLECTIVE)
     if not blocks:

@@ -1,22 +1,21 @@
 """Aggregate of all authoritative world state."""
 from collections import defaultdict
 
+from ca.bank import QuestionBank
+from ca.board import QuestionBoard
 from ca.chat import ChatSystem
 from ca.config import ExperimentConfig, agent_ids
 from ca.contracts import ContractSystem
 from ca.economy import Ledger
 from ca.loans import LoanSystem
-from ca.memory import LongTermMemory
-from ca.solutions import SolutionMemory
-from ca.taskboard import TaskBoard
-from ca.tasktree import TaskLibrary
+from ca.memory import AgentMemory
 
 
 class Infra:
-    def __init__(self, cfg: ExperimentConfig, library: TaskLibrary,
-                 posted: list[str], retriever):
+    def __init__(self, cfg: ExperimentConfig, bank: QuestionBank, retriever,
+                 embedding_function=None):
         self.cfg = cfg
-        self.library = library
+        self.bank = bank
         self.agent_ids = agent_ids(cfg.level)
         n = len(self.agent_ids)
         base, rem = divmod(cfg.seed_capital_total, n)
@@ -26,10 +25,10 @@ class Infra:
         self.chat = ChatSystem()
         self.contracts = ContractSystem(self.ledger)
         self.loans = LoanSystem(self.ledger, cfg.loan_rate)
-        self.board = TaskBoard(library, posted, self.ledger)
-        self.ltm = LongTermMemory()
-        # solved-subtree KV store, auto-written; one shared bucket at C2
-        self.solutions = SolutionMemory(shared=cfg.level.shared_solution_memory)
+        self.board = QuestionBoard(bank, self.ledger)
+        # notes AND graded answers; one shared bucket at C2
+        self.memory = AgentMemory(shared=cfg.level.shared_memory,
+                                  embedding_function=embedding_function)
         self.retriever = retriever
         self.scratchpads: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         self.round = 0

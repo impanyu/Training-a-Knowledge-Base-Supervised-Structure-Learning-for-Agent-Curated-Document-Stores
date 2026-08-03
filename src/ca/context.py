@@ -21,52 +21,55 @@ Agents in the system: {peers}.
 {root_goal}
 Tokens are both your money and your fuel: EVERY action costs the tokens that
 turn's LLM call consumed. If your balance drops to 0 or below you are BANKRUPT
-and can no longer perform answer-related actions (retrieve, work_on, decompose,
-delivering to the WORLD); you may still coordinate and borrow.
+and can no longer perform answer-related actions (retrieve, work_on, delivering
+to the WORLD); you may still coordinate and borrow.
 
-The WORLD posts TASKS, not single questions. A task is a tree: a one-sentence
-summary (its name), child subtasks, and question leaves at the bottom. Its
-reward is the sum of its leaf prices. Claim a task, use `decompose` to reveal
-one level of children at a time (leaf questions only become visible when you
-decompose down to them), then deliver the WHOLE task in one package:
-`deliver_work(target_id=<task>, content='{{"q0031": "answer", ...}}')` with one
-entry for EVERY leaf question - no missing, no extra. Each answer is graded by
-F1 and you are paid the sum of price x F1 in a single settlement. You get ONE
-graded attempt per task; a malformed or incomplete JSON map is rejected without
-spending it. Any task or subtask can be named either by its short id (t0012)
-or by its one-sentence summary.
+The WORLD posts QUESTIONS, one at a time, each with a QUOTA: the "N left" in a
+listing is how many more times that question may be claimed and paid for, so a
+question several agents answer pays each of them. The pipeline is always the
+same three steps: claim -> solve -> deliver ONE short answer.
+`claim_question(qid="q0042")`, then `deliver_work(target_id="q0042",
+content="Richard Strauss")`. `content` must be ONLY the short answer itself (a
+name / date / phrase) - never a sentence, an explanation or JSON - because it is
+graded by token-overlap F1 against a short gold answer and pays round(price x F1).
+You get ONE graded attempt per claim and at most TWO claims on any one question,
+so a claim you let expire costs you one of your two attempts.
 
-You earn tokens ONLY from: (a) delivering task packages to the WORLD, or
+Your long-term memory fills itself: every answer you deliver is stored, and
+claiming a question you already answered shows you that stored answer with its
+F1, so you can deliver it as-is or re-solve it if it scored badly.
+
+You earn tokens ONLY from: (a) delivering answers to the WORLD, or
 (b) payments from other agents (contract escrow settlements or transfers).
 
 Each turn you must choose EXACTLY ONE action (tool call). Unread messages
 are delivered automatically into your context every turn - you never need
 to poll read_chat (use it only to re-read older history). Think about
-profitability: estimate what a task will cost to solve vs its reward.
-You may subcontract a whole subtask subtree to another agent via contracts:
-naming the subtask in the contract binds it, and the contractor must return a
-JSON map covering that subtask's leaves.
+profitability: estimate what a question will cost to solve vs its reward.
+You may subcontract a question to another agent: naming its q-id as the
+contract task binds the contract, and the contractor owes you that answer.
 {level_rules}"""
 
 _HUB_EXTRA_DEMAND = """
-YOU ARE THE HUB AGENT: the only agent allowed to take tasks from the
-task board and deliver packages to the WORLD. Other agents can work for you
+YOU ARE THE HUB AGENT: the only agent allowed to take questions from the
+question board and deliver answers to the WORLD. Other agents can work for you
 via contracts. Your profit = WORLD rewards minus what you pay them."""
 
 # C3/C4/C5: the hub holds exactly ONE power (named in the configuration
 # rules above) and is an ordinary market participant in every other respect --
-# it must not be told it monopolizes the task board.
+# it must not be told it monopolizes the question board.
 _HUB_EXTRA = """
 YOU ARE THE HUB AGENT: the hub of this configuration. Apart from the one
 privilege named in the configuration rules above you are an ordinary agent -
-every other agent may claim tasks and deliver to the WORLD exactly as you can,
-and you earn by solving and packaging tasks just like they do."""
+every other agent may claim questions and deliver to the WORLD exactly as you
+can, and you earn by solving and delivering questions just like they do."""
 
 
 def _level_rules(level: LevelConfig, is_iface: bool) -> str:
     rules = []
     if level.world_access == "hub":
-        rules.append("Only the hub agent can list/claim tasks and deliver packages to the WORLD.")
+        rules.append("Only the hub agent can list/claim questions and deliver answers "
+                     "to the WORLD.")
     if level.central_pricing:
         rules.append("ALL contract prices are set by the hub agent (set_price); bargaining is disabled."
                      if not is_iface else
@@ -79,6 +82,9 @@ def _level_rules(level: LevelConfig, is_iface: bool) -> str:
         rules.append("You may only message/contract/pay the hub agent."
                      if not is_iface else
                      "Other agents can only interact with you, not with each other.")
+    if level.shared_memory:
+        rules.append("Long-term memory is SHARED by every agent: your notes and answers "
+                     "are visible to all, and theirs to you.")
     negotiable = not level.central_pricing and level.n_agents > 1
     if not rules:
         base = ("\nThis is a fully decentralized configuration: "
@@ -114,64 +120,43 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     parts.append("Goal stack (bottom -> top):\n" + goals.render())
     pad = infra.scratchpads.get(agent_id) or {}
     pad_lines = []
-    for task_id, thoughts in pad.items():
+    for qid, thoughts in pad.items():
         if not thoughts:
             continue
-        pad_lines.append(f"[{task_id}]")
+        pad_lines.append(f"[{qid}]")
         pad_lines += [f"  - {t}" for t in thoughts[-5:]]
     if pad_lines:
-        parts.append("Your scratchpad (latest thoughts per task):\n" + "\n".join(pad_lines))
-    # the solution store fills itself silently; agents only reuse what they
-    # know is there, so advertise it (once it holds anything at all)
-    st = infra.solutions.stats(agent_id)
-    if st["answers"] or st["decompositions"]:
-        line = f"Solution memory: {st['answers']} answers stored"
-        decomposed = infra.solutions.decomposed_ids(agent_id)
-        if decomposed:
-            shown = ", ".join(decomposed[:12])
-            if len(decomposed) > 12:
-                shown += f" … +{len(decomposed) - 12} more"
-            line += f"; decomposed: {shown}"
-        parts.append(line + " (decompose a node to reuse what is known)")
-    # tasks this agent already delivered: once closed they vanish from every
-    # other view, and agents were observed re-claiming their own finished work
-    done = [t for t in infra.board.tasks.values()
-            if t.status == "closed" and t.claimed_by == agent_id]
+        parts.append("Your scratchpad (latest thoughts per question):\n" + "\n".join(pad_lines))
+    # memory fills itself silently; agents only reuse what they know is there
+    n_answers = infra.memory.n_answers(agent_id)
+    n_notes = infra.memory.n_entries(agent_id) - n_answers
+    if n_answers or n_notes:
+        parts.append(f"Long-term memory: {n_answers} answers, {n_notes} notes "
+                     "(claiming a question you answered before shows you that "
+                     "answer; memory_search finds the rest by meaning)")
+    # questions this agent already delivered: a delivered unit is gone from the
+    # board, and agents were observed re-claiming their own finished work
+    done = [r for r in infra.board.results if r.agent == agent_id]
     if done:
-        shown = ", ".join(f"{t.nid} (paid {t.payout})" for t in done[-8:])
+        shown = ", ".join(f"{r.qid} (F1 {r.f1:.2f}, paid {r.payout})" for r in done[-8:])
         if len(done) > 8:
             shown += f" … +{len(done) - 8} more"
-        parts.append(f"Tasks you already completed - do NOT claim or deliver "
-                     f"these again: {shown}")
-    mine = [t for t in infra.board.tasks.values()
-            if t.status == "claimed" and t.claimed_by == agent_id]
+        parts.append("Questions you already answered - re-claim one only if you "
+                     f"can beat that F1: {shown}")
+    mine = [(qid, c) for qid, claims in infra.board.active.items()
+            for c in claims if c.agent == agent_id]
     if mine:
         ttl = infra.cfg.claim_ttl
         lines = []
-        for t in mine:
-            lib = infra.library
-            leaves = lib.leaves(t.nid)
-            left = t.claimed_round + ttl - infra.round
-            lines.append(f"- [{t.nid}] «{lib.sentence(t.nid)}» "
-                         f"({len(leaves)} questions, reward {lib.price(t.nid)})  "
-                         f"[claim EXPIRES in {max(left,0)} round(s) - deliver before then!]")
-            # progress hint: leaves this agent has already worked on are named
-            # -- undiscovered q-ids stay behind `decompose`. Notes filed under
-            # the task's own nid (e.g. before decomposing down to leaves)
-            # also count as progress, just not attributable to one leaf.
-            noted = [q for q in leaves if pad.get(q)]
-            task_notes = pad.get(t.nid) or []
-            if noted:
-                lines.append(f"    progress: notes on {len(noted)}/{len(leaves)} "
-                             f"questions ({', '.join(noted)}); deliver ALL "
-                             f"{len(leaves)} in one JSON package")
-            elif task_notes:
-                lines.append(f"    progress: {len(task_notes)} note(s) filed under "
-                             f"{t.nid} itself (not yet broken out per question) - "
-                             f"use decompose to reveal its {len(leaves)} question(s)")
-            else:
-                lines.append(f"    progress: notes on 0/{len(leaves)} questions - "
-                             "use decompose to reveal them")
+        for qid, claim in mine:
+            q = infra.bank.questions[qid]
+            left = claim.round + ttl - infra.round
+            lines.append(f"- [{qid}] {q.text} ({q.difficulty}, reward {q.price})  "
+                         f"[claim EXPIRES in {max(left, 0)} round(s) - deliver before then!]")
+            notes = pad.get(qid) or []
+            lines.append(f"    progress: {len(notes)} note(s) on your scratchpad; "
+                         "deliver ONE short answer with "
+                         f'deliver_work(target_id="{qid}", content="...")')
         parts.append("Your ACTIVE CLAIMS (deliver these first):\n" + "\n".join(lines))
     pend = infra.contracts.pending_for(agent_id)
     if pend:

@@ -12,26 +12,30 @@ end of that round (a crash mid-round loses only that round's line):
     solving_total / admin_total
     coordination_overhead          admin / (admin + solving), zero-guarded
     coordination_overhead_by_agent {agent: same, per agent}
-    answered                       {agent: {n_answered, f1_sum, em_sum}},
-                                   attributed to the WORLD deliverer
+    answered                       {agent: {n_answered, f1_sum, em_sum}}
     n_answered / total_f1 / total_em
-    tasks_closed                   {agent: closed task count (deliverer)}
-    n_tasks_closed / task_completion_rate (closed / posted)
-    board                          {open, claimed, closed} posted-task counts
+    board                          {open, active_claims, delivered} question counts
+    total_units / remaining_units / demand_absorbed
     n_contracts / contracts_by_status {status: count}
     n_loans / loan_principal_outstanding / interest_paid_total
-    solutions                      {agent: {n_lookups, n_lookup_hits,
-                                   answers_in_memory, decompositions_in_memory}}
-    n_lookups / n_lookup_hits / answers_in_memory_total
+    memory                         {agent: {answers, notes, n_claims,
+                                   n_memory_hits, n_repeat_deliveries, n_improved}}
+    n_claims / n_memory_hits / memory_hit_rate / improvement_rate
+    answers_in_memory_total
 
 Formulas mirror ca.metrics on the final round (answers_in_memory_total sums
-per-agent stats, so at C2 the shared bucket is counted once per agent, exactly
+per-agent counts, so at C2 the shared bucket is counted once per agent, exactly
 as compute_metrics does)."""
 import json
 from collections import defaultdict
 from pathlib import Path
 
-from ca.actions import LOOKUP_HIT_MARKER
+from ca.actions import IMPROVED_MARKER, MEMORY_HIT_MARKER, STORED_F1_MARKER
+
+
+def _mem_tally() -> dict:
+    return {"n_claims": 0, "n_memory_hits": 0,
+            "n_repeat_deliveries": 0, "n_improved": 0}
 
 
 class Recorder:
@@ -42,23 +46,37 @@ class Recorder:
         self._f = open(self.dir / "trace.jsonl", mode)  # fresh trace per run
         self._ts = open(self.dir / "timeseries.jsonl", mode)
         self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
-        # T27/T32: lookup tallies, counted live off the event stream so
-        # write_summary need not re-scan the trace file.
-        self._lookups = defaultdict(lambda: {"n_lookups": 0, "n_lookup_hits": 0})
+        # memory tallies, counted live off the event stream so write_summary
+        # need not re-scan the trace file.
+        self._memory = defaultdict(_mem_tally)
 
     def log(self, event: dict) -> None:
         spent = event["tokens_in"] + event["tokens_out"]
         self._tokens[event["agent"]][event["category"]] += spent
-        if event["action"] == "decompose":
-            tally = self._lookups[event["agent"]]
-            tally["n_lookups"] += 1
-            # a "hit" is a decompose whose result surfaces at least one
-            # stored answer -- the reuse-block header is the stable marker
-            # (errors, plain reveals and answerless repeats never carry it)
-            if LOOKUP_HIT_MARKER in str(event["result"]):
-                tally["n_lookup_hits"] += 1
+        result = str(event["result"])
+        tally = self._memory[event["agent"]]
+        if event["action"] == "claim_question" and not result.startswith("ERROR"):
+            tally["n_claims"] += 1
+            # a "hit" is a claim whose result carried a stored answer -- the
+            # auto-recall header is the stable marker
+            if MEMORY_HIT_MARKER in result:
+                tally["n_memory_hits"] += 1
+        elif event["action"] == "deliver_work" and STORED_F1_MARKER in result:
+            # a repeat delivery of a question this agent already had graded
+            tally["n_repeat_deliveries"] += 1
+            if IMPROVED_MARKER in result:
+                tally["n_improved"] += 1
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
+
+    def _memory_block(self, infra) -> dict:
+        out = {}
+        for a in infra.agent_ids:
+            answers = infra.memory.n_answers(a)
+            out[a] = {"answers": answers,
+                      "notes": infra.memory.n_entries(a) - answers,
+                      **self._memory[a]}
+        return out
 
     def log_round(self, infra, round_no: int) -> dict:
         """Append one cumulative snapshot (schema in the module docstring) for
@@ -70,31 +88,26 @@ class Recorder:
         admin = sum(t["admin"] for t in tokens.values())
         all_tok = solving + admin
 
-        board = {"open": 0, "claimed": 0, "closed": 0}
-        tasks_closed = {a: 0 for a in agents}
         answered = {a: {"n_answered": 0, "f1_sum": 0.0, "em_sum": 0.0} for a in agents}
-        task_results = infra.board.results()
-        for t in task_results:
-            board[t["status"]] += 1
-            if t["status"] == "closed":
-                tasks_closed[t["claimed_by"]] += 1
-        for row in infra.board.leaf_results():
-            if row["status"] == "closed":
-                tally = answered[row["claimed_by"]]
-                tally["n_answered"] += 1
-                tally["f1_sum"] += row["score"]
-                tally["em_sum"] += row["em"]
+        for r in infra.board.results:
+            tally = answered[r.agent]
+            tally["n_answered"] += 1
+            tally["f1_sum"] += r.f1
+            tally["em_sum"] += r.em
+        total_units = infra.bank.total_units()
+        board = {"open": sum(1 for n in infra.board.remaining.values() if n > 0),
+                 "active_claims": sum(len(c) for c in infra.board.active.values()),
+                 "delivered": len(infra.board.results)}
 
         contracts_by_status: dict[str, int] = defaultdict(int)
         for c in infra.contracts.contracts.values():
             contracts_by_status[c.status] += 1
         loans = list(infra.loans.loans.values())
-        solutions = {
-            a: {**self._lookups[a],
-                "answers_in_memory": infra.solutions.stats(a)["answers"],
-                "decompositions_in_memory": infra.solutions.stats(a)["decompositions"]}
-            for a in agents
-        }
+        memory = self._memory_block(infra)
+        n_claims = sum(v["n_claims"] for v in memory.values())
+        n_hits = sum(v["n_memory_hits"] for v in memory.values())
+        n_repeats = sum(v["n_repeat_deliveries"] for v in memory.values())
+        n_improved = sum(v["n_improved"] for v in memory.values())
 
         snap = {
             "round": round_no,
@@ -117,29 +130,29 @@ class Recorder:
             "n_answered": sum(v["n_answered"] for v in answered.values()),
             "total_f1": sum(v["f1_sum"] for v in answered.values()),
             "total_em": sum(v["em_sum"] for v in answered.values()),
-            "tasks_closed": tasks_closed,
-            "n_tasks_closed": board["closed"],
-            "task_completion_rate": (board["closed"] / len(task_results)
-                                     if task_results else 0.0),
             "board": board,
+            "total_units": total_units,
+            "remaining_units": sum(infra.board.remaining.values()),
+            "demand_absorbed": (len(infra.board.results) / total_units
+                                if total_units else 0.0),
             "n_contracts": len(infra.contracts.contracts),
             "contracts_by_status": dict(contracts_by_status),
             "n_loans": len(loans),
             "loan_principal_outstanding": sum(l.principal for l in loans
                                               if l.status == "active"),
             "interest_paid_total": infra.loans.total_interest_paid,
-            "solutions": solutions,
-            "n_lookups": sum(v["n_lookups"] for v in solutions.values()),
-            "n_lookup_hits": sum(v["n_lookup_hits"] for v in solutions.values()),
-            "answers_in_memory_total": sum(v["answers_in_memory"]
-                                           for v in solutions.values()),
+            "memory": memory,
+            "n_claims": n_claims,
+            "n_memory_hits": n_hits,
+            "memory_hit_rate": n_hits / n_claims if n_claims else 0.0,
+            "improvement_rate": n_improved / n_repeats if n_repeats else 0.0,
+            "answers_in_memory_total": sum(v["answers"] for v in memory.values()),
         }
         self._ts.write(json.dumps(snap, ensure_ascii=False) + "\n")
         self._ts.flush()
         return snap
 
     def write_summary(self, infra, rounds_used: int) -> dict:
-        task_results = infra.board.results()
         loans = list(infra.loans.loans.values())
         debtors: dict[str, int] = defaultdict(int)
         for loan in loans:
@@ -149,19 +162,12 @@ class Recorder:
             "level": infra.cfg.level.level,
             "seed": infra.cfg.seed,
             "rounds_used": rounds_used,
-            # v2: the board posts task TREES. "tasks" is the task-level record;
-            # "questions" flattens it to one row per (task, leaf) pair -- the
-            # unit that is actually graded and paid, and what the metrics read.
-            "tasks": task_results,
-            "questions": infra.board.leaf_results(),
-            # per-delivery leaf->agent attribution: the input metrics.specialization
-            # needs (which agent delivered which leaves, under which task).
-            "deliveries": [
-                {"task": t["nid"], "agent": t["claimed_by"], "total_payout": t["payout"],
-                 "n_leaves": t["n_leaves"],
-                 "per_leaf": [{"qid": l["qid"], "f1": l["score"]} for l in t["leaves"]]}
-                for t in task_results if t["status"] == "closed"
-            ],
+            # v4: one row per DELIVERED UNIT -- the thing that is graded and
+            # paid, and what the metrics read (topic rides along for
+            # specialization, price/difficulty for post-hoc slicing).
+            "deliveries": infra.board.results_json(),
+            "total_units": infra.bank.total_units(),
+            "remaining_units": sum(infra.board.remaining.values()),
             "balances": {a: infra.ledger.balance(a) for a in infra.agent_ids},
             "tokens": {a: dict(self._tokens[a]) for a in infra.agent_ids},
             "bankrupt": [a for a in infra.agent_ids if infra.ledger.is_bankrupt(a)],
@@ -177,12 +183,9 @@ class Recorder:
                 "debtors": dict(debtors),
                 "bankrupt_with_debt": [a for a in debtors if infra.ledger.is_bankrupt(a)],
             },
-            # per-agent solution-memory footprint: what's stored (T26) plus
-            # how much it got looked up and reused this run (T27/T32).
-            "solutions": {
-                a: {**infra.solutions.stats(a), **self._lookups[a]}
-                for a in infra.agent_ids
-            },
+            # per-agent memory footprint (what is stored) plus how much it was
+            # hit and improved on this run
+            "memory": self._memory_block(infra),
             "minted": infra.ledger.minted,
             "burned": infra.ledger.burned,
             "conservation_ok": infra.ledger.conservation_ok(),
@@ -193,13 +196,13 @@ class Recorder:
 
     def to_state(self) -> dict:
         return {"tokens": {a: dict(v) for a, v in self._tokens.items()},
-                "lookups": {a: dict(v) for a, v in self._lookups.items()}}
+                "memory": {a: dict(v) for a, v in self._memory.items()}}
 
     def from_state(self, state: dict) -> None:
         for a, v in state["tokens"].items():
             self._tokens[a].update(v)
-        for a, v in state["lookups"].items():
-            self._lookups[a].update(v)
+        for a, v in state["memory"].items():
+            self._memory[a].update(v)
 
     def close(self):
         self._f.close()

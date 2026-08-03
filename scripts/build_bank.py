@@ -13,12 +13,17 @@ so per-agent specialization stays measurable without a task tree.
 import argparse
 import json
 import random
-import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+def embed_texts(texts: list[str]) -> np.ndarray:
+    """Chroma's local ONNX embedder -- the same model the retriever indexes
+    with, so topic clusters live in the corpus's own semantic space."""
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+    ef = DefaultEmbeddingFunction()
+    return np.asarray(ef(texts), dtype=float)
 
 
 def assign_quotas(questions: list[dict], lo: int, hi: int, rng: random.Random) -> None:
@@ -66,7 +71,7 @@ def build_bank(pool: list[dict], n_topics: int, quota_lo: int, quota_hi: int,
     questions = [dict(q) for q in pool]
     assign_quotas(questions, quota_lo, quota_hi, rng)
     if embed is None:
-        from build_tasks import embed_texts as embed
+        embed = embed_texts
     labels = kmeans_topics(embed([q["text"] for q in questions]), n_topics, rng)
     for q, t in zip(questions, labels):
         q["topic"] = f"k{t:02d}"

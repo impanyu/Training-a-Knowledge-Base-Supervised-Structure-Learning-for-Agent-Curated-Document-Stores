@@ -1,6 +1,5 @@
-from ca.config import CONFIGS, ExperimentConfig, agent_ids
-from ca.infra import Infra
-from fixtures import demo_library, demo_posted
+from ca.config import CONFIGS, agent_ids
+from fixtures import demo_infra
 
 # The mechanisms a configuration may centralize. C0 is the all-decentralized
 # baseline; every other multi-agent config must differ from it in EXACTLY one
@@ -74,8 +73,7 @@ def test_agent_ids():
 
 
 def test_infra_splits_seed_capital():
-    cfg = ExperimentConfig(level=CONFIGS["C0"], seed=0, seed_capital_total=801)
-    infra = Infra(cfg, demo_library(), demo_posted(), retriever=None)
+    infra = demo_infra("C0", capital=801)
     balances = [infra.ledger.balance(a) for a in infra.agent_ids]
     assert sum(balances) == 801 and max(balances) - min(balances) <= 1
     assert infra.ledger.conservation_ok()

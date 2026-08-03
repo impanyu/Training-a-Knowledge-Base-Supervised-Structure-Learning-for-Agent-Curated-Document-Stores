@@ -1,5 +1,5 @@
 """Internal subcontracts: propose/counter/accept(escrow)/deliver(atomic settle)."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ca.economy import InsufficientFunds, Ledger
 
@@ -18,10 +18,10 @@ class Contract:
     status: str = "proposed"
     awaiting: str = ""          # who must respond while status == proposed
     deliverable: str | None = None
-    # set when `task` named a node of the shared task library: delivery must
-    # then be a JSON map covering exactly that node's leaves (coverage only,
-    # quality is disciplined by repeated play, not by the grader)
-    node_id: str | None = None
+    # set when `task` is exactly a question id: the deliverable is then that
+    # question's answer text (not graded here -- quality between agents is
+    # disciplined by repeated play, not by the WORLD's grader)
+    qid: str | None = None
 
 
 class ContractSystem:
@@ -135,7 +135,7 @@ class ContractSystem:
             {"cid": c.cid, "proposer": c.proposer, "contractor": c.contractor,
              "task": c.task, "price": c.price, "status": c.status,
              "awaiting": c.awaiting, "deliverable": c.deliverable,
-             "node_id": c.node_id}
+             "qid": c.qid}
             for c in self.contracts.values()]}
 
     def from_state(self, state: dict) -> None:
@@ -145,7 +145,7 @@ class ContractSystem:
             self.contracts[row["cid"]] = Contract(
                 row["cid"], row["proposer"], row["contractor"], row["task"],
                 row["price"], row["status"], row["awaiting"], row["deliverable"],
-                row["node_id"])
+                row["qid"])
 
     def pending_for(self, agent: str) -> list[Contract]:
         out = []

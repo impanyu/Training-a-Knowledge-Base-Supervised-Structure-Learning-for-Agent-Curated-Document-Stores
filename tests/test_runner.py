@@ -1,52 +1,54 @@
+"""The runner's CLI surface. v4 takes one --bank (the flat question bank);
+--library / --posted are gone with the task trees."""
 import json
 
-from fixtures import demo_library
+import pytest
+from fixtures import demo_questions
 
-from ca.runner import load_library, load_posted, load_questions
-from ca.tasktree import TaskLibrary
-
-
-def test_load_questions(tmp_path):
-    p = tmp_path / "pool.jsonl"
-    rows = [
-        {"qid": "q0001", "text": "t1", "answers": ["a"], "difficulty": "2hop", "price": 1000},
-        {"qid": "q0002", "text": "t2", "answers": ["b", "c"], "difficulty": "4hop", "price": 3000},
-    ]
-    p.write_text("\n".join(json.dumps(r) for r in rows))
-    qs = load_questions(str(p))
-    assert len(qs) == 2 and qs[1].answers == ["b", "c"] and qs[1].price == 3000
+from ca.bank import QuestionBank
+from ca.runner import build_parser
 
 
-def test_load_library_wraps_a_bare_pool_into_single_leaf_tasks(tmp_path):
-    """Interim shim (until T21): a pool.jsonl still yields a runnable library."""
-    p = tmp_path / "pool.jsonl"
-    p.write_text("\n".join(json.dumps(
-        {"qid": f"q{i:04d}", "text": f"question {i}", "answers": ["a"],
-         "difficulty": "2hop", "price": 100 * i}) for i in (1, 2)))
-    lib = load_library(str(p))
-    assert load_posted(lib) == ["t0001", "t0002"]
-    assert lib.leaves("t0002") == ["q0002"] and lib.price("t0002") == 200
-    assert lib.resolve("question 1").nid == "t0001"
+BASE = ["--level", "C0", "--index", "idx", "--out", "runs/x"]
 
 
-def test_load_library_and_posted_from_one_file(tmp_path):
-    p = tmp_path / "library.json"
-    demo_library().to_json(str(p), posted=["t0001", "t0004"])
-    lib = load_library(str(p))
-    assert load_posted(lib) == ["t0001", "t0004"]
-    assert lib.price("t0001") == 600
+def test_bank_is_required_and_the_tree_flags_are_gone():
+    ap = build_parser()
+    args = ap.parse_args(BASE + ["--bank", "data/v4/bank.json"])
+    assert args.bank == "data/v4/bank.json"
+    for dead in ("--library", "--posted"):
+        with pytest.raises(SystemExit):
+            ap.parse_args(BASE + ["--bank", "b.json", dead, "x"])
+    with pytest.raises(SystemExit):
+        ap.parse_args(BASE)                      # --bank is required
 
 
-def test_posted_json_overrides_the_library_field(tmp_path):
-    lp, pp = tmp_path / "library.json", tmp_path / "posted.json"
-    demo_library().to_json(str(lp), posted=["t0001"])
-    pp.write_text(json.dumps(["t0004"]))
-    lib = TaskLibrary.from_json(str(lp))
-    assert load_posted(lib, str(pp)) == ["t0004"]
+def test_run_knobs_survive_the_port():
+    args = build_parser().parse_args(
+        BASE + ["--bank", "b.json", "--seed", "3", "--capital", "5000",
+                "--max-rounds", "12", "--checkpoint-every", "4",
+                "--resume", "runs/x/checkpoint_0004.json", "--model", "m",
+                "--solo-turns", "8"])
+    assert (args.seed, args.capital, args.max_rounds) == (3, 5000, 12)
+    assert args.checkpoint_every == 4 and args.solo_turns == 8
+    assert args.resume.endswith("checkpoint_0004.json") and args.model == "m"
+    assert args.index == "idx" and args.out == "runs/x"
 
 
-def test_posted_defaults_to_the_roots_of_the_library(tmp_path):
-    p = tmp_path / "library.json"
-    demo_library().to_json(str(p))            # no posted list at all
-    lib = TaskLibrary.from_json(str(p))
-    assert load_posted(lib) == ["t0001", "t0004", "t0005"]   # t0002 has a parent
+def test_defaults():
+    args = build_parser().parse_args(BASE + ["--bank", "b.json"])
+    assert args.seed == 0 and args.capital == 400_000 and args.max_rounds == 60
+    assert args.checkpoint_every == 20 and args.solo_turns == 1
+    assert args.resume is None and args.turns is None
+
+
+def test_bank_json_loads_through_the_same_path_the_runner_uses(tmp_path):
+    p = tmp_path / "bank.json"
+    p.write_text(json.dumps({"questions": [
+        {"qid": q.qid, "text": q.text, "answers": q.answers,
+         "difficulty": q.difficulty, "price": q.price, "quota": q.quota,
+         "topic": q.topic, "source": "hotpot"}          # unknown fields ignored
+        for q in demo_questions()]}))
+    bank = QuestionBank.from_json(str(p))
+    assert len(bank.questions) == 5 and bank.total_units() == 7
+    assert bank.get("q0004").topic == "k07"

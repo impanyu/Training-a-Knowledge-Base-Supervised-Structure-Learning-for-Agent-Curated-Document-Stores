@@ -2,9 +2,9 @@
 
 A checkpoint is one JSON file (`checkpoint_XXXX.json`, XXXX = completed round)
 holding every piece of MUTABLE run state: ledger, board, contracts, loans,
-chat, per-agent memories (fifo / goals / scratchpads), long-term and solution
-memory, recorder tallies, and the scheduler's RNG state. Static structure
-(task library, retriever index, policies, action tables) is deliberately NOT
+chat, per-agent short-term memories (fifo / goals / scratchpads), the vector
+long-term memory, recorder tallies, and the scheduler's RNG state. Static
+structure (question bank, retriever index, policies, action tables) is NOT
 serialized -- a resumed run rebuilds it from the same CLI args and `restore`
 overwrites only the mutable parts. Restoring the RNG makes the per-round
 shuffle -- and therefore the whole continuation -- identical to a run that
@@ -56,8 +56,7 @@ def capture(infra, agents, recorder, rng: random.Random, round_no: int) -> dict:
         "contracts": infra.contracts.to_state(),
         "loans": infra.loans.to_state(),
         "chat": infra.chat.to_state(),
-        "ltm": infra.ltm.to_state(),
-        "solutions": infra.solutions.to_state(),
+        "memory": infra.memory.to_state(),
         "scratchpads": {a: {t: list(notes) for t, notes in pads.items()}
                         for a, pads in infra.scratchpads.items()},
         "agents": {ag.id: {"fifo": ag.fifo.to_state(), "goals": ag.goals.to_state()}
@@ -87,8 +86,7 @@ def restore(state: dict, infra, agents, recorder, rng: random.Random) -> None:
     infra.contracts.from_state(state["contracts"])
     infra.loans.from_state(state["loans"])
     infra.chat.from_state(state["chat"])
-    infra.ltm.from_state(state["ltm"])
-    infra.solutions.from_state(state["solutions"])
+    infra.memory.from_state(state["memory"])
     infra.scratchpads.clear()
     for a, pads in state["scratchpads"].items():
         for t, notes in pads.items():

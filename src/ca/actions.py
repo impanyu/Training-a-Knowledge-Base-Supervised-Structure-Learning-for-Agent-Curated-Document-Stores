@@ -1,14 +1,13 @@
 """Action registry: specs (tool schemas), permission gating, dispatch."""
-import json
 import re
 
+from ca.bank import BankError
+from ca.board import BoardError
 from ca.config import LevelConfig
 from ca.contracts import ContractError
 from ca.economy import InsufficientFunds
 from ca.infra import Infra
 from ca.loans import LoanError
-from ca.taskboard import BoardError
-from ca.tasktree import TreeError
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -25,54 +24,41 @@ ACTION_SPECS: dict[str, dict] = {
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "work_on": {
-        "description": ("Record one reasoning step about a task, subtask or question in your "
-                        "private scratchpad. COSTS TOKENS."),
-        "input_schema": _schema({"task_id": _S, "thought": _S}, ["task_id", "thought"]),
-    },
-    "decompose": {
-        "description": ("Reveal the direct children of a task or subtask: child subtasks are "
-                        "shown as [t####] «one-sentence summary» (n questions, reward r), child "
-                        "leaves as [q####] the full question text. Questions only become visible "
-                        "once you decompose down to them. Memory-aware: answers you already hold "
-                        "beneath the node are reported alongside, a REPEAT call on the same node "
-                        "returns the deepest stored knowledge instead of re-revealing, and "
-                        "passing a q-id re-prints that question with its stored answer if you "
-                        "have one. `node` accepts a short id (t0012) or the one-sentence "
-                        "summary. COSTS TOKENS."),
-        "input_schema": _schema({"node": _S}, ["node"]),
+        "description": ("Record one reasoning step about a question in your private "
+                        "scratchpad. COSTS TOKENS."),
+        "input_schema": _schema({"question_id": _S, "thought": _S},
+                                ["question_id", "thought"]),
     },
     "deliver_work": {
-        "description": ("Deliver work. target_id = a TASK (short id 't0012' or its one-sentence "
-                        "summary) submits the whole task to the WORLD: `content` must be a JSON "
-                        "object {\"q0031\": \"answer\", ...} with one entry for EVERY leaf "
-                        "question of that task - no missing and no extra q-ids. Each answer is "
-                        "graded by token-overlap F1 against a short gold answer, so every JSON "
-                        "VALUE must be ONLY the short answer itself (a name / date / phrase, "
-                        "e.g. 'Richard Strauss'), never a sentence or explanation. You get ONE "
-                        "graded attempt per task and are paid the sum of price x F1 over its "
-                        "leaves; a malformed or incomplete map is rejected without using up that "
-                        "attempt. COSTS TOKENS. target_id starting with 'c' = deliver an accepted "
-                        "contract (escrow released to you) — only the CONTRACTOR (the agent "
-                        "hired to do the work) delivers a contract; if you are the payer, wait for "
-                        "the deliverable to arrive in your chat instead. If the contract was bound "
-                        "to a subtask node, its content must likewise be a JSON map covering that "
-                        "node's leaves."),
+        "description": ("Deliver work. target_id = a QUESTION id ('q0042') submits your "
+                        "answer to the WORLD: `content` must be ONLY the short answer "
+                        "itself (a name / date / phrase, e.g. 'Richard Strauss'), never "
+                        "a sentence, an explanation or JSON - it is graded by "
+                        "token-overlap F1 against a short gold answer and pays "
+                        "price x F1. You get ONE graded attempt per claim. COSTS TOKENS. "
+                        "target_id starting with 'c' = deliver an accepted contract "
+                        "(escrow released to you) - only the CONTRACTOR (the agent hired "
+                        "to do the work) delivers a contract; if you are the payer, wait "
+                        "for the deliverable to arrive in your chat instead."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
     # -------- admin (coordination) --------
-    "list_tasks": {
-        "description": ("List open tasks on the WORLD's task board as "
-                        "[t####] «one-sentence summary» (n questions, reward R). Order is "
-                        "arbitrary but stable for you (other agents see a different order, "
-                        "so the reward listed next to each task is what matters, not its "
-                        "position). Shows one page; pass `offset` to see further "
-                        "pages. Use decompose to see what a task actually contains."),
+    "list_questions": {
+        "description": ("List open questions on the WORLD's board as "
+                        "[q####] <question text> (difficulty, reward R, N left). "
+                        "'N left' is the question's remaining QUOTA: how many more times "
+                        "it may be claimed and paid for. Order is arbitrary but stable "
+                        "for you (other agents see a different order, so the reward "
+                        "listed next to each question is what matters, not its "
+                        "position). Shows one page; pass `offset` to see further pages."),
         "input_schema": _schema({"offset": _I}, []),
     },
-    "claim_task": {
-        "description": ("Exclusively claim an open task tree (others can no longer see or take "
-                        "it). `task` accepts a short id (t0012) or its one-sentence summary."),
-        "input_schema": _schema({"task": _S}, ["task"]),
+    "claim_question": {
+        "description": ("Claim one unit of an open question's quota so you may deliver an "
+                        "answer for it. Addressed by question id only (q0042). Others may "
+                        "hold the same question at the same time while units remain; you "
+                        "get at most TWO claims on any one question."),
+        "input_schema": _schema({"qid": _S}, ["qid"]),
     },
     "send_message": {
         "description": "Send a chat message to another agent.",
@@ -85,10 +71,10 @@ ACTION_SPECS: dict[str, dict] = {
     "propose_contract": {
         "description": ("Offer to PAY another agent to do `task` for you. Include `price` "
                         "when bargaining is allowed; under central pricing the hub "
-                        "agent sets the price after you propose. If `task` names a subtask "
-                        "node (short id or its one-sentence summary) the contract is BOUND to "
-                        "that node: the contractor must then deliver a JSON map covering all "
-                        "of its leaf questions. Any other text is a free-text contract."),
+                        "agent sets the price after you propose. If `task` is exactly a "
+                        "question id (q0042) the contract is BOUND to that question: the "
+                        "deliverable is that question's short answer. Any other text is "
+                        "a free-text contract."),
         "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task"]),
     },
     "set_price": {
@@ -138,11 +124,11 @@ ACTION_SPECS: dict[str, dict] = {
         "input_schema": _schema({}, []),
     },
     "memory_write": {
-        "description": "Save a note to your private long-term memory.",
+        "description": "Save a note to your long-term memory (answers are saved there automatically).",
         "input_schema": _schema({"content": _S}, ["content"]),
     },
     "memory_search": {
-        "description": "Search your private long-term memory.",
+        "description": "Search your long-term memory by meaning (notes and past answers alike).",
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "check_balance": {
@@ -155,23 +141,26 @@ ACTION_SPECS: dict[str, dict] = {
     },
 }
 
-_WORLD_ACTIONS = {"list_tasks", "claim_task"}
+_WORLD_ACTIONS = {"list_questions", "claim_question"}
 _TARGETED = {"send_message", "propose_contract", "pay", "propose_loan"}  # star-comms checked actions
 # meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
 _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
                      "reject_contract", "counter_offer", "cancel_contract", "set_price",
                      "pay", "list_agents", "propose_loan", "accept_loan", "repay_loan"}
 
+# stable markers the recorder keys its memory tallies on
+MEMORY_HIT_MARKER = "memory: stored answer"
+STORED_F1_MARKER = "your stored F1"
+IMPROVED_MARKER = "IMPROVED on your stored F1"
+
+_LOW_F1 = 0.5   # below this a stored answer is advertised as worth re-solving
 
 _CONTRACT_ID_RE = re.compile(r"c\d{4}")
 
 
 def _is_contract_target(target: str) -> bool:
     """Contract ids are the ONE reserved namespace for deliver_work targets;
-    everything else (short task id or its sentence) addresses the WORLD.
-    Matched by id SHAPE (c#### ), not by a leading letter -- a task sentence
-    that happens to start with "c" (e.g. "compare...", "count...") must still
-    route to the WORLD."""
+    everything else addresses the WORLD. Matched by id SHAPE (c####)."""
     return bool(_CONTRACT_ID_RE.fullmatch(str(target).strip()))
 
 
@@ -179,7 +168,7 @@ def classify(name: str, inp: dict) -> str:
     """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
     its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
     work the tokens paid for, for recorder tallies / coordination_overhead."""
-    if name in ("retrieve", "work_on", "decompose"):
+    if name in ("retrieve", "work_on"):
         return "solving"
     if name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")):
         return "solving"
@@ -213,7 +202,7 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
     world_call = name in _WORLD_ACTIONS or (
         name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")))
     if world_call and level.world_access == "hub" and not is_iface:
-        return "only the hub agent may interact with the task board"
+        return "only the hub agent may interact with the question board"
     # retrieval is infrastructure: every agent may query the corpus at every
     # configuration (info centralization was deleted in v3).
     # credit centralization: the hub is the sole lender
@@ -246,9 +235,37 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
 def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
     try:
         return _HANDLERS[name](infra, agent_id, inp)
-    except (BoardError, TreeError, ContractError, LoanError, InsufficientFunds,
+    except (BoardError, BankError, ContractError, LoanError, InsufficientFunds,
             KeyError, ValueError, IndexError) as e:
         return f"ERROR: {e}"
+
+
+# ---------------- rendering helpers ----------------
+
+def _q_line(infra, q) -> str:
+    return (f"[{q.qid}] {q.text} ({q.difficulty}, reward {q.price}, "
+            f"{infra.board.remaining[q.qid]} left)")
+
+
+def answer_entry(q, answer: str, f1: float | None) -> str:
+    """The text an answer is STORED under: self-describing, so it is findable
+    both by meaning (memory_search) and by id (memory.answer)."""
+    tag = f"(F1 {f1:.2f})" if f1 is not None else "(never graded, from a contract)"
+    return f'[{q.qid}] {q.text} -> "{answer}" {tag}'
+
+
+def _memory_line(rec: dict) -> str:
+    f1 = rec["f1"]
+    if f1 is None:
+        verdict = ("UNVERIFIED: the WORLD never scored this one, so check it "
+                   "before you deliver it")
+    elif f1 < _LOW_F1:
+        verdict = (f"LOW QUALITY (F1 {f1:.2f} of 1.00): re-solve it (retrieve / "
+                   "work_on) instead of delivering it again")
+    else:
+        verdict = (f"GOOD (F1 {f1:.2f} of 1.00): you can deliver it as-is and "
+                   "spend your tokens elsewhere")
+    return f"{MEMORY_HIT_MARKER} {rec['text']} - {verdict}"
 
 
 # ---------------- handlers ----------------
@@ -259,177 +276,73 @@ def _h_retrieve(infra, a, inp):
 
 
 def _h_work_on(infra, a, inp):
-    infra.scratchpads[a][inp["task_id"]].append(inp["thought"])
-    return f"noted on scratchpad for {inp['task_id']} ({len(infra.scratchpads[a][inp['task_id']])} entries)"
-
-
-_JSON_HINT = ('content must be JSON {qid: answer}, e.g. '
-              '{"q0031": "Richard Strauss", "q0032": "1911"}')
-
-
-def _parse_answer_map(content: str) -> dict[str, str] | None:
-    """A well-formed {qid: short answer} map, or None. Rejecting here (rather
-    than inside the board) is what keeps a malformed submission from consuming
-    the task's single delivery attempt."""
-    try:
-        data = json.loads(content)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(data, dict) or not data:
-        return None
-    return {str(k): str(v) for k, v in data.items()}
-
-
-def _task_line(infra, nid: str) -> str:
-    lib = infra.library
-    return (f"[{nid}] «{lib.sentence(nid)}» "
-            f"({len(lib.leaves(nid))} questions, reward {lib.price(nid)})")
+    qid = str(inp["question_id"])
+    infra.scratchpads[a][qid].append(inp["thought"])
+    return f"noted on scratchpad for {qid} ({len(infra.scratchpads[a][qid])} entries)"
 
 
 def _deliver_contract(infra, a, cid, content):
-    c = infra.contracts.get(cid)
-    answers = None
-    # coverage is checked BEFORE settlement so a short deliverable cannot
-    # release escrow; auth/status errors still come from contracts.deliver
-    if c.node_id and c.status == "accepted" and a == c.contractor:
-        wanted = infra.library.leaves(c.node_id)
-        answers = _parse_answer_map(content)
-        if answers is None:
-            return (f"ERROR: {c.cid} is bound to {c.node_id}; {_JSON_HINT} - "
-                    f"one entry for each of {', '.join(wanted)}")
-        missing = [q for q in wanted if q not in answers]
-        extra = sorted(set(answers) - set(wanted))
-        if missing or extra:
-            detail = []
-            if missing:
-                detail.append("missing " + ", ".join(missing))
-            if extra:
-                detail.append("unknown " + ", ".join(extra))
-            return (f"ERROR: {c.cid} is bound to {c.node_id} and needs exactly "
-                    f"one answer per leaf ({', '.join(wanted)}): {'; '.join(detail)}")
     c = infra.contracts.deliver(a, cid, content)
-    # solution memory trigger 2b/3: a node-bound deliverable is a verified-shape
-    # answer map, so BOTH sides learn it -- the contractor produced it and the
-    # payer receives it. Ungraded: no F1 exists for internal trade.
-    if c.node_id and answers:
-        for qid, ans in answers.items():
-            infra.solutions.record_answer(a, qid, ans)
-            infra.solutions.record_answer(c.proposer, qid, ans)
+    # memory trigger 2: a question-bound deliverable is an answer, so BOTH
+    # sides learn it -- the contractor produced it and the payer received it.
+    # Ungraded: no F1 exists for internal trade.
+    if c.qid:
+        q = infra.bank.get(c.qid)
+        entry = answer_entry(q, content, None)
+        learners = [a] if infra.memory.shared else [a, c.proposer]
+        for who in learners:
+            infra.memory.write(who, entry, kind="answer", qid=q.qid)
     infra.chat.send(a, c.proposer, f"[deliverable for {c.cid}] {content}", infra.round)
     return f"delivered {c.cid}; escrow of {c.price} tokens released to you"
 
 
 def _h_deliver_work(infra, a, inp):
-    tid, content = str(inp["target_id"]).strip(), inp["content"]
+    tid, content = str(inp["target_id"]).strip(), str(inp["content"])
     if _is_contract_target(tid):
         return _deliver_contract(infra, a, tid, content)
-    # WORLD: packaged delivery of a whole task tree
-    answers = _parse_answer_map(content)
-    if answers is None:
-        return (f"ERROR: {_JSON_HINT} - one entry for every leaf question of "
-                "the task (use decompose to see them). Your delivery attempt "
-                "was NOT used.")
-    task = infra.board.get(tid)          # resolve once; errors list candidates
-    per_leaf, total = infra.board.deliver(a, task.nid, answers)
-    # solution memory trigger 2a: the WORLD graded these, so the F1 is known
-    for qid, score, _pay in per_leaf:
-        infra.solutions.record_answer(a, qid, answers[qid], f1=score)
-    detail = "; ".join(f"{qid} F1={score:.2f} -> {pay}" for qid, score, pay in per_leaf)
-    return (f"delivered {task.nid} ({len(per_leaf)} questions graded): {detail}. "
-            f"Total paid: {total} tokens")
+    q = infra.bank.get(tid)                     # resolve first; errors list near ids
+    prev = infra.memory.answer(a, q.qid)
+    r = infra.board.deliver(a, q.qid, content, infra.round)
+    # memory trigger 1: the WORLD graded this, so the F1 is known
+    infra.memory.write(a, answer_entry(q, content, r.f1), kind="answer",
+                       qid=q.qid, f1=r.f1)
+    out = f"delivered {q.qid}: F1={r.f1:.2f} -> {r.payout} tokens"
+    if prev is not None and prev["f1"] is not None:
+        out += (f" ({IMPROVED_MARKER} {prev['f1']:.2f})" if r.f1 > prev["f1"]
+                else f" (no better than {STORED_F1_MARKER} {prev['f1']:.2f})")
+    return out
 
 
-def _h_list_tasks(infra, a, inp):
-    tasks = infra.board.list_open(a)
-    if not tasks:
-        return "(no open tasks)"
+def _h_list_questions(infra, a, inp):
+    qs = infra.board.open_questions(a)
+    if not qs:
+        return "(no open questions)"
     top = infra.cfg.list_top_n
     offset = max(0, int(inp.get("offset") or 0))
-    page = tasks[offset:offset + top]
+    page = qs[offset:offset + top]
     if not page:
-        return f"(no open tasks at offset {offset}; {len(tasks)} open in total)"
-    lines = [_task_line(infra, t.nid) for t in page]
-    remaining = len(tasks) - (offset + len(page))
+        return f"(no open questions at offset {offset}; {len(qs)} open in total)"
+    lines = [_q_line(infra, q) for q in page]
+    remaining = len(qs) - (offset + len(page))
     if remaining > 0:
-        lines.append(f"... and {remaining} more (call list_tasks with "
+        lines.append(f"... and {remaining} more (call list_questions with "
                      f"offset={offset + len(page)} to see them)")
     return "\n".join(lines)
 
 
-def _h_claim_task(infra, a, inp):
-    ref = str(inp["task"]).strip()
-    if _CONTRACT_ID_RE.fullmatch(ref):
-        return (f"ERROR: {ref} is a contract id, not a posted task - contracts "
-                "are accepted (accept_contract), not claimed.")
-    t = infra.board.claim(a, ref, infra.round)
-    return (f"claimed {_task_line(infra, t.nid)}. Call decompose to reveal its "
-            "structure; deliver all of its questions in one JSON package.")
-
-
-# the reuse-block header is the stable marker the recorder keys its
-# lookup-hit tally on ("known {n}/{m} answers beneath: {...}")
-LOOKUP_HIT_MARKER = "answers beneath:"
-
-
-def _answer_tag(rec: dict) -> str:
-    return f" (F1 {rec['f1']:.2f})" if "f1" in rec else ""
-
-
-def _known_block(known: dict, missing: list[str]) -> str:
-    items = [f'"{qid}": "{rec["answer"]}"{_answer_tag(rec)}'
-             for qid, rec in known.items()]
-    return (f"known {len(known)}/{len(known) + len(missing)} "
-            f"{LOOKUP_HIT_MARKER} {{{', '.join(items)}}}")
-
-
-def _h_decompose(infra, a, inp):
-    ref = str(inp["node"]).strip()
+def _h_claim_question(infra, a, inp):
+    ref = str(inp["qid"]).strip()
     if _CONTRACT_ID_RE.fullmatch(ref):          # namespace mixup seen live (C5)
-        return (f"ERROR: {ref} is a contract id, not a task/subtask - a "
-                "contract cannot be decomposed. Decompose the node it is "
-                "bound to instead (see the contract in your status block).")
-    if ref in infra.library.questions:          # a leaf: nothing left to reveal
-        q = infra.library.questions[ref]
-        rec = infra.solutions.answer(a, ref)
-        if rec is not None:
-            return f'[{q.qid}] {q.text} — stored answer: "{rec["answer"]}"{_answer_tag(rec)}'
-        return f"[{q.qid}] {q.text}"
-    node = infra.library.resolve(ref)
-    kids = infra.solutions.decomposition(a, node.nid)
-    if kids is not None:
-        # repeat: no re-reveal -- walk solution memory and answer with the
-        # deepest stored knowledge, in ONE self-sufficient message (a bare
-        # "go recall" pointer proved loop-prone when the store held structure
-        # but no answers yet)
-        res = infra.solutions.recall(a, node.nid)
-        known, missing, unexpanded = res["known"], res["missing"], res["unexpanded"]
-        if not known:
-            return (f"({node.nid} already decomposed: {', '.join(kids)} — "
-                    "no stored answers beneath yet; decompose a child or "
-                    "solve its questions)")
-        parts = [f"({node.nid} already decomposed) {_known_block(known, missing)}"]
-        if missing:
-            parts.append("unanswered: " + ", ".join(missing))
-        if unexpanded:
-            parts.append("not yet expanded: " + ", ".join(unexpanded))
-        return "; ".join(parts) + " — decompose deeper or solve the rest"
-    rows = infra.library.children_view(node.nid)
-    # solution memory trigger 1: structure learned is structure stored
-    infra.solutions.record_decomposition(
-        a, node.nid, [r.get("nid") or r["qid"] for r in rows])
-    lines = [f"[{node.nid}] «{node.sentence}» breaks down into {len(rows)} part(s):"]
-    for r in rows:
-        if r["kind"] == "subtask":
-            lines.append(f"  [{r['nid']}] «{r['sentence']}» "
-                         f"({r['leaf_count']} questions, reward {r['price']})")
-        else:
-            lines.append(f"  [{r['qid']}] {r['text']}")
-    # answers can exist beneath even on a first visit (shared C2 bucket, leaf
-    # reuse across trees): surface them right away
-    res = infra.solutions.recall(a, node.nid)
-    if res["known"]:
-        lines.append(_known_block(res["known"], res["missing"]))
-    return "\n".join(lines)
+        return (f"ERROR: {ref} is a contract id, not a posted question - contracts "
+                "are accepted (accept_contract), not claimed.")
+    q = infra.board.claim(a, ref, infra.round)
+    line = f"claimed {_q_line(infra, q)}"
+    # auto-recall: whatever is stored for this question rides along, so the
+    # agent can decide to deliver it as-is or re-solve it
+    rec = infra.memory.answer(a, q.qid)
+    if rec is not None:
+        line += "\n" + _memory_line(rec)
+    return line
 
 
 def _h_send_message(infra, a, inp):
@@ -444,22 +357,17 @@ def _h_read_chat(infra, a, inp):
     return "\n".join(f"[r{m.round_no}] {m.sender}: {m.text}" for m in msgs) or "(no history)"
 
 
-def _bind_node(infra, c) -> str:
-    """A contract whose task text names a library node is bound to it: the
-    deliverable then has to cover that node's leaves. Free text stays free.
-    Binding uses ONLY exact resolution (exact node id or exact normalized
-    sentence) -- fuzzy resolution stays reserved for claim/decompose/deliver,
-    where the user is explicitly naming an existing node and an approximate
-    match is what they intend. Here `task` is free text chosen by the
-    PROPOSER, and merely resembling a node sentence is not consent to bind
-    the contract's coverage requirements to it."""
-    node = infra.library.resolve_exact(c.task)
-    if node is None:
+def _bind_question(infra, c) -> str:
+    """A contract whose task text is EXACTLY a question id is bound to it: the
+    deliverable is then that question's answer, and both parties learn it. Any
+    other text stays a free-text contract -- `task` is chosen by the PROPOSER,
+    and merely mentioning a question is not consent to bind."""
+    qid = str(c.task).strip()
+    if qid not in infra.bank.questions:
         return ""
-    c.node_id = node.nid
-    return (f" [bound to {c.node_id}: the deliverable must be a JSON map with "
-            f"full leaf coverage of {c.node_id} "
-            f"({len(infra.library.leaves(c.node_id))} questions)]")
+    c.qid = qid
+    return (f" [bound to {c.qid}: the deliverable is the short answer to "
+            f"\"{infra.bank.questions[qid].text}\"]")
 
 
 def _h_propose_contract(infra, a, inp):
@@ -469,7 +377,7 @@ def _h_propose_contract(infra, a, inp):
     if central and a != "hub":
         # price (if any) is ignored: the hub will set it
         c = infra.contracts.propose(a, inp["to"], inp["task"])
-        bound = _bind_node(infra, c)
+        bound = _bind_question(infra, c)
         infra.chat.send(a, "hub",
                         f"[contract {c.cid} awaits your pricing] {a} -> {inp['to']}: "
                         f"{c.task}{bound}", infra.round)
@@ -478,16 +386,16 @@ def _h_propose_contract(infra, a, inp):
                             f"[contract offer {c.cid}, price pending hub] "
                             f"task: {c.task}{bound}", infra.round)
         return (f"proposed {c.cid} to {inp['to']}; awaiting hub pricing"
-                + (f" (bound to {c.node_id})" if c.node_id else ""))
+                + (f" (bound to {c.qid})" if c.qid else ""))
     if inp.get("price") is None:
         return "ERROR: price is required (bargaining configuration)"
     c = infra.contracts.propose(a, inp["to"], inp["task"], int(inp["price"]))
-    bound = _bind_node(infra, c)
+    bound = _bind_question(infra, c)
     infra.chat.send(a, inp["to"],
                     f"[contract offer {c.cid}] task: {c.task} | price: {c.price}{bound}",
                     infra.round)
     return (f"proposed {c.cid} to {inp['to']} at {c.price}"
-            + (f" (bound to {c.node_id})" if c.node_id else ""))
+            + (f" (bound to {c.qid})" if c.qid else ""))
 
 
 def _h_set_price(infra, a, inp):
@@ -569,13 +477,13 @@ def _h_pop_goal(infra, a, inp):
 
 
 def _h_memory_write(infra, a, inp):
-    infra.ltm.write(a, inp["content"])
+    infra.memory.write(a, inp["content"])
     return "saved to long-term memory"
 
 
 def _h_memory_search(infra, a, inp):
-    hits = infra.ltm.search(a, inp["query"])
-    return "\n".join(f"- {h}" for h in hits) or "(no matching memories)"
+    hits = infra.memory.search(a, inp["query"])
+    return "\n".join(f"- {h['text']}" for h in hits) or "(no matching memories)"
 
 
 def _h_check_balance(infra, a, inp):
@@ -588,7 +496,7 @@ def _h_list_agents(infra, a, inp):
 
 _HANDLERS = {
     "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
-    "list_tasks": _h_list_tasks, "claim_task": _h_claim_task, "decompose": _h_decompose,
+    "list_questions": _h_list_questions, "claim_question": _h_claim_question,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,

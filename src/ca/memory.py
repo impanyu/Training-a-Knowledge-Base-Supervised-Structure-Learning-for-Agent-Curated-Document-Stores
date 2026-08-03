@@ -133,6 +133,9 @@ class AgentMemory:
     def n_answers(self, agent: str) -> int:
         return len(self._col(agent).get(where={"kind": "answer"})["ids"])
 
+    def n_entries(self, agent: str) -> int:
+        return self._col(agent).count()
+
     # ---------- checkpoint (T29) ----------
 
     def to_state(self) -> dict:

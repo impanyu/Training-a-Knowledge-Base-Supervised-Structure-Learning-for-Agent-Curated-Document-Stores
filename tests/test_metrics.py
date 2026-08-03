@@ -1,9 +1,6 @@
 import pytest
-from fixtures import demo_questions
 
 from ca.metrics import compute_metrics, gini, specialization
-from ca.taskboard import Question
-from ca.tasktree import TaskLibrary, TaskNode
 
 
 def test_gini():
@@ -11,17 +8,19 @@ def test_gini():
     assert gini([0, 0, 0, 10]) == pytest.approx(0.75, abs=0.01)
 
 
+def delivery(agent, qid, f1=1.0, em=1.0, topic="k01", payout=100):
+    return {"qid": qid, "agent": agent, "submitted": "x", "f1": f1, "em": em,
+            "payout": payout, "round": 1, "price": 100, "difficulty": "2hop",
+            "topic": topic}
+
+
 def base_summary():
     return {
-        "questions": [
-            {"score": 1.0, "em": 1.0, "status": "closed"},
-            {"score": 0.5, "em": 0.0, "status": "closed"},
-            {"score": 0.0, "em": 0.0, "status": "open"},
+        "deliveries": [
+            delivery("a", "q0001", f1=1.0, em=1.0),
+            delivery("a", "q0002", f1=0.5, em=0.0),
         ],
-        "tasks": [
-            {"nid": "t0001", "status": "closed"},
-            {"nid": "t0002", "status": "open"},
-        ],
+        "total_units": 4,
         "balances": {"a": 100, "b": 0},
         "tokens": {"a": {"solving": 1000, "admin": 500}, "b": {"solving": 0, "admin": 500}},
         "bankrupt": ["b"],
@@ -37,66 +36,112 @@ def base_summary():
             "debtors": {"b": 200},
             "bankrupt_with_debt": ["b"],
         },
-        "deliveries": [],
     }
 
 
 def test_compute_metrics():
-    summary = base_summary()
-    m = compute_metrics(summary)
+    m = compute_metrics(base_summary())
     assert m["total_f1"] == 1.5 and m["total_em"] == 1.0 and m["n_answered"] == 2
     assert m["accuracy_per_ktok_solving"] == pytest.approx(1.5 / 1.0)      # per 1000 solving
     assert m["accuracy_per_ktok_all"] == pytest.approx(1.5 / 2.0)          # per 1000 all
     assert m["coordination_overhead"] == pytest.approx(1000 / 2000)        # admin / (solving+admin)
+    assert m["admin_solving_ratio"] == pytest.approx(1000 / 1000)
     assert m["bankrupt_rate"] == 0.5
     assert m["mean_contract_price"] == 40
 
 
-def test_compute_metrics_empty_balances():
-    summary = {"questions": [], "balances": {}, "tokens": {}, "bankrupt": [],
-               "rounds_used": 0, "n_contracts": 0, "contract_prices": []}
+def test_compute_metrics_empty_summary_is_zero_guarded():
+    summary = {"balances": {}, "tokens": {}, "bankrupt": [], "rounds_used": 0,
+               "n_contracts": 0, "contract_prices": []}
     m = compute_metrics(summary)
     assert m["bankrupt_rate"] == 0.0 and m["total_f1"] == 0.0
-    # missing tasks/loans/deliveries keys are zero-guarded, not KeyErrors
-    assert m["task_completion_rate"] == 0.0
+    assert m["demand_absorbed"] == 0.0 and m["n_answered"] == 0
     assert m["admin_solving_ratio"] == 0.0
     assert m["n_loans"] == 0 and m["loan_principal_outstanding"] == 0
     assert m["interest_paid_total"] == 0 and m["bad_debt"] == 0
-    assert "specialization" not in m and "mean_specialization" not in m
+    assert m["specialization"] == {} and m["mean_specialization"] == 0.0
+    assert m["memory_hit_rate"] == 0.0 and m["improvement_rate"] == 0.0
 
 
-# ---------------- T22 additions ----------------
+# ---------------- demand absorbed (replaces task_completion_rate) ----------------
 
-def test_admin_solving_ratio():
+def test_demand_absorbed_is_delivered_units_over_total_quota():
+    m = compute_metrics(base_summary())
+    assert m["demand_absorbed"] == pytest.approx(2 / 4)
+
+
+def test_demand_absorbed_counts_repeats_of_one_question_separately():
+    """Two agents answering the SAME question consume two units of its quota,
+    so both count: demand is measured in units, not in distinct questions."""
     summary = base_summary()
-    m = compute_metrics(summary)
-    # a=1000 solving/500 admin, b=0 solving/500 admin -> total solving=1000, admin=1000
-    assert m["admin_solving_ratio"] == pytest.approx(1000 / 1000)
+    summary["deliveries"] = [delivery("a", "q0001"), delivery("b", "q0001")]
+    assert compute_metrics(summary)["demand_absorbed"] == pytest.approx(2 / 4)
 
 
-def test_admin_solving_ratio_zero_guarded_when_no_solving():
+def test_demand_absorbed_zero_guarded_without_a_bank():
     summary = base_summary()
-    summary["tokens"] = {"a": {"solving": 0, "admin": 500}}
-    m = compute_metrics(summary)
-    assert m["admin_solving_ratio"] == 0.0
+    summary["total_units"] = 0
+    assert compute_metrics(summary)["demand_absorbed"] == 0.0
 
 
-def test_task_completion_rate():
+def test_task_completion_rate_is_gone():
+    assert "task_completion_rate" not in compute_metrics(base_summary())
+
+
+# ---------------- specialization over topics ----------------
+
+def test_specialization_single_topic_agent_scores_one():
+    summary = {"deliveries": [delivery("A", "q0001", topic="k01"),
+                              delivery("A", "q0002", topic="k01")]}
+    assert specialization(summary)["A"] == pytest.approx(1.0)
+
+
+def test_specialization_evenly_split_agent_scores_half():
+    summary = {"deliveries": [delivery("B", "q0001", topic="k01"),
+                              delivery("B", "q0003", topic="k07")]}
+    assert specialization(summary)["B"] == pytest.approx(0.5)
+
+
+def test_specialization_across_multiple_agents():
+    summary = {"deliveries": [
+        delivery("A", "q0001", topic="k01"),
+        delivery("A", "q0002", topic="k01"),
+        delivery("B", "q0003", topic="k07"),
+        delivery("B", "q0004", topic="k07", f1=0.0),   # a wrong answer still counts as work
+    ]}
+    spec = specialization(summary)
+    assert spec["A"] == pytest.approx(1.0) and spec["B"] == pytest.approx(1.0)
+
+
+def test_specialization_three_topics_one_repeat():
+    summary = {"deliveries": [delivery("A", "q1", topic="k01"),
+                              delivery("A", "q2", topic="k01"),
+                              delivery("A", "q3", topic="k07"),
+                              delivery("A", "q4", topic="k02")]}
+    assert specialization(summary)["A"] == pytest.approx(0.5 ** 2 + 0.25 ** 2 + 0.25 ** 2)
+
+
+def test_specialization_empty_deliveries_yields_empty_dict():
+    assert specialization({"deliveries": []}) == {}
+
+
+def test_compute_metrics_includes_specialization_without_any_extra_argument():
+    """v4 carries the topic on each delivery row, so specialization needs no
+    library / bank handed in alongside the summary."""
     summary = base_summary()
+    summary["deliveries"] = [delivery("A", "q0001", topic="k01"),
+                             delivery("A", "q0002", topic="k01"),
+                             delivery("B", "q0003", topic="k07"),
+                             delivery("B", "q0004", topic="k02")]
     m = compute_metrics(summary)
-    assert m["task_completion_rate"] == pytest.approx(0.5)  # 1 of 2 closed
+    assert m["specialization"] == {"A": pytest.approx(1.0), "B": pytest.approx(0.5)}
+    assert m["mean_specialization"] == pytest.approx(0.75)
 
 
-def test_task_completion_rate_zero_guarded_when_no_tasks():
-    summary = base_summary()
-    summary["tasks"] = []
-    m = compute_metrics(summary)
-    assert m["task_completion_rate"] == 0.0
-
+# ---------------- credit block ----------------
 
 def test_credit_block():
-    summary = base_summary()
-    m = compute_metrics(summary)
+    m = compute_metrics(base_summary())
     assert m["n_loans"] == 3
     assert m["loan_principal_outstanding"] == 200
     assert m["interest_paid_total"] == 15
@@ -106,117 +151,50 @@ def test_credit_block():
 def test_credit_block_no_bad_debt_when_debtor_solvent():
     summary = base_summary()
     summary["loans"]["bankrupt_with_debt"] = []
-    m = compute_metrics(summary)
-    assert m["bad_debt"] == 0
+    assert compute_metrics(summary)["bad_debt"] == 0
 
 
-# ---------------- specialization ----------------
+# ---------------- memory metrics ----------------
 
-def spec_library() -> TaskLibrary:
-    """root
-         +-- s1 (subtask)
-         |     +-- q0001, q0002
-         +-- s2 (subtask)
-               +-- q0003, q0004
-    """
-    nodes = [
-        TaskNode("t0001", "root task", ["s0001", "s0002"]),
-        TaskNode("s0001", "subtask one", ["q0001", "q0002"]),
-        TaskNode("s0002", "subtask two", ["q0003", "q0004"]),
-    ]
-    return TaskLibrary(nodes, demo_questions())
-
-
-def test_specialization_fully_specialized_agent_scores_one():
-    lib = spec_library()
-    summary = {"deliveries": [
-        {"task": "t0001", "agent": "A", "total_payout": 300, "n_leaves": 2,
-         "per_leaf": [{"qid": "q0001", "f1": 1.0}, {"qid": "q0002", "f1": 1.0}]},
-    ]}
-    spec = specialization(summary, lib)
-    assert spec["A"] == pytest.approx(1.0)
-
-
-def test_specialization_evenly_split_agent_scores_half():
-    lib = spec_library()
-    summary = {"deliveries": [
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0001", "f1": 1.0}]},
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0003", "f1": 1.0}]},
-    ]}
-    spec = specialization(summary, lib)
-    assert spec["B"] == pytest.approx(0.5)
-
-
-def test_specialization_across_multiple_agents():
-    lib = spec_library()
-    summary = {"deliveries": [
-        {"task": "t0001", "agent": "A", "total_payout": 300, "n_leaves": 2,
-         "per_leaf": [{"qid": "q0001", "f1": 1.0}, {"qid": "q0002", "f1": 1.0}]},
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0003", "f1": 1.0}]},
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0004", "f1": 0.0}]},
-    ]}
-    spec = specialization(summary, lib)
-    assert spec["A"] == pytest.approx(1.0)
-    assert spec["B"] == pytest.approx(1.0)  # both of B's leaves are under s0002
-
-
-def test_specialization_empty_deliveries_yields_empty_dict():
-    assert specialization({"deliveries": []}, spec_library()) == {}
-
-
-def test_compute_metrics_includes_mean_specialization_when_library_passed():
-    lib = spec_library()
-    summary = base_summary()
-    summary["deliveries"] = [
-        {"task": "t0001", "agent": "A", "total_payout": 300, "n_leaves": 2,
-         "per_leaf": [{"qid": "q0001", "f1": 1.0}, {"qid": "q0002", "f1": 1.0}]},
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0003", "f1": 1.0}]},
-        {"task": "t0001", "agent": "B", "total_payout": 100, "n_leaves": 1,
-         "per_leaf": [{"qid": "q0004", "f1": 0.0}]},
-    ]
-    m = compute_metrics(summary, library=lib)
-    assert m["specialization"]["A"] == pytest.approx(1.0)
-    assert m["specialization"]["B"] == pytest.approx(1.0)
-    assert m["mean_specialization"] == pytest.approx(1.0)
-
-
-def test_compute_metrics_omits_specialization_when_no_library():
-    m = compute_metrics(base_summary())
-    assert "specialization" not in m
-    assert "mean_specialization" not in m
-
-
-# ---------------- T27/T32 additions: solution-reuse metrics ----------------
-
-def test_solution_reuse_metrics_zero_guarded_when_no_solutions_key():
-    m = compute_metrics(base_summary())      # base_summary carries no "solutions" key
-    assert m["n_lookups"] == 0
-    assert m["solution_reuse_rate"] == 0.0
+def test_memory_metrics_zero_guarded_without_a_memory_block():
+    m = compute_metrics(base_summary())      # base_summary carries no "memory" key
+    assert m["n_claims"] == 0
+    assert m["memory_hit_rate"] == 0.0
+    assert m["improvement_rate"] == 0.0
     assert m["answers_in_memory_total"] == 0
 
 
-def test_solution_reuse_metrics_aggregate_across_agents():
+def test_memory_hit_rate_is_claims_carrying_a_stored_answer():
     summary = base_summary()
-    summary["solutions"] = {
-        "a": {"answers": 3, "decompositions": 1, "n_lookups": 4, "n_lookup_hits": 3},
-        "b": {"answers": 2, "decompositions": 0, "n_lookups": 1, "n_lookup_hits": 0},
+    summary["memory"] = {
+        "a": {"answers": 3, "notes": 1, "n_claims": 4, "n_memory_hits": 3,
+              "n_repeat_deliveries": 0, "n_improved": 0},
+        "b": {"answers": 2, "notes": 0, "n_claims": 1, "n_memory_hits": 0,
+              "n_repeat_deliveries": 0, "n_improved": 0},
     }
     m = compute_metrics(summary)
-    assert m["n_lookups"] == 5
-    assert m["solution_reuse_rate"] == pytest.approx(3 / 5)
+    assert m["n_claims"] == 5
+    assert m["memory_hit_rate"] == pytest.approx(3 / 5)
     assert m["answers_in_memory_total"] == 5
 
 
-def test_solution_reuse_rate_zero_guarded_when_no_lookups_happened():
+def test_improvement_rate_is_over_repeat_deliveries_that_had_a_stored_f1():
     summary = base_summary()
-    summary["solutions"] = {
-        "a": {"answers": 3, "decompositions": 1, "n_lookups": 0, "n_lookup_hits": 0},
+    summary["memory"] = {
+        "a": {"answers": 4, "notes": 0, "n_claims": 6, "n_memory_hits": 4,
+              "n_repeat_deliveries": 3, "n_improved": 2},
+        "b": {"answers": 0, "notes": 0, "n_claims": 1, "n_memory_hits": 0,
+              "n_repeat_deliveries": 1, "n_improved": 0},
     }
     m = compute_metrics(summary)
-    assert m["solution_reuse_rate"] == 0.0
-    assert m["answers_in_memory_total"] == 3      # answers can be stored with zero lookups
+    assert m["improvement_rate"] == pytest.approx(2 / 4)
+
+
+def test_memory_rates_zero_guarded_when_nothing_happened():
+    summary = base_summary()
+    summary["memory"] = {"a": {"answers": 3, "notes": 0, "n_claims": 0,
+                               "n_memory_hits": 0, "n_repeat_deliveries": 0,
+                               "n_improved": 0}}
+    m = compute_metrics(summary)
+    assert m["memory_hit_rate"] == 0.0 and m["improvement_rate"] == 0.0
+    assert m["answers_in_memory_total"] == 3   # answers can be stored with zero claims

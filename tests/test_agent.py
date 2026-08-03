@@ -2,7 +2,6 @@ import ca.agent as agent_mod
 from fixtures import demo_infra
 
 from ca.agent import Agent, ScriptedPolicy, Decision, LLMPolicy
-from ca.config import CONFIGS, ExperimentConfig
 from ca.retrieval import KeywordBackend
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
@@ -15,9 +14,9 @@ def make(level="C0"):
 
 def test_turn_executes_and_logs():
     cfg, infra = make()
-    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("claim_task", {"task": "t0001"})]))
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("claim_question", {"qid": "q0001"})]))
     ev = ag.take_turn()
-    assert ev["action"] == "claim_task" and ev["category"] == "admin"
+    assert ev["action"] == "claim_question" and ev["category"] == "admin"
     assert "claimed" in ev["result"]
     assert len(ag.fifo.items) == 1
 
@@ -38,12 +37,12 @@ def test_permission_denied_still_bills_every_turn():
     # T17: EVERY turn bills its tokens now, even a denied (ERROR) one.
     cfg, infra = make("C1")
     ag = Agent("agent_1", cfg, infra,
-               ScriptedPolicy([("claim_task", {"task": "t0001"})],
+               ScriptedPolicy([("claim_question", {"qid": "q0001"})],
                               in_tokens=10, out_tokens=5))
     start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
     assert ev["result"].startswith("ERROR")
-    assert ev["category"] == "admin"  # claim_task is admin even when denied
+    assert ev["category"] == "admin"  # claim_question is admin even when denied
     assert infra.ledger.balance("agent_1") == start - 15
     assert infra.ledger.conservation_ok()
 
@@ -68,11 +67,11 @@ def test_noop_turn_bills_tokens():
 def test_goal_actions_update_local_stack():
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra, ScriptedPolicy([
-        ("push_goal", {"note": "solve t0001"}), ("pop_goal", {})]))
+        ("push_goal", {"note": "solve q0001"}), ("pop_goal", {})]))
     ag.take_turn()
-    assert "solve t0001" in ag.goals.render()
+    assert "solve q0001" in ag.goals.render()
     ag.take_turn()
-    assert "solve t0001" not in ag.goals.render()
+    assert "solve q0001" not in ag.goals.render()
 
 
 def test_root_goal_is_private_by_default_and_global_at_c6():

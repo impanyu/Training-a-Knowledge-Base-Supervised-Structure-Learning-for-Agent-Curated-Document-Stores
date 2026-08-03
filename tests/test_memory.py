@@ -1,42 +1,16 @@
 """Short-term memories plus the v4 vector-backed AgentMemory.
 
 The vector store is exercised with a cheap deterministic embedding stub (a
-normalized bag-of-words hash), so the unit tests never touch the ONNX model --
-same trick as KeywordBackend standing in for ChromaBackend in test_retrieval.
+normalized bag-of-words hash, `fixtures.HashEmbedding`), so the unit tests never
+touch the ONNX model -- same trick as KeywordBackend standing in for
+ChromaBackend in test_retrieval.
 """
 import json
-import math
-import zlib
 
 import pytest
-from chromadb.api.types import EmbeddingFunction
+from fixtures import HashEmbedding
+
 from ca.memory import AgentMemory, FifoMemory, GoalStack
-
-DIM = 64
-
-
-class HashEmbedding(EmbeddingFunction):
-    """Deterministic bag-of-words embedding: cosine order == token overlap."""
-
-    def __init__(self):
-        pass
-
-    @staticmethod
-    def name() -> str:
-        return "hash-stub"
-
-    def get_config(self) -> dict:
-        return {}
-
-    def __call__(self, input):
-        out = []
-        for doc in input:
-            v = [0.0] * DIM
-            for w in str(doc).lower().split():
-                v[zlib.crc32(w.encode()) % DIM] += 1.0
-            norm = math.sqrt(sum(x * x for x in v)) or 1.0
-            out.append([x / norm for x in v])
-        return out
 
 
 def mem(**kw) -> AgentMemory:

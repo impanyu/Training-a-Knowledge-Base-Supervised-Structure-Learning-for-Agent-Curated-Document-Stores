@@ -3,7 +3,7 @@ import json
 import random
 
 import pytest
-from fixtures import demo_infra, demo_library, demo_posted
+from fixtures import HashEmbedding, demo_bank, demo_infra
 
 from ca import checkpoint
 from ca.agent import Agent, ScriptedPolicy
@@ -15,14 +15,13 @@ from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
 
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
-T0001_MAP = json.dumps({"q0001": "Paris", "q0002": "Loire", "q0003": "4"})
-T0004_MAP = json.dumps({"q0003": "4", "q0004": "6"})
 
 
 def build(level, scripts, out_dir, seed=7, capital=4000, max_rounds=6, **cfg_kw):
     cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
                            max_rounds=max_rounds, **cfg_kw)
-    infra = Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
+    infra = Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
+                  embedding_function=HashEmbedding())
     agents = [Agent(a, cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
@@ -35,7 +34,8 @@ def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6,
     the exact shape of the runner's --resume path."""
     cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
                            max_rounds=max_rounds, **cfg_kw)
-    infra = Infra(cfg, demo_library(), demo_posted(), retriever=KeywordBackend(DOCS))
+    infra = Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
+                  embedding_function=HashEmbedding())
     agents = [Agent(a, cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
@@ -54,19 +54,19 @@ def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6,
 # contract, chat, scratchpads, memories all cross it).
 SCRIPTS = {
     "agent_1": [
-        ("list_tasks", {}),
-        ("claim_task", {"task": "t0001"}),
-        ("decompose", {"node": "t0001"}),
-        ("decompose", {"node": "t0002"}),
-        ("decompose", {"node": "t0001"}),      # repeat: memory-walk lookup
-        ("deliver_work", {"target_id": "t0001", "content": T0001_MAP}),
+        ("list_questions", {}),
+        ("claim_question", {"qid": "q0001"}),
+        ("retrieve", {"query": "capital of France"}),
+        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("claim_question", {"qid": "q0001"}),      # sees its own stored answer
+        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
     ],
     "agent_2": [
-        ("claim_task", {"task": "t0004"}),
+        ("claim_question", {"qid": "q0003"}),
         ("propose_loan", {"to": "agent_3", "amount": 100}),
-        ("retrieve", {"query": "capital of France"}),
+        ("work_on", {"question_id": "q0003", "thought": "2+2 is 4"}),
         ("check_balance", {}),
-        ("deliver_work", {"target_id": "t0004", "content": T0004_MAP}),
+        ("deliver_work", {"target_id": "q0003", "content": "4"}),
     ],
     "agent_3": [
         ("check_balance", {}),
@@ -76,8 +76,7 @@ SCRIPTS = {
         ("memory_search", {"query": "tokens owed"}),
     ],
     "agent_4": [
-        ("propose_contract", {"to": "agent_5", "task": "find the capital of France",
-                              "price": 40}),
+        ("propose_contract", {"to": "agent_5", "task": "q0002", "price": 40}),
         ("push_goal", {"note": "await c0001 delivery"}),
         ("check_balance", {}),
         ("check_balance", {}),
@@ -87,25 +86,26 @@ SCRIPTS = {
         ("check_balance", {}),
         ("accept_contract", {"contract_id": "c0001"}),
         ("retrieve", {"query": "capital of France"}),
-        ("work_on", {"task_id": "q0001", "thought": "the retriever says Paris"}),
-        ("deliver_work", {"target_id": "c0001", "content": "The capital is Paris"}),
+        ("work_on", {"question_id": "q0002", "thought": "the Loire is longest"}),
+        ("deliver_work", {"target_id": "c0001", "content": "Loire"}),
     ],
     "agent_6": [
-        ("memory_write", {"content": "t0004 looks like easy arithmetic"}),
+        ("memory_write", {"content": "q0003 looks like easy arithmetic"}),
         ("check_balance", {}),
         ("check_balance", {}),
         ("send_message", {"to": "agent_7", "text": "anything left on the board?"}),
     ],
     "agent_7": [
         ("push_goal", {"note": "find a niche"}),
-        ("work_on", {"task_id": "t0004", "thought": "already claimed by agent_2"}),
+        ("claim_question", {"qid": "q0005"}),
         ("pop_goal", {}),
         ("check_balance", {}),
         ("read_chat", {"with_agent": "agent_6"}),
     ],
     "agent_8": [
-        ("list_tasks", {}),
-        ("decompose", {"node": "t0001"}),
+        ("list_questions", {}),
+        ("claim_question", {"qid": "q0004"}),
+        ("deliver_work", {"target_id": "q0004", "content": "six"}),
     ],
 }
 
@@ -134,32 +134,32 @@ def test_ledger_state_roundtrip():
 
 def test_board_state_roundtrip():
     infra = demo_infra("C0")
-    infra.board.claim("agent_1", "t0001", round_no=2)
-    infra.board.claim("agent_2", "t0004", round_no=3)
-    infra.board.deliver("agent_2", "t0004", {"q0003": "4", "q0004": "six"})
+    infra.board.claim("agent_1", "q0001", round_no=2)
+    infra.board.claim("agent_2", "q0003", round_no=3)
+    infra.board.deliver("agent_2", "q0003", "four")
     state = json.loads(json.dumps(infra.board.to_state()))
     fresh = demo_infra("C0")
     fresh.board.from_state(state)
-    t1, t4 = fresh.board.tasks["t0001"], fresh.board.tasks["t0004"]
-    assert t1.status == "claimed" and t1.claimed_by == "agent_1"
-    assert t1.claimed_round == 2 and t1.claim_counts == {"agent_1": 1}
-    assert t4.status == "closed" and t4.payout == 700
-    assert [(l.qid, l.score, l.payout) for l in t4.leaves] == \
-           [("q0003", 1.0, 300), ("q0004", 1.0, 400)]
-    assert fresh.board.leaf_results() == infra.board.leaf_results()
+    assert fresh.board.remaining == infra.board.remaining
+    assert [c.agent for c in fresh.board.active["q0001"]] == ["agent_1"]
+    assert fresh.board.active["q0001"][0].round == 2
+    assert fresh.board.active["q0003"] == []
+    assert fresh.board.strikes == infra.board.strikes
+    assert fresh.board.results_json() == infra.board.results_json()
 
 
 def test_contracts_state_roundtrip_id_counter_continues():
     infra = demo_infra("C0")
     infra.contracts.propose("agent_1", "agent_2", "some work", 40)
     infra.contracts.accept("agent_2", "c0001")
-    infra.contracts.propose("agent_3", "agent_4", "other work", 10)
+    c = infra.contracts.propose("agent_3", "agent_4", "q0002", 10)
+    c.qid = "q0002"
     state = json.loads(json.dumps(infra.contracts.to_state()))
     fresh = demo_infra("C0")
     fresh.contracts.from_state(state)
-    c = fresh.contracts.get("c0001")
-    assert c.status == "accepted" and c.price == 40 and c.contractor == "agent_2"
-    assert fresh.contracts.get("c0002").status == "proposed"
+    got = fresh.contracts.get("c0001")
+    assert got.status == "accepted" and got.price == 40 and got.contractor == "agent_2"
+    assert fresh.contracts.get("c0002").qid == "q0002"
     assert fresh.contracts.propose("agent_1", "agent_5", "new", 5).cid == "c0003"
 
 
@@ -189,7 +189,7 @@ def test_chat_state_roundtrip_preserves_unread_cursors():
     assert [m.text for m in fresh.chat.history("agent_1", "agent_2")] == ["hello"]
 
 
-def test_memories_state_roundtrip():
+def test_short_term_memories_state_roundtrip():
     fifo = FifoMemory(k=2)
     fifo.add("a1", "r1")
     fifo.add("a2", "r2")
@@ -206,23 +206,18 @@ def test_memories_state_roundtrip():
     assert g2.render() == goals.render()
     assert g2.pop() == "sub-goal"
 
-    infra = demo_infra("C0")
-    infra.ltm.write("agent_1", "paris facts")
-    fresh = demo_infra("C0")
-    fresh.ltm.from_state(json.loads(json.dumps(infra.ltm.to_state())))
-    assert fresh.ltm.search("agent_1", "paris") == ["paris facts"]
 
-
-def test_solutions_state_roundtrip_including_shared_bucket():
+def test_agent_memory_state_roundtrip_including_the_shared_bucket():
     infra = demo_infra("C2")                 # shared bucket
-    infra.solutions.record_decomposition("agent_1", "t0001", ["t0002", "q0003"])
-    infra.solutions.record_answer("agent_2", "q0003", "4", f1=1.0)
-    state = json.loads(json.dumps(infra.solutions.to_state()))
+    infra.memory.write("agent_1", "paris facts")
+    infra.memory.write("agent_2", '[q0003] 2+2? -> "4" (F1 1.00)',
+                       kind="answer", qid="q0003", f1=1.0)
+    state = json.loads(json.dumps(infra.memory.to_state()))
     fresh = demo_infra("C2")
-    fresh.solutions.from_state(state)
-    assert fresh.solutions.mapping("agent_5", "t0001") == ["t0002", "q0003"]
-    assert fresh.solutions.answer("agent_5", "q0003") == {"answer": "4", "f1": 1.0}
-    assert fresh.solutions.stats("agent_1") == infra.solutions.stats("agent_1")
+    fresh.memory.from_state(state)
+    assert fresh.memory.answer("agent_5", "q0003")["f1"] == 1.0
+    assert fresh.memory.search("agent_5", "paris facts")[0]["text"] == "paris facts"
+    assert fresh.memory.n_answers("agent_1") == infra.memory.n_answers("agent_1")
 
 
 def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
@@ -230,18 +225,18 @@ def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec.log({"round": 1, "agent": "agent_1", "action": "retrieve", "input": {},
              "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5,
              "balance_after": 0})
-    rec.log({"round": 1, "agent": "agent_1", "action": "decompose", "input": {},
-             "result": '(t0001 already decomposed) known 1/1 answers beneath: '
-                       '{"q0001": "Paris"} — decompose deeper or solve the rest',
-             "category": "solving", "tokens_in": 1,
-             "tokens_out": 1, "balance_after": 0})
+    rec.log({"round": 1, "agent": "agent_1", "action": "claim_question", "input": {},
+             "result": 'claimed [q0001] capital of France? (2hop, reward 100, 0 left)\n'
+                       'memory: stored answer [q0001] ... - GOOD',
+             "category": "admin", "tokens_in": 1, "tokens_out": 1, "balance_after": 0})
     state = json.loads(json.dumps(rec.to_state()))
     rec.close()
 
     rec2 = Recorder(str(tmp_path), append=True)
     rec2.from_state(state)
-    assert rec2._tokens["agent_1"] == {"solving": 17, "admin": 0}
-    assert rec2._lookups["agent_1"] == {"n_lookups": 1, "n_lookup_hits": 1}
+    assert rec2._tokens["agent_1"] == {"solving": 15, "admin": 2}
+    assert rec2._memory["agent_1"] == {"n_claims": 1, "n_memory_hits": 1,
+                                       "n_repeat_deliveries": 0, "n_improved": 0}
     rec2.log({"round": 2, "agent": "agent_1", "action": "check_balance", "input": {},
               "result": "0", "category": "admin", "tokens_in": 1, "tokens_out": 1,
               "balance_after": 0})
@@ -274,21 +269,21 @@ def test_checkpoint_files_every_n_and_at_final_round(tmp_path):
 
 
 def test_checkpoint_written_when_run_stops_early(tmp_path):
-    scripts = {"agent_1": [
-        ("check_balance", {}),
-        ("claim_task", {"task": "t0001"}),
-        ("claim_task", {"task": "t0004"}),
-    ]}
-    # both tasks delivered by round 5 -> all_done break before max_rounds
-    scripts["agent_1"] += [
-        ("deliver_work", {"target_id": "t0001", "content": T0001_MAP}),
-        ("deliver_work", {"target_id": "t0004", "content": T0004_MAP}),
-    ]
-    _, _, sched = build("C7", scripts, tmp_path, capital=1000, max_rounds=10,
-                        checkpoint_every=20)
+    """C7 solo agent absorbs the demo bank's whole 7-unit demand, so the run
+    breaks on all_done() before max_rounds."""
+    script = []
+    for qid, ans, times in (("q0001", "Paris", 2), ("q0002", "Loire", 1),
+                            ("q0003", "4", 2), ("q0004", "6", 1),
+                            ("q0005", "sedimentary", 1)):
+        for _ in range(times):
+            script += [("claim_question", {"qid": qid}),
+                       ("deliver_work", {"target_id": qid, "content": ans})]
+    _, _, sched = build("C7", {"agent_1": script}, tmp_path, capital=1000,
+                        max_rounds=40, checkpoint_every=50)
     summary = sched.run()
-    assert summary["rounds_used"] == 5
-    assert (tmp_path / "checkpoint_0005.json").exists()
+    assert summary["rounds_used"] == 14        # 7 units x (claim + deliver)
+    assert summary["remaining_units"] == 0
+    assert (tmp_path / "checkpoint_0014.json").exists()
 
 
 def test_validate_rejects_level_or_seed_mismatch(tmp_path):
@@ -318,6 +313,9 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
     assert summary_a["rounds_used"] == 6
     assert summary_a["conservation_ok"] is True
     assert summary_a["n_contracts"] == 1 and summary_a["loans"]["n_active"] == 1
+    # the workload really did exercise memory across the boundary
+    assert summary_a["memory"]["agent_1"]["n_memory_hits"] == 1
+    assert len(summary_a["deliveries"]) >= 3
 
     _, _, sched_b = build("C0", SCRIPTS, dir_b, max_rounds=3, checkpoint_every=3)
     sched_b.run()
@@ -337,6 +335,20 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
     order_a = [json.loads(l)["agent"] for l in trace_a]
     order_b = [json.loads(l)["agent"] for l in trace_b]
     assert order_a == order_b
+
+
+def test_resume_restores_the_vector_memory_contents(tmp_path):
+    """The store is rebuilt from the checkpoint, not merely re-created empty:
+    an answer written before the boundary is still recallable after it."""
+    dir_b = tmp_path / "b"
+    _, _, sched = build("C0", SCRIPTS, dir_b, max_rounds=3, checkpoint_every=3)
+    sched.run()
+    infra_b, _ = resume("C0", {a: s[3:] for a, s in SCRIPTS.items()}, dir_b,
+                        dir_b / "checkpoint_0003.json", max_rounds=4,
+                        checkpoint_every=3)
+    rec = infra_b.memory.answer("agent_1", "q0001")
+    assert rec is not None and "Paris" in rec["text"] and rec["f1"] == 1.0
+    assert infra_b.memory.answer("agent_2", "q0001") is None      # private at C0
 
 
 def test_resume_continues_to_a_larger_max_rounds(tmp_path):
