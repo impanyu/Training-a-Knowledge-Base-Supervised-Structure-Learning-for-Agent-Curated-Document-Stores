@@ -23,7 +23,7 @@ class LevelConfig:
     central_pricing: bool = False      # hub sets ALL contract prices; bargaining off
     central_credit: bool = False       # hub is the sole lender
     star_comms: bool = False           # non-hub agents may only reach the hub
-    shared_solution_memory: bool = False  # one solution KV store for everyone (T26)
+    shared_memory: bool = False        # one long-term memory for everyone (C2)
     collective_goal: bool = False      # root goal = TOTAL system balance, not one's own
 
 
@@ -32,7 +32,7 @@ CONFIGS: dict[str, LevelConfig] = {
     # hold the power; shared memory and the collective goal do not.
     "C0": LevelConfig("C0", 8, False),
     "C1": LevelConfig("C1", 8, True, world_access="hub"),
-    "C2": LevelConfig("C2", 8, False, shared_solution_memory=True),
+    "C2": LevelConfig("C2", 8, False, shared_memory=True),
     "C3": LevelConfig("C3", 8, True, central_pricing=True),
     "C4": LevelConfig("C4", 8, True, central_credit=True),
     "C5": LevelConfig("C5", 8, True, star_comms=True),

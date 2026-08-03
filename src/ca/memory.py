@@ -1,5 +1,11 @@
-"""Per-agent short-term (FIFO, goal stack) and long-term memory."""
-from collections import defaultdict, deque
+"""Per-agent short-term (FIFO, goal stack) and long-term (vector) memory."""
+import re
+import uuid
+from collections import deque
+
+import chromadb
+
+SHARED_BUCKET = "shared"
 
 
 class FifoMemory:
@@ -54,27 +60,115 @@ class GoalStack:
         self._stack = list(state)
 
 
-class LongTermMemory:
-    def __init__(self):
-        self._store: dict[str, list[str]] = defaultdict(list)
+class AgentMemory:
+    """One local Chroma collection per bucket (bucket = agent, or a single
+    shared one at C2). Append-only: an answer is an ordinary entry that merely
+    carries extra metadata, so it is found both by meaning (`search`) and by id
+    (`answer`), and answering a question twice leaves both attempts on record.
 
-    def write(self, agent: str, content: str) -> None:
-        self._store[agent].append(content)
+    `embedding_function` defaults to chroma's local ONNX model; unit tests pass
+    a cheap deterministic stub instead (as KeywordBackend does for retrieval).
+    """
 
-    def search(self, agent: str, query: str, k: int = 5) -> list[str]:
-        qtok = set(query.lower().split())
-        scored = []
-        for entry in self._store[agent]:
-            overlap = len(qtok & set(entry.lower().split()))
-            if overlap > 0:
-                scored.append((overlap, entry))
-        scored.sort(key=lambda t: -t[0])
-        return [e for _, e in scored[:k]]
+    def __init__(self, shared: bool = False, persist_dir: str | None = None,
+                 embedding_function=None):
+        self.shared = shared
+        self._client = (chromadb.PersistentClient(path=persist_dir)
+                        if persist_dir else chromadb.EphemeralClient())
+        self._ef = embedding_function
+        # chroma hands every in-process EphemeralClient the SAME in-memory db,
+        # so an instance-unique prefix is what actually isolates two memories.
+        self._prefix = "mem" if persist_dir else f"mem{uuid.uuid4().hex[:8]}"
+        self._cols: dict[str, object] = {}
+        self._seq = 0
+
+    # ---------- buckets ----------
+
+    def _bucket(self, agent: str) -> str:
+        return SHARED_BUCKET if self.shared else str(agent)
+
+    def _col(self, agent: str):
+        bucket = self._bucket(agent)
+        if bucket not in self._cols:
+            name = f"{self._prefix}-" + re.sub(r"[^a-zA-Z0-9_-]", "-", bucket) + "-0"
+            kw = {"embedding_function": self._ef} if self._ef is not None else {}
+            self._cols[bucket] = self._client.get_or_create_collection(name, **kw)
+        return self._cols[bucket]
+
+    # ---------- writing (append-only) ----------
+
+    def write(self, agent: str, text: str, *, kind: str = "note",
+              qid: str | None = None, f1: float | None = None) -> None:
+        self._seq += 1
+        meta: dict = {"kind": str(kind), "seq": self._seq}
+        if qid is not None:
+            meta["qid"] = str(qid)
+        if f1 is not None:
+            meta["f1"] = float(f1)
+        self._col(agent).add(ids=[f"m{self._seq}"], documents=[str(text)],
+                             metadatas=[meta])
+
+    # ---------- reading ----------
+
+    def search(self, agent: str, query: str, k: int = 5) -> list[dict]:
+        col = self._col(agent)
+        n = min(k, col.count())
+        if n <= 0:
+            return []
+        res = col.query(query_texts=[str(query)], n_results=n)
+        return [_row(doc, meta)
+                for doc, meta in zip(res["documents"][0], res["metadatas"][0])]
+
+    def answer(self, agent: str, qid: str) -> dict | None:
+        """The best answer stored for `qid`: highest F1, ties broken by
+        recency. An ungraded answer (F1 unknown) never displaces a graded one."""
+        got = self._col(agent).get(where={"$and": [{"kind": "answer"},
+                                                   {"qid": str(qid)}]})
+        if not got["ids"]:
+            return None
+        best = max(zip(got["documents"], got["metadatas"]),
+                   key=lambda dm: (dm[1].get("f1", -1.0), dm[1]["seq"]))
+        return _row(*best)
+
+    def n_answers(self, agent: str) -> int:
+        return len(self._col(agent).get(where={"kind": "answer"})["ids"])
+
+    # ---------- checkpoint (T29) ----------
 
     def to_state(self) -> dict:
-        return {a: list(entries) for a, entries in self._store.items()}
+        """(id, text, metadata) triples per bucket; embeddings are recomputed
+        on restore rather than stored."""
+        state = {}
+        for bucket in sorted(self._cols):
+            got = self._cols[bucket].get()
+            rows = sorted(zip(got["ids"], got["documents"], got["metadatas"]),
+                          key=lambda r: r[2]["seq"])
+            state[bucket] = [[i, doc, dict(meta)] for i, doc, meta in rows]
+        return state
 
     def from_state(self, state: dict) -> None:
-        self._store.clear()
-        for a, entries in state.items():
-            self._store[a] = list(entries)
+        for col in self._cols.values():
+            self._client.delete_collection(col.name)
+        self._cols = {}
+        self._seq = 0
+        for bucket, rows in state.items():
+            if not rows:
+                continue
+            self._bucket_col(bucket).add(
+                ids=[r[0] for r in rows], documents=[r[1] for r in rows],
+                metadatas=[dict(r[2]) for r in rows])
+            self._seq = max(self._seq, max(r[2]["seq"] for r in rows))
+
+    def _bucket_col(self, bucket: str):
+        """_col() by bucket name (from_state restores whatever was dumped,
+        including the shared bucket)."""
+        saved, self.shared = self.shared, False
+        try:
+            return self._col(bucket)
+        finally:
+            self.shared = saved
+
+
+def _row(doc: str, meta: dict) -> dict:
+    return {"text": doc, "kind": meta.get("kind"),
+            "qid": meta.get("qid"), "f1": meta.get("f1")}

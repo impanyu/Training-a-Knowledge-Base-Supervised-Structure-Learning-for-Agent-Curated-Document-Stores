@@ -5,11 +5,11 @@ from fixtures import demo_library, demo_posted
 # The mechanisms a configuration may centralize. C0 is the all-decentralized
 # baseline; every other multi-agent config must differ from it in EXACTLY one
 # of these (v3 single-factor design, spec section 9).
-MECHANISMS = ("world_access", "shared_solution_memory", "central_pricing",
+MECHANISMS = ("world_access", "shared_memory", "central_pricing",
               "central_credit", "star_comms", "collective_goal")
 
 # which single mechanism each config is *supposed* to flip
-FLIPPED = {"C1": "world_access", "C2": "shared_solution_memory",
+FLIPPED = {"C1": "world_access", "C2": "shared_memory",
            "C3": "central_pricing", "C4": "central_credit",
            "C5": "star_comms", "C6": "collective_goal"}
 
@@ -26,7 +26,7 @@ def test_config_set_is_c0_through_c7():
 def test_c0_is_the_fully_decentralized_baseline():
     c0 = CONFIGS["C0"]
     assert c0.n_agents == 8 and not c0.has_hub
-    assert _mechanisms(c0) == {"world_access": "all", "shared_solution_memory": False,
+    assert _mechanisms(c0) == {"world_access": "all", "shared_memory": False,
                                "central_pricing": False, "central_credit": False,
                                "star_comms": False, "collective_goal": False}
 
@@ -42,7 +42,7 @@ def test_each_config_flips_exactly_one_mechanism_vs_c0():
 
 def test_flipped_values_are_the_centralizing_ones():
     assert CONFIGS["C1"].world_access == "hub"
-    assert CONFIGS["C2"].shared_solution_memory is True
+    assert CONFIGS["C2"].shared_memory is True
     assert CONFIGS["C3"].central_pricing is True
     assert CONFIGS["C4"].central_credit is True
     assert CONFIGS["C5"].star_comms is True
