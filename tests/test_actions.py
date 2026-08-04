@@ -260,11 +260,12 @@ def test_claim_rejects_contract_and_question_ids_with_a_targeted_hint():
 
 
 def test_two_strikes_close_a_job_to_one_agent_but_not_to_others():
+    """The strike rule still bites wherever a deadline IS configured."""
     i0 = make("C0")
     dispatch(i0, "agent_1", "claim_job", {"jid": "j0001"})
-    i0.board.expire_claims(100, ttl=i0.cfg.claim_ttl)
+    i0.board.expire_claims(100, ttl=1)      # expiry is opt-in now (cfg.claim_ttl=None)
     dispatch(i0, "agent_1", "claim_job", {"jid": "j0001"})
-    i0.board.expire_claims(200, ttl=i0.cfg.claim_ttl)
+    i0.board.expire_claims(200, ttl=1)
     third = dispatch(i0, "agent_1", "claim_job", {"jid": "j0001"})
     assert third.startswith("ERROR") and "twice" in third
     assert not dispatch(i0, "agent_2", "claim_job", {"jid": "j0001"}).startswith("ERROR")

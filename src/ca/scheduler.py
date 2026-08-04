@@ -23,7 +23,8 @@ class Scheduler:
             for r in range(start_round, self.cfg.max_rounds + 1):
                 self.infra.round = r
                 rounds_used = r
-                self.infra.board.expire_claims(r, self.cfg.claim_ttl)
+                if self.cfg.claim_ttl is not None:
+                    self.infra.board.expire_claims(r, self.cfg.claim_ttl)
                 for ev in self.infra.loans.interest_tick():
                     verb = "paid" if ev["paid"] else "capitalized"
                     self.recorder.log({

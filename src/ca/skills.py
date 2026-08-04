@@ -1,11 +1,12 @@
 """Role handbooks with action-trajectory demos, assembled per configuration so
 a demo never shows an action the agent lacks there.
 
-v4.1: what the WORLD posts is a JOB -- 6-10 flat questions claimed and
+v4.1: what the WORLD posts is a JOB -- 2-10 flat questions claimed and
 delivered as a unit. Every demo is built around that pipeline: list, claim
 (which marks the members you already know), solve or subcontract the rest,
-assemble ONE map, deliver. The arithmetic of "this does not fit in my claim
-window" is spelled out, because delegation is the point.
+assemble ONE map, deliver. Jobs come in a range of sizes, so the handbooks
+spell out the arithmetic of picking one you can finish -- and of buying the
+rest when a bigger job is worth more than what a peer charges for a question.
 
 Configurations are single-factor, so a demo may only assume the ONE mechanism
 that config centralizes. In particular the hub is not privileged in general --
@@ -39,8 +40,9 @@ _SOLO_ANSWER = """
       so a typo costs only the turn. A complete map is your ONE graded attempt.
       Each value is the SHORT ANSWER ONLY (a name / date / phrase).
 DO THE ARITHMETIC BEFORE YOU CLAIM: one answer takes about 3 turns (a retrieve,
-a work_on, a check), so a job of 8 is ~24 turns of your own - and a claim
-expires after 20 rounds. Alone, you will not finish it.
+a work_on, a check), so a job of 2 is ~6 turns of your own while a job of 10 is
+~30. Claims never expire, but every turn burns tokens, so claim a size you can
+actually finish - or plan to buy the rest (see below).
 CUT LOSSES on any single question: if it is not converging after 2-3 retrieves,
 put your best guess in the map (partial F1 still pays) rather than sinking
 unlimited tokens into it - and NEVER let the claim expire over one question."""
@@ -57,12 +59,12 @@ _CONTRACTOR = """
      both of your memories. A bound deliverable is NOT machine-graded, but
      cheaters lose future business. A free-text contract takes any text.
 Selling single questions is steady income and it costs you nothing to look:
-job holders NEED buyers, because a job of 8 does not fit in one agent's turns."""
+job holders with big jobs are steady buyers of single questions."""
 
 _HIRE_PEER = """
 ### Demo: splitting a claimed job across peers (this is how jobs get finished)
-You hold [j0007]: 8 questions, 20 rounds before the claim expires. Solving all
-8 yourself is ~24 turns - it does not fit. Delegating does:
+You hold [j0007]: 8 questions, ~24 turns of your own work. Every question you
+buy for less than its own price is profit, and it frees your turns:
 - propose_contract(to="{peer}", task="q0107"{price_arg})
   propose_contract(to="agent_2", task="q0111"{price_arg})   # one contract PER QUESTION
   -> naming a QUESTION ID as the task BINDS the contract, so the contractor owes
@@ -73,8 +75,7 @@ You hold [j0007]: 8 questions, 20 rounds before the claim expires. Solving all
   block flips that row to "✓ answered"
 - when every row is ✓, assemble ONE map and deliver_work(target_id="j0007", ...)
 The arithmetic: 5 contracts at ~a tenth of the job reward each still leaves you
-most of it, and it is the difference between delivering the job and losing the
-claim. Offer less than a question's own price, and check what you are sent."""
+most of it, and it turns turns you do not have into answers you do. Offer less than a question's own price, and check what you are sent."""
 
 _IFACE_PIPELINE = """
 ### Demo: your production pipeline
@@ -90,9 +91,10 @@ _IFACE_PIPELINE = """
    -> the map must cover EVERY question of the job; the WORLD pays the sum of
       round(price x F1). ONE graded attempt per claim.
 Your profit = WORLD rewards - subcontract payments - your own token burn.
-A job of 8 is ~24 turns of solving but the claim lasts 20 rounds: parallelize.
-Keep several agents working on different questions at once, and watch the
-expiry countdown - an undelivered claim pays nothing at all."""
+A job of 8 is ~24 turns of solving if you do it alone: parallelize. Claims
+never expire, but every turn you hold one burns tokens and an undelivered claim
+pays nothing, so keep several agents working on different questions at once and
+buy any question for less than it is worth to you."""
 
 # Only true when the hub holds the demand monopoly (C1): there it is the
 # system's single income channel, so its turns are the scarcest resource. At

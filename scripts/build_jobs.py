@@ -2,7 +2,7 @@
 
 A single question is solved alone in ~3 turns, which is cheaper than hiring
 anyone -- the v4 calibration found a market with zero messages, contracts and
-loans. So the claimable unit becomes a JOB: 6-10 questions drawn from ONE topic
+loans. So the claimable unit becomes a JOB: 2-10 questions drawn from ONE topic
 cluster, claimed and delivered as a unit. No tree, no decompose, no sentence
 addressing; just a flat list of qids that does not fit in one agent's claim
 window.
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--bank", default="data/v4/bank.json")
     ap.add_argument("--out", default=None, help="defaults to --bank (in place)")
     ap.add_argument("--jobs", type=int, default=185)
-    ap.add_argument("--size-lo", type=int, default=6)
+    ap.add_argument("--size-lo", type=int, default=2)
     ap.add_argument("--size-hi", type=int, default=10)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)

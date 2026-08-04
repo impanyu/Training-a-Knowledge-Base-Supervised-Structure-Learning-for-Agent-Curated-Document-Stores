@@ -50,10 +50,12 @@ def test_world_demos_explain_all_or_nothing_delivery():
 
 
 def test_world_demos_do_the_delegation_arithmetic():
-    """The whole point of v4.1: a job must visibly not fit in one agent."""
+    """Jobs come in a range of sizes and claims never expire, so the handbook
+    must price the choice: what a job costs you in turns, and why buying a
+    question below its own price is profit."""
     for s in (role_skill(CONFIGS["C0"], "agent_1"), role_skill(CONFIGS["C1"], "hub")):
         assert "3 turns" in s or "~24 turns" in s
-        assert "20 rounds" in s
+        assert "never expire" in s or "claim a size you can" in s
 
 
 def test_world_demos_show_the_auto_recall_on_claim():

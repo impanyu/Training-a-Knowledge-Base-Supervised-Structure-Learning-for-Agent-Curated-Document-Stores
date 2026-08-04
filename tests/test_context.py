@@ -29,14 +29,14 @@ def test_system_prompt_mentions_identity_goal_and_rules():
 
 def test_system_prompt_explains_the_job_pipeline():
     sp = system_prompt(CONFIGS["C0"], "agent_1", ["agent_1", "agent_2"])
-    assert "The WORLD posts JOBS" in sp and "BUNDLE of 6-10" in sp
+    assert "The WORLD posts JOBS" in sp and "BUNDLE of 2-10" in sp
     assert 'claim_job(jid="j0007")' in sp
     assert 'deliver_work(target_id="j0007"' in sp
     assert '"q0042": "Richard Strauss"' in sp        # the map shape, rendered once
     assert "ONLY the short answer" in sp
     assert "ALL-OR-NOTHING" in sp and "you keep your claim" in sp
     assert "ONE graded attempt" in sp
-    assert "TWO claims on any one job" in sp
+    assert "A claim does not expire" in sp
     # the v2/v3 tree vocabulary is gone -- jobs are flat lists, not trees
     for dead in ("decompose", "leaf", "subtask", "package"):
         assert dead not in sp, dead
@@ -44,8 +44,9 @@ def test_system_prompt_explains_the_job_pipeline():
 
 def test_system_prompt_teaches_subcontracting_as_the_way_to_finish_a_job():
     sp = system_prompt(CONFIGS["C0"], "agent_1", ["agent_1", "agent_2"])
-    assert "does not fit comfortably in one agent's claim window" in sp
+    assert "worth SUBCONTRACTING" in sp
     assert "name a QUESTION id as a contract task" in sp
+    assert "Paying a peer less than" in sp
 
 
 def test_system_prompt_advertises_the_automatic_memory():
@@ -157,14 +158,13 @@ def test_render_turn_renders_the_whole_question_list_of_every_claimed_job():
     dispatch(infra, "agent_1", "work_on", {"question_id": "q0002", "thought": "Loire?"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     block = out.split("Your ACTIVE JOB CLAIMS")[1].splitlines()
-    assert block[1] == ("- [j0001] 3 questions, reward 600 — 0 of 3 answered — "
-                        "claim EXPIRES in 19 round(s)")      # claimed r2, ttl 20, now r3
+    assert block[1] == "- [j0001] 3 questions, reward 600 — 0 of 3 answered"
     assert block[2] == "    q0001 — unanswered"
     assert block[3] == "    q0002 — unanswered (1 scratchpad note(s))"
     assert block[4] == "    q0003 — unanswered"
     assert 'deliver_work(target_id="j0001"' in block[5]
     # another agent's claim is not advertised
-    assert "EXPIRES" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
+    assert "ACTIVE JOB CLAIMS" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
 
 
 def test_claimed_job_rows_flip_to_answered_once_the_answer_is_in_memory():
@@ -195,7 +195,7 @@ def test_render_turn_shows_every_concurrent_claim():
     for jid in ("j0001", "j0002"):
         dispatch(infra, "agent_1", "claim_job", {"jid": jid})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert out.count("claim EXPIRES") == 2
+    assert out.count("questions, reward") == 2
 
 
 def test_render_turn_memory_line_counts_answers_and_notes():

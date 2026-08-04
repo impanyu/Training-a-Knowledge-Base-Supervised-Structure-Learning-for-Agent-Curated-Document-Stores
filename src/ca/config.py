@@ -55,13 +55,11 @@ class ExperimentConfig:
     fifo_k: int = 6
     retrieve_k: int = 3          # passages per retrieve call (billable-cost knob)
     list_top_n: int = 20            # open jobs shown per page by list_jobs
-    # rounds before an undelivered job claim reopens. Calibrated, not guessed:
-    # at the measured 2.9 turns per answer a solo agent needs ~23 rounds for a
-    # job of 8, while a delegating holder needs ~18 (claim + 5 contracts +
-    # collection + 3 questions of its own + assembly). 20 sits between the two,
-    # so going it alone does not fit and delegating does -- this is the lever
-    # that creates the market v4 lost.
-    claim_ttl: int = 20
+    # None = claims never expire. The TTL exists only to stop an agent squatting
+    # on work it will not deliver; v4.1 briefly misused it as a device to force
+    # delegation, which produced deadline behaviour (filler answers) rather than
+    # cooperation. Cooperation has to be made profitable, not mandatory.
+    claim_ttl: int | None = None
     max_rounds: int = 60
     model: str = "gpt-5-mini"
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget

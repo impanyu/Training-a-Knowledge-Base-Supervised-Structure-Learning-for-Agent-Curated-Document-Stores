@@ -24,7 +24,7 @@ turn's LLM call consumed. If your balance drops to 0 or below you are BANKRUPT
 and can no longer perform answer-related actions (retrieve, work_on, delivering
 to the WORLD); you may still coordinate and borrow.
 
-The WORLD posts JOBS. A job is a BUNDLE of 6-10 related questions, claimed and
+The WORLD posts JOBS. A job is a BUNDLE of 2-10 related questions, claimed and
 delivered as a unit, and its reward is the sum of its questions' prices. The
 pipeline is always: list_jobs -> claim_job -> answer every question -> deliver
 them all at once. `claim_job(jid="j0007")` reveals the text of every question in
@@ -38,12 +38,15 @@ the sum of round(price x F1).
 Delivery is ALL-OR-NOTHING: a map that misses one of the job's questions, or
 names a question that is not in it, is REJECTED and you keep your claim - so a
 malformed attempt costs you only the turn. A complete map is your ONE graded
-attempt. You get at most TWO claims on any one job, and a claim you let expire
-(see the countdown in your active-claims block) burns one of them.
+attempt. A claim does not expire, so you may take as long as a job needs - but
+every turn you spend costs tokens, so a job you cannot finish profitably is one
+you should not have claimed.
 
-A job does not fit comfortably in one agent's claim window. Subcontracting is
-the normal way to finish one: name a QUESTION id as a contract task and the
-contractor owes you that question's short answer, which you merge into your map.
+Jobs range from 2 to 10 questions. Pick a size you can actually finish: a small
+job is quick money, a large one pays more but may be worth SUBCONTRACTING -
+name a QUESTION id as a contract task and the contractor owes you that
+question's short answer, which you merge into your map. Paying a peer less than
+a question is worth to you is pure profit.
 
 Your long-term memory fills itself: every answer you deliver is stored, and
 claiming a job shows you, per question, the answer you already have with its F1,
@@ -119,14 +122,15 @@ def system_prompt(level: LevelConfig, agent_id: str, all_ids: list[str]) -> str:
 
 def _claims_block(infra: Infra, agent_id: str, mine: list, pad: dict) -> str:
     """The anti-amnesia device (spec §8): for every job this agent holds, the
-    FULL question list with per-question status and the expiry countdown. v3's
-    worst pathology was agents forgetting what a claimed task contained, so the
-    working set is re-rendered every single turn and never scrolls out."""
+    FULL question list with per-question status (and an expiry countdown when
+    claims expire at all). v3's worst pathology was agents forgetting what a
+    claimed task contained, so the working set is re-rendered every single turn
+    and never scrolls out."""
     ttl = infra.cfg.claim_ttl
     lines = []
     for jid, claim in mine:
         job = infra.bank.jobs[jid]
-        left = max(claim.round + ttl - infra.round, 0)
+        left = None if ttl is None else max(claim.round + ttl - infra.round, 0)
         rows, known = [], 0
         for qid in job.qids:
             rec = infra.memory.answer(agent_id, qid)
@@ -139,9 +143,9 @@ def _claims_block(infra: Infra, agent_id: str, mine: list, pad: dict) -> str:
                 f1 = rec["f1"]
                 score = "ungraded" if f1 is None else f"F1 {f1:.2f}"
                 rows.append(f"    {qid} ✓ answered ({score}, in memory)")
-        lines.append(f"- [{jid}] {len(job.qids)} questions, reward {job.price} — "
-                     f"{known} of {len(job.qids)} answered — "
-                     f"claim EXPIRES in {left} round(s)")
+        head = (f"- [{jid}] {len(job.qids)} questions, reward {job.price} — "
+                f"{known} of {len(job.qids)} answered")
+        lines.append(head if left is None else head + f" — claim EXPIRES in {left} round(s)")
         lines += rows
         lines.append(f'    deliver ALL {len(job.qids)} at once: '
                      f'deliver_work(target_id="{jid}", '
