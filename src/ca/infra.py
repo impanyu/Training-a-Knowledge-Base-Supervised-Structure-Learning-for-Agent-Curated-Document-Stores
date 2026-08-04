@@ -2,7 +2,7 @@
 from collections import defaultdict
 
 from ca.bank import QuestionBank
-from ca.board import QuestionBoard
+from ca.board import JobBoard
 from ca.chat import ChatSystem
 from ca.config import ExperimentConfig, agent_ids
 from ca.contracts import ContractSystem
@@ -25,7 +25,7 @@ class Infra:
         self.chat = ChatSystem()
         self.contracts = ContractSystem(self.ledger)
         self.loans = LoanSystem(self.ledger, cfg.loan_rate)
-        self.board = QuestionBoard(bank, self.ledger)
+        self.board = JobBoard(bank, self.ledger)
         # notes AND graded answers; one shared bucket at C2
         self.memory = AgentMemory(shared=cfg.level.shared_memory,
                                   embedding_function=embedding_function)

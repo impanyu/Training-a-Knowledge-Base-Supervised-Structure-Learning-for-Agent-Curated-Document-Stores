@@ -1,14 +1,12 @@
 """Build the flat question bank (v4).
 
-v4 drops the hierarchical task trees: a *task* is one question, and the WORLD
-posts each question with a QUOTA -- how many times it may be claimed and paid
-for. Total system demand is therefore sum(quota) claimable units, and a
-question that several agents answer over the run pays each of them (the repeat
-that makes knowledge reuse and specialization measurable).
+v4 drops the hierarchical task trees: a question is one stand-alone question,
+addressed by id, with no sub-questions of its own.
 
-Each question also carries a `topic` id from a light clustering of question
-embeddings. Topics are metadata only -- the agents never see them -- and exist
-so per-agent specialization stays measurable without a task tree.
+Each question carries a `topic` id from a light clustering of question
+embeddings, which serves two purposes: per-agent specialization stays
+measurable without a task tree, and `scripts/build_jobs.py` draws each posted
+job from ONE cluster. Run this first, then build_jobs.py to post the demand.
 """
 import argparse
 import json
@@ -24,11 +22,6 @@ def embed_texts(texts: list[str]) -> np.ndarray:
     from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
     ef = DefaultEmbeddingFunction()
     return np.asarray(ef(texts), dtype=float)
-
-
-def assign_quotas(questions: list[dict], lo: int, hi: int, rng: random.Random) -> None:
-    for q in questions:
-        q["quota"] = rng.randint(lo, hi)
 
 
 def kmeans_topics(vectors: np.ndarray, k: int, rng: random.Random, iters: int = 25) -> list[int]:
@@ -65,19 +58,15 @@ def kmeans_topics(vectors: np.ndarray, k: int, rng: random.Random, iters: int = 
     return [int(x) for x in labels]
 
 
-def build_bank(pool: list[dict], n_topics: int, quota_lo: int, quota_hi: int,
-               seed: int, embed=None) -> dict:
+def build_bank(pool: list[dict], n_topics: int, seed: int, embed=None) -> dict:
     rng = random.Random(seed)
     questions = [dict(q) for q in pool]
-    assign_quotas(questions, quota_lo, quota_hi, rng)
     if embed is None:
         embed = embed_texts
     labels = kmeans_topics(embed([q["text"] for q in questions]), n_topics, rng)
     for q, t in zip(questions, labels):
         q["topic"] = f"k{t:02d}"
-    return {"questions": questions,
-            "total_units": sum(q["quota"] for q in questions),
-            "n_topics": len(set(labels))}
+    return {"questions": questions, "n_topics": len(set(labels))}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -85,14 +74,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--pool", default="data/v4/pool.jsonl")
     ap.add_argument("--out", default="data/v4/bank.json")
     ap.add_argument("--topics", type=int, default=25)
-    ap.add_argument("--quota-lo", type=int, default=1)
-    ap.add_argument("--quota-hi", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
     with open(args.pool) as f:
         pool = [json.loads(line) for line in f]
-    bank = build_bank(pool, args.topics, args.quota_lo, args.quota_hi, args.seed)
+    bank = build_bank(pool, args.topics, args.seed)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w") as f:
@@ -100,14 +87,11 @@ def main(argv: list[str] | None = None) -> None:
 
     from collections import Counter
     qs = bank["questions"]
-    print(f"bank saved to {args.out}: {len(qs)} questions, "
-          f"{bank['total_units']} claimable units, {bank['n_topics']} topics")
-    print("quota mix:", dict(sorted(Counter(q["quota"] for q in qs).items())))
+    print(f"bank saved to {args.out}: {len(qs)} questions, {bank['n_topics']} topics")
     print("difficulty:", dict(Counter(q["difficulty"] for q in qs)))
-    print("topic sizes: min %d max %d" % (
-        min(Counter(q["topic"] for q in qs).values()),
-        max(Counter(q["topic"] for q in qs).values())))
-    print("total posted value:", sum(q["price"] * q["quota"] for q in qs))
+    print("topic sizes:", sorted(Counter(q["topic"] for q in qs).values()))
+    print("total question value:", sum(q["price"] for q in qs))
+    print("next: scripts/build_jobs.py posts these questions as jobs")
 
 
 if __name__ == "__main__":

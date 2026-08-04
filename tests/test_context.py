@@ -1,3 +1,5 @@
+import json
+
 from fixtures import demo_infra
 
 from ca.actions import dispatch
@@ -10,6 +12,11 @@ def make(level="C1"):
     return demo_infra(level, capital=800)
 
 
+def deliver(infra, agent, jid, answers):
+    return dispatch(infra, agent, "deliver_work",
+                    {"target_id": jid, "content": json.dumps(answers)})
+
+
 def test_system_prompt_mentions_identity_goal_and_rules():
     infra = make("C5")
     sp = system_prompt(infra.cfg.level, "agent_1", infra.agent_ids)
@@ -20,18 +27,25 @@ def test_system_prompt_mentions_identity_goal_and_rules():
     assert "you are the hub" in sp_i.lower()
 
 
-def test_system_prompt_explains_the_flat_question_pipeline():
+def test_system_prompt_explains_the_job_pipeline():
     sp = system_prompt(CONFIGS["C0"], "agent_1", ["agent_1", "agent_2"])
-    assert "QUESTIONS" in sp and "QUOTA" in sp
-    assert 'claim_question(qid="q0042")' in sp
-    assert 'deliver_work(target_id="q0042"' in sp
+    assert "The WORLD posts JOBS" in sp and "BUNDLE of 6-10" in sp
+    assert 'claim_job(jid="j0007")' in sp
+    assert 'deliver_work(target_id="j0007"' in sp
+    assert '"q0042": "Richard Strauss"' in sp        # the map shape, rendered once
     assert "ONLY the short answer" in sp
-    assert "ONE graded attempt per claim" in sp
-    assert "TWO claims on any one question" in sp
-    # the v2/v3 tree vocabulary is gone; JSON survives only as a prohibition
+    assert "ALL-OR-NOTHING" in sp and "you keep your claim" in sp
+    assert "ONE graded attempt" in sp
+    assert "TWO claims on any one job" in sp
+    # the v2/v3 tree vocabulary is gone -- jobs are flat lists, not trees
     for dead in ("decompose", "leaf", "subtask", "package"):
         assert dead not in sp, dead
-    assert "never a sentence, an explanation or JSON" in sp
+
+
+def test_system_prompt_teaches_subcontracting_as_the_way_to_finish_a_job():
+    sp = system_prompt(CONFIGS["C0"], "agent_1", ["agent_1", "agent_2"])
+    assert "does not fit comfortably in one agent's claim window" in sp
+    assert "name a QUESTION id as a contract task" in sp
 
 
 def test_system_prompt_advertises_the_automatic_memory():
@@ -61,11 +75,11 @@ def test_shared_memory_rule_only_at_c2():
 
 
 def test_world_monopoly_text_only_under_demand_centralization():
-    """Only C1 may tell anyone that the hub alone can take questions and
+    """Only C1 may tell anyone that the hub alone can take jobs and
     deliver to the WORLD."""
     ids = ["hub", "agent_1"]
-    monopoly = "only agent allowed to take questions"
-    rule = "Only the hub agent can list/claim questions"
+    monopoly = "only agent allowed to take jobs"
+    rule = "Only the hub agent can list/claim jobs"
     assert monopoly in system_prompt(CONFIGS["C1"], "hub", ids)
     assert rule in system_prompt(CONFIGS["C1"], "agent_1", ids)
     for name in ("C3", "C4", "C5"):
@@ -110,11 +124,11 @@ def test_render_turn_contains_state():
     infra.chat.send("agent_2", "agent_1", "hello there", 1)
     infra.contracts.propose("agent_2", "agent_1", "subtask", 20)
     fifo, goals = FifoMemory(3), GoalStack("maximize token balance")
-    goals.push("finish q0001")
+    goals.push("finish j0001")
     fifo.add("check_balance", "balance: 100")
     out = render_turn(infra, "agent_1", fifo, goals)
     assert "100" in out            # balance
-    assert "finish q0001" in out   # goal stack
+    assert "finish j0001" in out   # goal stack
     assert "hello there" in out    # unread
     assert "c0001" in out          # pending contract
     assert "check_balance" in out  # fifo
@@ -123,42 +137,63 @@ def test_render_turn_contains_state():
 
 def test_render_turn_lists_own_answered_questions_with_f1():
     infra = make("C0")
-    dispatch(infra, "agent_1", "claim_question", {"qid": "q0001"})
-    dispatch(infra, "agent_1", "deliver_work", {"target_id": "q0001", "content": "Paris"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
+    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     assert "Questions you already answered" in out
-    assert "q0001 (F1 1.00, paid 100)" in out
+    assert "q0005 (F1 1.00, paid 50)" in out
     # not shown to other agents, and absent before any delivery
     assert "already answered" not in render_turn(infra, "agent_2", FifoMemory(3),
                                                  GoalStack("g"))
 
 
-def test_render_turn_shows_active_claims_with_ttl_and_progress():
+def test_render_turn_renders_the_whole_question_list_of_every_claimed_job():
+    """The anti-amnesia device: a claim's full contents, per-question status
+    and expiry countdown are re-rendered every turn."""
     infra = make("C0")
     infra.round = 2
-    dispatch(infra, "agent_1", "claim_question", {"qid": "q0001"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
     infra.round = 3
-    dispatch(infra, "agent_1", "work_on", {"question_id": "q0001", "thought": "Paris"})
+    dispatch(infra, "agent_1", "work_on", {"question_id": "q0002", "thought": "Loire?"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "[q0001] capital of France? (2hop, reward 100)" in out
-    assert "EXPIRES in 7 round(s)" in out          # claimed r2, ttl 8, now r3
-    assert "progress: 1 note(s)" in out
-    assert 'deliver_work(target_id="q0001"' in out
+    block = out.split("Your ACTIVE JOB CLAIMS")[1].splitlines()
+    assert block[1] == ("- [j0001] 3 questions, reward 600 — 0 of 3 answered — "
+                        "claim EXPIRES in 19 round(s)")      # claimed r2, ttl 20, now r3
+    assert block[2] == "    q0001 — unanswered"
+    assert block[3] == "    q0002 — unanswered (1 scratchpad note(s))"
+    assert block[4] == "    q0003 — unanswered"
+    assert 'deliver_work(target_id="j0001"' in block[5]
     # another agent's claim is not advertised
     assert "EXPIRES" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
 
 
-def test_render_turn_claim_progress_before_any_notes():
+def test_claimed_job_rows_flip_to_answered_once_the_answer_is_in_memory():
     infra = make("C0")
-    dispatch(infra, "agent_1", "claim_question", {"qid": "q0004"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0002"})
+    deliver(infra, "agent_1", "j0002", {"q0003": "4", "q0004": "6"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "progress: 0 note(s)" in out
+    assert "1 of 3 answered" in out
+    assert "    q0003 ✓ answered (F1 1.00, in memory)" in out
+    assert "    q0001 — unanswered" in out
+
+
+def test_a_bought_answer_shows_as_answered_but_ungraded():
+    infra = make("C0")
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
+    dispatch(infra, "agent_1", "propose_contract",
+             {"to": "agent_2", "task": "q0002", "price": 30})
+    dispatch(infra, "agent_2", "accept_contract", {"contract_id": "c0001"})
+    dispatch(infra, "agent_2", "deliver_work", {"target_id": "c0001", "content": "Loire"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    assert "    q0002 ✓ answered (ungraded, in memory)" in out
+    assert "1 of 3 answered" in out
 
 
 def test_render_turn_shows_every_concurrent_claim():
     infra = make("C0")
-    for qid in ("q0001", "q0003"):
-        dispatch(infra, "agent_1", "claim_question", {"qid": qid})
+    for jid in ("j0001", "j0002"):
+        dispatch(infra, "agent_1", "claim_job", {"jid": jid})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     assert out.count("claim EXPIRES") == 2
 
@@ -167,8 +202,8 @@ def test_render_turn_memory_line_counts_answers_and_notes():
     infra = make("C0")
     assert "Long-term memory:" not in render_turn(infra, "agent_1", FifoMemory(3),
                                                   GoalStack("g"))
-    dispatch(infra, "agent_1", "claim_question", {"qid": "q0001"})
-    dispatch(infra, "agent_1", "deliver_work", {"target_id": "q0001", "content": "Paris"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
+    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
     dispatch(infra, "agent_1", "memory_write", {"content": "geography pays well"})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     assert "Long-term memory: 1 answers, 1 notes" in out
@@ -179,8 +214,8 @@ def test_render_turn_memory_line_counts_answers_and_notes():
 
 def test_render_turn_memory_line_is_shared_at_c2():
     infra = demo_infra("C2", capital=800)
-    dispatch(infra, "agent_1", "claim_question", {"qid": "q0001"})
-    dispatch(infra, "agent_1", "deliver_work", {"target_id": "q0001", "content": "Paris"})
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
+    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
     out = render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
     assert "Long-term memory: 1 answers, 0 notes" in out
 
@@ -227,7 +262,7 @@ def test_repetition_warning_after_three_identical_actions():
     infra = make("C0")
     fifo, goals = FifoMemory(6), GoalStack("maximize token balance")
     for _ in range(3):
-        fifo.add("list_questions({})", "same result")
+        fifo.add("list_jobs({})", "same result")
     out = render_turn(infra, "agent_1", fifo, goals)
     assert "MUST choose a different action" in out
     fifo.add("retrieve({})", "different")

@@ -54,19 +54,20 @@ def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6,
 # contract, chat, scratchpads, memories all cross it).
 SCRIPTS = {
     "agent_1": [
-        ("list_questions", {}),
-        ("claim_question", {"qid": "q0001"}),
+        ("list_jobs", {}),
+        ("claim_job", {"jid": "j0001"}),
         ("retrieve", {"query": "capital of France"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ("claim_question", {"qid": "q0001"}),      # sees its own stored answer
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("deliver_work", {"target_id": "j0001",
+                          "content": '{"q0001": "Paris", "q0002": "Loire", "q0003": "4"}'}),
+        ("claim_job", {"jid": "j0002"}),      # q0003 comes back with its stored answer
+        ("deliver_work", {"target_id": "j0002", "content": '{"q0003": "4", "q0004": "6"}'}),
     ],
     "agent_2": [
-        ("claim_question", {"qid": "q0003"}),
+        ("claim_job", {"jid": "j0003"}),
         ("propose_loan", {"to": "agent_3", "amount": 100}),
-        ("work_on", {"question_id": "q0003", "thought": "2+2 is 4"}),
+        ("work_on", {"question_id": "q0005", "thought": "chalk is sedimentary"}),
         ("check_balance", {}),
-        ("deliver_work", {"target_id": "q0003", "content": "4"}),
+        ("deliver_work", {"target_id": "j0003", "content": '{"q0005": "sedimentary"}'}),
     ],
     "agent_3": [
         ("check_balance", {}),
@@ -97,15 +98,15 @@ SCRIPTS = {
     ],
     "agent_7": [
         ("push_goal", {"note": "find a niche"}),
-        ("claim_question", {"qid": "q0005"}),
+        ("list_jobs", {}),
         ("pop_goal", {}),
         ("check_balance", {}),
         ("read_chat", {"with_agent": "agent_6"}),
     ],
     "agent_8": [
-        ("list_questions", {}),
-        ("claim_question", {"qid": "q0004"}),
-        ("deliver_work", {"target_id": "q0004", "content": "six"}),
+        ("list_jobs", {}),
+        ("check_balance", {}),
+        ("check_balance", {}),
     ],
 }
 
@@ -134,16 +135,16 @@ def test_ledger_state_roundtrip():
 
 def test_board_state_roundtrip():
     infra = demo_infra("C0")
-    infra.board.claim("agent_1", "q0001", round_no=2)
-    infra.board.claim("agent_2", "q0003", round_no=3)
-    infra.board.deliver("agent_2", "q0003", "four")
+    infra.board.claim("agent_1", "j0001", round_no=2)
+    infra.board.claim("agent_2", "j0003", round_no=3)
+    infra.board.deliver("agent_2", "j0003", {"q0005": "sedimentary"})
     state = json.loads(json.dumps(infra.board.to_state()))
     fresh = demo_infra("C0")
     fresh.board.from_state(state)
-    assert fresh.board.remaining == infra.board.remaining
-    assert [c.agent for c in fresh.board.active["q0001"]] == ["agent_1"]
-    assert fresh.board.active["q0001"][0].round == 2
-    assert fresh.board.active["q0003"] == []
+    assert fresh.board.open_jobs() == infra.board.open_jobs()
+    assert fresh.board.active["j0001"].agent == "agent_1"
+    assert fresh.board.active["j0001"].round == 2
+    assert "j0003" not in fresh.board.active
     assert fresh.board.strikes == infra.board.strikes
     assert fresh.board.results_json() == infra.board.results_json()
 
@@ -225,9 +226,9 @@ def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec.log({"round": 1, "agent": "agent_1", "action": "retrieve", "input": {},
              "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5,
              "balance_after": 0})
-    rec.log({"round": 1, "agent": "agent_1", "action": "claim_question", "input": {},
-             "result": 'claimed [q0001] capital of France? (2hop, reward 100, 0 left)\n'
-                       'memory: stored answer [q0001] ... - GOOD',
+    rec.log({"round": 1, "agent": "agent_1", "action": "claim_job", "input": {},
+             "result": 'claimed [j0001] 3 questions, reward 600\n'
+                       '  q0001 capital of France? -- memory: stored answer "Paris" (F1 1.00)',
              "category": "admin", "tokens_in": 1, "tokens_out": 1, "balance_after": 0})
     state = json.loads(json.dumps(rec.to_state()))
     rec.close()
@@ -269,21 +270,20 @@ def test_checkpoint_files_every_n_and_at_final_round(tmp_path):
 
 
 def test_checkpoint_written_when_run_stops_early(tmp_path):
-    """C7 solo agent absorbs the demo bank's whole 7-unit demand, so the run
+    """C7 solo agent absorbs the demo bank's whole 6-unit demand, so the run
     breaks on all_done() before max_rounds."""
     script = []
-    for qid, ans, times in (("q0001", "Paris", 2), ("q0002", "Loire", 1),
-                            ("q0003", "4", 2), ("q0004", "6", 1),
-                            ("q0005", "sedimentary", 1)):
-        for _ in range(times):
-            script += [("claim_question", {"qid": qid}),
-                       ("deliver_work", {"target_id": qid, "content": ans})]
+    for jid, answers in (("j0001", {"q0001": "Paris", "q0002": "Loire", "q0003": "4"}),
+                         ("j0002", {"q0003": "4", "q0004": "6"}),
+                         ("j0003", {"q0005": "sedimentary"})):
+        script += [("claim_job", {"jid": jid}),
+                   ("deliver_work", {"target_id": jid, "content": json.dumps(answers)})]
     _, _, sched = build("C7", {"agent_1": script}, tmp_path, capital=1000,
                         max_rounds=40, checkpoint_every=50)
     summary = sched.run()
-    assert summary["rounds_used"] == 14        # 7 units x (claim + deliver)
+    assert summary["rounds_used"] == 6         # 3 jobs x (claim + deliver)
     assert summary["remaining_units"] == 0
-    assert (tmp_path / "checkpoint_0014.json").exists()
+    assert (tmp_path / "checkpoint_0006.json").exists()
 
 
 def test_validate_rejects_level_or_seed_mismatch(tmp_path):

@@ -1,4 +1,5 @@
 """Action registry: specs (tool schemas), permission gating, dispatch."""
+import json
 import re
 
 from ca.bank import BankError
@@ -30,35 +31,40 @@ ACTION_SPECS: dict[str, dict] = {
                                 ["question_id", "thought"]),
     },
     "deliver_work": {
-        "description": ("Deliver work. target_id = a QUESTION id ('q0042') submits your "
-                        "answer to the WORLD: `content` must be ONLY the short answer "
-                        "itself (a name / date / phrase, e.g. 'Richard Strauss'), never "
-                        "a sentence, an explanation or JSON - it is graded by "
-                        "token-overlap F1 against a short gold answer and pays "
-                        "price x F1. You get ONE graded attempt per claim. COSTS TOKENS. "
-                        "target_id starting with 'c' = deliver an accepted contract "
-                        "(escrow released to you) - only the CONTRACTOR (the agent hired "
-                        "to do the work) delivers a contract; if you are the payer, wait "
-                        "for the deliverable to arrive in your chat instead."),
+        "description": ("Deliver work. target_id = a JOB id ('j0007') submits the whole "
+                        "job to the WORLD: `content` must be ONE JSON object mapping "
+                        "EVERY question id in that job to its short answer, e.g. "
+                        '\'{\"q0042\": \"Richard Strauss\", \"q0107\": \"1911\"}\'. Each '
+                        "answer is the short answer itself (a name / date / phrase), "
+                        "never a sentence or an explanation - each is graded by "
+                        "token-overlap F1 against a short gold answer and the job pays "
+                        "the sum of price x F1. Delivery is ALL-OR-NOTHING: a map that "
+                        "misses a question (or names one that is not in the job) is "
+                        "rejected and you keep your claim, but a complete map is your ONE "
+                        "graded attempt. COSTS TOKENS. target_id starting with 'c' = "
+                        "deliver an accepted contract (escrow released to you) - only the "
+                        "CONTRACTOR (the agent hired to do the work) delivers a contract; "
+                        "if you are the payer, wait for the deliverable to arrive in your "
+                        "chat instead."),
         "input_schema": _schema({"target_id": _S, "content": _S}, ["target_id", "content"]),
     },
     # -------- admin (coordination) --------
-    "list_questions": {
-        "description": ("List open questions on the WORLD's board as "
-                        "[q####] <question text> (difficulty, reward R, N left). "
-                        "'N left' is the question's remaining QUOTA: how many more times "
-                        "it may be claimed and paid for. Order is arbitrary but stable "
-                        "for you (other agents see a different order, so the reward "
-                        "listed next to each question is what matters, not its "
+    "list_jobs": {
+        "description": ("List open jobs on the WORLD's board as "
+                        "[j####] N questions, topic k##, reward R. A job is a BUNDLE of "
+                        "6-10 related questions claimed and delivered as a unit; the "
+                        "reward is the sum of its questions' prices. Order is arbitrary "
+                        "but stable for you (other agents see a different order, so the "
+                        "reward listed next to each job is what matters, not its "
                         "position). Shows one page; pass `offset` to see further pages."),
         "input_schema": _schema({"offset": _I}, []),
     },
-    "claim_question": {
-        "description": ("Claim one unit of an open question's quota so you may deliver an "
-                        "answer for it. Addressed by question id only (q0042). Others may "
-                        "hold the same question at the same time while units remain; you "
-                        "get at most TWO claims on any one question."),
-        "input_schema": _schema({"qid": _S}, ["qid"]),
+    "claim_job": {
+        "description": ("Claim an open job: this reveals the text of every question in it "
+                        "and marks the ones you already have an answer for. A job holds "
+                        "ONE claimant at a time and you get at most TWO claims on any one "
+                        "job, so a claim you let expire burns one of them."),
+        "input_schema": _schema({"jid": _S}, ["jid"]),
     },
     "send_message": {
         "description": "Send a chat message to another agent.",
@@ -73,7 +79,9 @@ ACTION_SPECS: dict[str, dict] = {
                         "when bargaining is allowed; under central pricing the hub "
                         "agent sets the price after you propose. If `task` is exactly a "
                         "question id (q0042) the contract is BOUND to that question: the "
-                        "deliverable is that question's short answer. Any other text is "
+                        "deliverable is that question's short answer. That is how you "
+                        "split a claimed job across several agents - one contract per "
+                        "question you do not want to solve yourself. Any other text is "
                         "a free-text contract."),
         "input_schema": _schema({"to": _S, "task": _S, "price": _I}, ["to", "task"]),
     },
@@ -141,7 +149,7 @@ ACTION_SPECS: dict[str, dict] = {
     },
 }
 
-_WORLD_ACTIONS = {"list_questions", "claim_question"}
+_WORLD_ACTIONS = {"list_jobs", "claim_job"}
 _TARGETED = {"send_message", "propose_contract", "pay", "propose_loan"}  # star-comms checked actions
 # meaningless when the agent is alone in the economy: nobody to talk to, hire or pay
 _MULTI_AGENT_ONLY = {"send_message", "read_chat", "propose_contract", "accept_contract",
@@ -156,12 +164,36 @@ IMPROVED_MARKER = "IMPROVED on your stored F1"
 _LOW_F1 = 0.5   # below this a stored answer is advertised as worth re-solving
 
 _CONTRACT_ID_RE = re.compile(r"c\d{4}")
+_QUESTION_ID_RE = re.compile(r"q\d{4}")
+
+_JSON_HINT = ('`content` must be ONE flat JSON object mapping every question id in '
+              'the job to its short answer, e.g. {"q0042": "Richard Strauss", '
+              '"q0107": "1911"} - short answers only, no sentences, no nesting')
 
 
 def _is_contract_target(target: str) -> bool:
     """Contract ids are the ONE reserved namespace for deliver_work targets;
     everything else addresses the WORLD. Matched by id SHAPE (c####)."""
     return bool(_CONTRACT_ID_RE.fullmatch(str(target).strip()))
+
+
+def _parse_answer_map(content: str) -> dict[str, str]:
+    """A rejected map must cost the agent nothing but the turn, so every failure
+    here is raised BEFORE the board is touched and the claim survives."""
+    try:
+        data = json.loads(content)
+    except (TypeError, json.JSONDecodeError) as e:
+        raise ValueError(f"could not read `content` as JSON ({e}); {_JSON_HINT}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"`content` is a JSON {type(data).__name__}, not an object; "
+                         f"{_JSON_HINT}")
+    out = {}
+    for k, v in data.items():
+        if isinstance(v, (dict, list)):
+            raise ValueError(f"the answer for {k} is a {type(v).__name__}, not a short "
+                             f"answer string; {_JSON_HINT}")
+        out[str(k).strip()] = str(v)
+    return out
 
 
 def classify(name: str, inp: dict) -> str:
@@ -202,7 +234,7 @@ def permission_error(infra: Infra, agent_id: str, name: str, inp: dict) -> str |
     world_call = name in _WORLD_ACTIONS or (
         name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")))
     if world_call and level.world_access == "hub" and not is_iface:
-        return "only the hub agent may interact with the question board"
+        return "only the hub agent may interact with the job board"
     # retrieval is infrastructure: every agent may query the corpus at every
     # configuration (info centralization was deleted in v3).
     # credit centralization: the hub is the sole lender
@@ -242,9 +274,14 @@ def dispatch(infra: Infra, agent_id: str, name: str, inp: dict) -> str:
 
 # ---------------- rendering helpers ----------------
 
-def _q_line(infra, q) -> str:
-    return (f"[{q.qid}] {q.text} ({q.difficulty}, reward {q.price}, "
-            f"{infra.board.remaining[q.qid]} left)")
+def job_topic(infra, job) -> str:
+    """A job is drawn from ONE topic cluster, so any member names it."""
+    return infra.bank.questions[job.qids[0]].topic
+
+
+def _job_line(infra, job) -> str:
+    return (f"[{job.jid}] {len(job.qids)} questions, topic {job_topic(infra, job)}, "
+            f"reward {job.price}")
 
 
 def answer_entry(q, answer: str, f1: float | None) -> str:
@@ -254,18 +291,15 @@ def answer_entry(q, answer: str, f1: float | None) -> str:
     return f'[{q.qid}] {q.text} -> "{answer}" {tag}'
 
 
-def _memory_line(rec: dict) -> str:
+def _verdict(rec: dict) -> str:
     f1 = rec["f1"]
     if f1 is None:
-        verdict = ("UNVERIFIED: the WORLD never scored this one, so check it "
-                   "before you deliver it")
-    elif f1 < _LOW_F1:
-        verdict = (f"LOW QUALITY (F1 {f1:.2f} of 1.00): re-solve it (retrieve / "
-                   "work_on) instead of delivering it again")
-    else:
-        verdict = (f"GOOD (F1 {f1:.2f} of 1.00): you can deliver it as-is and "
-                   "spend your tokens elsewhere")
-    return f"{MEMORY_HIT_MARKER} {rec['text']} - {verdict}"
+        return "UNVERIFIED: the WORLD never scored this one, so check it before you use it"
+    if f1 < _LOW_F1:
+        return (f"LOW QUALITY (F1 {f1:.2f} of 1.00): re-solve it (retrieve / work_on) "
+                "instead of delivering it again")
+    return (f"GOOD (F1 {f1:.2f} of 1.00): deliver it as-is and spend your tokens "
+            "on the unanswered ones")
 
 
 # ---------------- handlers ----------------
@@ -300,49 +334,76 @@ def _h_deliver_work(infra, a, inp):
     tid, content = str(inp["target_id"]).strip(), str(inp["content"])
     if _is_contract_target(tid):
         return _deliver_contract(infra, a, tid, content)
-    q = infra.bank.get(tid)                     # resolve first; errors list near ids
-    prev = infra.memory.answer(a, q.qid)
-    r = infra.board.deliver(a, q.qid, content, infra.round)
-    # memory trigger 1: the WORLD graded this, so the F1 is known
-    infra.memory.write(a, answer_entry(q, content, r.f1), kind="answer",
-                       qid=q.qid, f1=r.f1)
-    out = f"delivered {q.qid}: F1={r.f1:.2f} -> {r.payout} tokens"
-    if prev is not None and prev["f1"] is not None:
-        out += (f" ({IMPROVED_MARKER} {prev['f1']:.2f})" if r.f1 > prev["f1"]
-                else f" (no better than {STORED_F1_MARKER} {prev['f1']:.2f})")
-    return out
+    if _QUESTION_ID_RE.fullmatch(tid):
+        return (f"ERROR: {tid} is a question, not a posted job - the WORLD pays for "
+                "whole jobs. Deliver the JOB that contains it (target_id=\"j0007\") "
+                "with one JSON map covering all of its questions.")
+    job = infra.bank.get_job(tid)               # resolve first; errors list near ids
+    answers = _parse_answer_map(content)        # raises before the board is touched
+    prev = {qid: infra.memory.answer(a, qid) for qid in job.qids}
+    results = infra.board.deliver(a, job.jid, answers, infra.round)
+    lines = []
+    for r in results:
+        q = infra.bank.questions[r.qid]
+        # memory trigger 1: the WORLD graded this, so the F1 is known
+        infra.memory.write(a, answer_entry(q, r.submitted, r.f1), kind="answer",
+                           qid=r.qid, f1=r.f1)
+        line = f"  {r.qid} F1={r.f1:.2f} -> {r.payout}"
+        before = prev[r.qid]
+        if before is not None and before["f1"] is not None:
+            line += (f" ({IMPROVED_MARKER} {before['f1']:.2f})" if r.f1 > before["f1"]
+                     else f" (no better than {STORED_F1_MARKER} {before['f1']:.2f})")
+        lines.append(line)
+    total = sum(r.payout for r in results)
+    head = (f"delivered {job.jid}: {len(results)} questions, "
+            f"total F1 {sum(r.f1 for r in results):.2f} -> {total} tokens")
+    return "\n".join([head] + lines)
 
 
-def _h_list_questions(infra, a, inp):
-    qs = infra.board.open_questions(a)
-    if not qs:
-        return "(no open questions)"
+def _h_list_jobs(infra, a, inp):
+    jobs = infra.board.open_jobs(a)
+    if not jobs:
+        return "(no open jobs)"
     top = infra.cfg.list_top_n
     offset = max(0, int(inp.get("offset") or 0))
-    page = qs[offset:offset + top]
+    page = jobs[offset:offset + top]
     if not page:
-        return f"(no open questions at offset {offset}; {len(qs)} open in total)"
-    lines = [_q_line(infra, q) for q in page]
-    remaining = len(qs) - (offset + len(page))
+        return f"(no open jobs at offset {offset}; {len(jobs)} open in total)"
+    lines = [_job_line(infra, j) for j in page]
+    remaining = len(jobs) - (offset + len(page))
     if remaining > 0:
-        lines.append(f"... and {remaining} more (call list_questions with "
+        lines.append(f"... and {remaining} more (call list_jobs with "
                      f"offset={offset + len(page)} to see them)")
     return "\n".join(lines)
 
 
-def _h_claim_question(infra, a, inp):
-    ref = str(inp["qid"]).strip()
+def _h_claim_job(infra, a, inp):
+    ref = str(inp["jid"]).strip()
     if _CONTRACT_ID_RE.fullmatch(ref):          # namespace mixup seen live (C5)
-        return (f"ERROR: {ref} is a contract id, not a posted question - contracts "
+        return (f"ERROR: {ref} is a contract id, not a posted job - contracts "
                 "are accepted (accept_contract), not claimed.")
-    q = infra.board.claim(a, ref, infra.round)
-    line = f"claimed {_q_line(infra, q)}"
-    # auto-recall: whatever is stored for this question rides along, so the
-    # agent can decide to deliver it as-is or re-solve it
-    rec = infra.memory.answer(a, q.qid)
-    if rec is not None:
-        line += "\n" + _memory_line(rec)
-    return line
+    if _QUESTION_ID_RE.fullmatch(ref):
+        return (f"ERROR: {ref} is a question id; the WORLD posts JOBS (j0007), and "
+                "claiming one reveals its questions. Call list_jobs.")
+    job = infra.board.claim(a, ref, infra.round)
+    # auto-recall, now per member: whatever is stored for each question rides
+    # along, so the agent sees at a glance which ones are already paid for
+    rows, n_known = [], 0
+    for qid in job.qids:
+        q = infra.bank.questions[qid]
+        rec = infra.memory.answer(a, qid)
+        if rec is None:
+            rows.append(f"  — {qid} {q.text} (unanswered)")
+        else:
+            n_known += 1
+            rows.append(f"  ✓ {qid} {q.text} -> {rec['text']} {_verdict(rec)}")
+    head = [f"claimed {_job_line(infra, job)}",
+            f'deliver ALL {len(job.qids)} answers in ONE map: '
+            f'deliver_work(target_id="{job.jid}", content=\'{{"{job.qids[0]}": "...", ...}}\')']
+    if n_known:
+        head.append(f"{MEMORY_HIT_MARKER} for {n_known} of these {len(job.qids)} "
+                    "questions (marked ✓ below) - that part is already paid for")
+    return "\n".join(head + rows)
 
 
 def _h_send_message(infra, a, inp):
@@ -496,7 +557,7 @@ def _h_list_agents(infra, a, inp):
 
 _HANDLERS = {
     "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
-    "list_questions": _h_list_questions, "claim_question": _h_claim_question,
+    "list_jobs": _h_list_jobs, "claim_job": _h_claim_job,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,
     "reject_contract": _h_reject_contract, "counter_offer": _h_counter_offer,

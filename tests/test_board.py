@@ -1,236 +1,256 @@
-"""v4 board: quota accounting, strikes, per-viewer shuffle."""
+"""v4.1 job board: one claimant per job, all-or-nothing delivery, strikes."""
 import json
 import zlib
 
 import pytest
-from ca.bank import Question, QuestionBank
-from ca.board import BoardError, QuestionBoard
+from ca.bank import Job, Question, QuestionBank
+from ca.board import BoardError, JobBoard
 from ca.economy import Ledger
 
 AGENTS = ["agent_1", "agent_2", "agent_3"]
 
 
-def demo_bank(quotas=(2, 1, 3)) -> QuestionBank:
+def demo_bank() -> QuestionBank:
     return QuestionBank([
-        Question("q0001", "capital of France?", ["Paris"], "2hop", 63000, quotas[0], "k01"),
-        Question("q0002", "longest river in France?", ["Loire"], "3hop", 105000, quotas[1], "k01"),
-        Question("q0003", "2+2?", ["4", "four"], "4hop", 157500, quotas[2], "k07"),
-    ])
+        Question("q0001", "capital of France?", ["Paris"], "2hop", 63000, "k01"),
+        Question("q0002", "longest river in France?", ["Loire"], "3hop", 105000, "k01"),
+        Question("q0003", "2+2?", ["4", "four"], "4hop", 157500, "k07"),
+    ], [Job("j0001", ["q0001", "q0002"], 168000),
+        Job("j0002", ["q0002", "q0003"], 262500)])
 
 
-def make(quotas=(2, 1, 3)):
+def make():
     led = Ledger({a: 1000 for a in AGENTS})
-    return led, QuestionBoard(demo_bank(quotas), led)
+    return led, JobBoard(demo_bank(), led)
 
 
 def big_board(n=12):
-    qs = [Question(f"q{i:04d}", f"question {i}?", [str(i)], "2hop", 1000 * i, 2, "k00")
+    qs = [Question(f"q{i:04d}", f"question {i}?", [str(i)], "2hop", 1000 * i, "k00")
           for i in range(1, n + 1)]
+    jobs = [Job(f"j{i:04d}", [f"q{i:04d}"], 1000 * i) for i in range(1, n + 1)]
     led = Ledger({a: 1000 for a in AGENTS})
-    return QuestionBoard(QuestionBank(qs), led)
+    return JobBoard(QuestionBank(qs, jobs), led)
 
 
-# ---------------- quota accounting ----------------
+# ---------------- claiming ----------------
 
-def test_remaining_starts_at_quota_and_total_units_matches():
+def test_total_units_counts_job_membership_not_questions():
     _, b = make()
-    assert b.remaining == {"q0001": 2, "q0002": 1, "q0003": 3}
-    assert b.bank.total_units() == 6
+    assert b.bank.total_units() == 4          # q0002 is posted in both jobs
 
 
-def test_claim_decrements_remaining_and_records_a_strike():
+def test_claim_takes_the_job_off_the_board_and_records_a_strike():
     _, b = make()
-    q = b.claim("agent_1", "q0001", 1)
-    assert q.qid == "q0001" and q.price == 63000
-    assert b.remaining["q0001"] == 1
-    assert b.strikes[("q0001", "agent_1")] == 1
-    assert [c.agent for c in b.active["q0001"]] == ["agent_1"]
-    assert b.active["q0001"][0].round == 1
+    job = b.claim("agent_1", "j0001", 1)
+    assert job.jid == "j0001" and job.qids == ["q0001", "q0002"]
+    assert b.active["j0001"].agent == "agent_1" and b.active["j0001"].round == 1
+    assert b.strikes[("j0001", "agent_1")] == 1
+    assert [j.jid for j in b.open_jobs()] == ["j0002"]
 
 
-def test_claim_fails_when_no_units_remain():
+def test_a_job_holds_only_one_claimant_at_a_time():
     _, b = make()
-    b.claim("agent_1", "q0002", 1)
-    assert b.remaining["q0002"] == 0
-    with pytest.raises(BoardError):
-        b.claim("agent_2", "q0002", 1)
-
-
-def test_expiry_returns_the_unit_to_the_pool_but_keeps_the_strike():
-    _, b = make()
-    b.claim("agent_1", "q0001", 1)
-    assert b.expire_claims(5, ttl=8) == []          # not old enough yet
-    assert b.expire_claims(10, ttl=8) == ["q0001"]
-    assert b.remaining["q0001"] == 2                # demand restored
-    assert b.active["q0001"] == []
-    assert b.strikes[("q0001", "agent_1")] == 1     # attempt still spent
-
-
-def test_two_strikes_close_the_question_to_that_agent_only():
-    _, b = make()
-    b.claim("agent_1", "q0001", 1)
-    b.expire_claims(10, ttl=8)
-    b.claim("agent_1", "q0001", 11)
-    b.expire_claims(20, ttl=8)
-    assert b.strikes[("q0001", "agent_1")] == 2
+    b.claim("agent_1", "j0001", 1)
     with pytest.raises(BoardError) as e:
-        b.claim("agent_1", "q0001", 21)
+        b.claim("agent_2", "j0001", 1)
+    assert "another agent" in str(e.value)
+    with pytest.raises(BoardError) as e:
+        b.claim("agent_1", "j0001", 1)
+    assert "already hold" in str(e.value)
+
+
+def test_expiry_returns_the_job_to_the_pool_but_keeps_the_strike():
+    _, b = make()
+    b.claim("agent_1", "j0001", 1)
+    assert b.expire_claims(20, ttl=20) == []          # not old enough yet
+    assert b.expire_claims(22, ttl=20) == ["j0001"]
+    assert "j0001" in {j.jid for j in b.open_jobs()}  # demand restored
+    assert b.active == {}
+    assert b.strikes[("j0001", "agent_1")] == 1       # attempt still spent
+
+
+def test_two_strikes_close_the_job_to_that_agent_only():
+    _, b = make()
+    b.claim("agent_1", "j0001", 1)
+    b.expire_claims(22, ttl=20)
+    b.claim("agent_1", "j0001", 23)
+    b.expire_claims(44, ttl=20)
+    assert b.strikes[("j0001", "agent_1")] == 2
+    with pytest.raises(BoardError) as e:
+        b.claim("agent_1", "j0001", 45)
     assert "twice" in str(e.value)
-    b.claim("agent_2", "q0001", 21)                 # other agents unaffected
-    assert b.remaining["q0001"] == 1
+    b.claim("agent_2", "j0001", 45)                   # other agents unaffected
 
 
-def test_an_agent_may_not_hold_two_active_claims_on_one_question():
-    _, b = make()
-    b.claim("agent_1", "q0003", 1)
-    with pytest.raises(BoardError) as e:
-        b.claim("agent_1", "q0003", 1)
-    assert "already" in str(e.value)
-    assert b.remaining["q0003"] == 2
-
-
-def test_several_agents_hold_the_same_question_concurrently_when_quota_allows():
-    _, b = make()
-    b.claim("agent_1", "q0003", 1)
-    b.claim("agent_2", "q0003", 1)
-    b.claim("agent_3", "q0003", 2)
-    assert b.remaining["q0003"] == 0
-    assert sorted(c.agent for c in b.active["q0003"]) == AGENTS
-
-
-def test_claim_of_unknown_qid_raises_board_error():
+def test_claim_of_unknown_jid_raises_board_error():
     _, b = make()
     with pytest.raises(BoardError):
-        b.claim("agent_1", "q9999", 1)
+        b.claim("agent_1", "j9999", 1)
+
+
+def test_a_delivered_job_cannot_be_claimed_again():
+    _, b = make()
+    b.claim("agent_1", "j0001", 1)
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 1)
+    with pytest.raises(BoardError) as e:
+        b.claim("agent_2", "j0001", 2)
+    assert "closed" in str(e.value)
 
 
 # ---------------- delivery ----------------
 
-def test_delivery_grades_mints_and_consumes_the_unit():
+def test_delivery_grades_every_member_and_mints_once():
     led, b = make()
-    b.claim("agent_1", "q0001", 1)
-    r = b.deliver("agent_1", "q0001", "Paris", 3)
-    assert (r.qid, r.agent, r.submitted, r.round) == ("q0001", "agent_1", "Paris", 3)
-    assert r.f1 == 1.0 and r.em == 1.0 and r.payout == 63000
-    assert led.balance("agent_1") == 1000 + 63000
-    assert led.minted == 63000
-    assert b.remaining["q0001"] == 1                # NOT restored: consumed
-    assert b.active["q0001"] == []
-    assert b.results == [r]
+    b.claim("agent_1", "j0001", 1)
+    rows = b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 3)
+    assert [r.qid for r in rows] == ["q0001", "q0002"]
+    assert all(r.jid == "j0001" and r.agent == "agent_1" and r.round == 3 for r in rows)
+    assert all(r.f1 == 1.0 and r.em == 1.0 for r in rows)
+    assert [r.payout for r in rows] == [63000, 105000]
+    assert led.balance("agent_1") == 1000 + 168000
+    assert led.minted == 168000                 # ONE settlement for the job
+    assert b.closed == {"j0001"} and b.active == {}
+    assert b.results == rows
 
 
-def test_partial_credit_is_rounded_price_times_f1():
+def test_partial_credit_is_rounded_price_times_f1_per_question():
     led, b = make()
-    b.claim("agent_1", "q0002", 1)
-    r = b.deliver("agent_1", "q0002", "the Loire river", 1)
-    assert 0.0 < r.f1 < 1.0 and r.em == 0.0
-    assert r.payout == round(105000 * r.f1) == led.balance("agent_1") - 1000
+    b.claim("agent_1", "j0001", 1)
+    rows = b.deliver("agent_1", "j0001",
+                     {"q0001": "Paris", "q0002": "the Loire river"}, 1)
+    assert rows[0].f1 == 1.0
+    assert 0.0 < rows[1].f1 < 1.0 and rows[1].em == 0.0
+    assert rows[1].payout == round(105000 * rows[1].f1)
+    assert led.balance("agent_1") - 1000 == sum(r.payout for r in rows)
 
 
-def test_a_worthless_answer_still_consumes_the_unit_and_mints_nothing():
+def test_a_worthless_job_still_closes_and_mints_nothing():
     led, b = make()
-    b.claim("agent_1", "q0001", 1)
-    r = b.deliver("agent_1", "q0001", "zzz", 1)
-    assert r.f1 == 0.0 and r.payout == 0
-    assert led.minted == 0 and b.remaining["q0001"] == 1
+    b.claim("agent_1", "j0001", 1)
+    rows = b.deliver("agent_1", "j0001", {"q0001": "zzz", "q0002": "zzz"}, 1)
+    assert all(r.f1 == 0.0 and r.payout == 0 for r in rows)
+    assert led.minted == 0 and b.closed == {"j0001"}
+
+
+def test_an_incomplete_map_is_rejected_and_the_claim_survives():
+    led, b = make()
+    b.claim("agent_1", "j0001", 1)
+    with pytest.raises(BoardError) as e:
+        b.deliver("agent_1", "j0001", {"q0001": "Paris"}, 1)
+    assert "q0002" in str(e.value) and "STILL YOURS" in str(e.value)
+    assert b.active["j0001"].agent == "agent_1"     # attempt NOT consumed
+    assert b.results == [] and led.minted == 0
+    rows = b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 2)
+    assert len(rows) == 2                           # the retry is the one attempt
+
+
+def test_a_map_naming_a_question_outside_the_job_is_rejected_free():
+    _, b = make()
+    b.claim("agent_1", "j0001", 1)
+    with pytest.raises(BoardError) as e:
+        b.deliver("agent_1", "j0001",
+                  {"q0001": "Paris", "q0002": "Loire", "q0003": "4"}, 1)
+    assert "q0003" in str(e.value)
+    assert b.active["j0001"].agent == "agent_1"
+    assert b.strikes[("j0001", "agent_1")] == 1
 
 
 def test_delivery_needs_an_active_claim_by_that_agent():
     _, b = make()
+    full = {"q0001": "Paris", "q0002": "Loire"}
     with pytest.raises(BoardError):
-        b.deliver("agent_1", "q0001", "Paris", 1)
-    b.claim("agent_1", "q0001", 1)
+        b.deliver("agent_1", "j0001", full, 1)
+    b.claim("agent_1", "j0001", 1)
     with pytest.raises(BoardError):
-        b.deliver("agent_2", "q0001", "Paris", 1)
-    b.deliver("agent_1", "q0001", "Paris", 1)
+        b.deliver("agent_2", "j0001", full, 1)
+    b.deliver("agent_1", "j0001", full, 1)
     with pytest.raises(BoardError):                 # claim was consumed
-        b.deliver("agent_1", "q0001", "Paris", 2)
+        b.deliver("agent_1", "j0001", full, 2)
 
 
 def test_delivery_defaults_to_the_last_round_the_board_has_seen():
     _, b = make()
-    b.claim("agent_1", "q0001", 7)
-    assert b.deliver("agent_1", "q0001", "Paris").round == 7
+    b.claim("agent_1", "j0001", 7)
+    rows = b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"})
+    assert all(r.round == 7 for r in rows)
 
 
-def test_a_question_may_be_delivered_by_several_agents_up_to_its_quota():
+def test_a_question_in_two_jobs_is_paid_under_each_of_them():
     led, b = make()
-    for agent in ("agent_1", "agent_2", "agent_3"):
-        b.claim(agent, "q0003", 1)
-        b.deliver(agent, "q0003", "4", 1)
-    assert len(b.results) == 3
-    assert b.remaining["q0003"] == 0
-    assert led.minted == 3 * 157500
+    b.claim("agent_1", "j0001", 1)
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 1)
+    b.claim("agent_2", "j0002", 1)
+    b.deliver("agent_2", "j0002", {"q0002": "Loire", "q0003": "4"}, 1)
+    paid = [(r.jid, r.qid, r.payout) for r in b.results if r.qid == "q0002"]
+    assert paid == [("j0001", "q0002", 105000), ("j0002", "q0002", 105000)]
 
 
-# ---------------- open questions / done ----------------
+# ---------------- listing / done ----------------
 
-def test_open_questions_drop_exhausted_ones():
+def test_open_jobs_drop_claimed_and_closed_ones():
     _, b = make()
-    b.claim("agent_1", "q0002", 1)
-    assert [q.qid for q in b.open_questions()] == ["q0001", "q0003"]
+    b.claim("agent_1", "j0001", 1)
+    assert [j.jid for j in b.open_jobs()] == ["j0002"]
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 1)
+    assert [j.jid for j in b.open_jobs()] == ["j0002"]
 
 
-def test_open_questions_without_viewer_are_in_qid_order():
+def test_open_jobs_without_viewer_are_in_jid_order():
     b = big_board()
-    assert [q.qid for q in b.open_questions()] == sorted(b.remaining)
+    assert [j.jid for j in b.open_jobs()] == sorted(b.bank.jobs)
 
 
 def test_per_viewer_shuffle_is_stable_and_differs_between_viewers():
     b = big_board()
-    a1 = [q.qid for q in b.open_questions("agent_1")]
-    a2 = [q.qid for q in b.open_questions("agent_2")]
-    assert sorted(a1) == sorted(a2) == sorted(b.remaining)   # same SET
-    assert a1 != a2                                          # different order
-    assert a1 == [q.qid for q in b.open_questions("agent_1")]  # stable
-    assert a1 == sorted(a1, key=lambda q: zlib.crc32(f"agent_1:{q}".encode()))
+    a1 = [j.jid for j in b.open_jobs("agent_1")]
+    a2 = [j.jid for j in b.open_jobs("agent_2")]
+    assert sorted(a1) == sorted(a2) == sorted(b.bank.jobs)    # same SET
+    assert a1 != a2                                           # different order
+    assert a1 == [j.jid for j in b.open_jobs("agent_1")]      # stable
+    assert a1 == sorted(a1, key=lambda j: zlib.crc32(f"agent_1:{j}".encode()))
 
 
-def test_all_done_when_every_unit_is_delivered():
-    _, b = make(quotas=(1, 1, 1))
+def test_all_done_when_every_job_is_closed():
+    _, b = make()
     assert not b.all_done()
-    for qid, ans in (("q0001", "Paris"), ("q0002", "Loire"), ("q0003", "4")):
-        b.claim("agent_1", qid, 1)
-        assert not b.all_done()          # a held claim is not a finished board
-        b.deliver("agent_1", qid, ans, 1)
+    b.claim("agent_1", "j0001", 1)
+    assert not b.all_done()            # a held claim is not a finished board
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 1)
+    assert not b.all_done()
+    b.claim("agent_1", "j0002", 1)
+    b.deliver("agent_1", "j0002", {"q0002": "Loire", "q0003": "4"}, 1)
     assert b.all_done()
-
-
-def test_all_done_is_false_while_a_unit_is_only_claimed():
-    _, b = make(quotas=(1, 1, 1))
-    for qid in ("q0001", "q0002", "q0003"):
-        b.claim("agent_1", qid, 1)
-    assert all(v == 0 for v in b.remaining.values())
-    assert not b.all_done()
 
 
 # ---------------- reporting / checkpoint ----------------
 
 def test_results_json_is_one_row_per_delivered_unit():
     _, b = make()
-    b.claim("agent_1", "q0001", 1)
-    b.deliver("agent_1", "q0001", "Paris", 2)
+    b.claim("agent_1", "j0001", 1)
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "zzz"}, 2)
     rows = b.results_json()
     assert json.loads(json.dumps(rows)) == rows
-    assert rows[0]["qid"] == "q0001" and rows[0]["agent"] == "agent_1"
+    assert len(rows) == 2
+    assert rows[0]["qid"] == "q0001" and rows[0]["jid"] == "j0001"
+    assert rows[0]["agent"] == "agent_1" and rows[0]["round"] == 2
     assert rows[0]["difficulty"] == "2hop" and rows[0]["topic"] == "k01"
     assert rows[0]["price"] == 63000 and rows[0]["payout"] == 63000
-    assert rows[0]["f1"] == 1.0 and rows[0]["em"] == 1.0 and rows[0]["round"] == 2
+    assert rows[1]["f1"] == 0.0 and rows[1]["payout"] == 0
 
 
 def test_state_roundtrips_through_json():
     _, b = make()
-    b.claim("agent_1", "q0001", 1)
-    b.deliver("agent_1", "q0001", "Paris", 1)
-    b.claim("agent_2", "q0003", 4)
+    b.claim("agent_1", "j0001", 1)
+    b.deliver("agent_1", "j0001", {"q0001": "Paris", "q0002": "Loire"}, 1)
+    b.claim("agent_2", "j0002", 4)
     state = json.loads(json.dumps(b.to_state()))
 
     led2 = Ledger({a: 1000 for a in AGENTS})
-    fresh = QuestionBoard(demo_bank(), led2)
+    fresh = JobBoard(demo_bank(), led2)
     fresh.from_state(state)
-    assert fresh.remaining == b.remaining
+    assert fresh.closed == b.closed
     assert fresh.strikes == b.strikes
     assert fresh.results_json() == b.results_json()
-    assert [(c.agent, c.round) for c in fresh.active["q0003"]] == [("agent_2", 4)]
+    assert (fresh.active["j0002"].agent, fresh.active["j0002"].round) == ("agent_2", 4)
     with pytest.raises(BoardError):
-        fresh.claim("agent_2", "q0003", 4)      # restored claim is really active
+        fresh.claim("agent_3", "j0002", 4)      # restored claim is really active

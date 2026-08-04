@@ -1,15 +1,15 @@
 from ca.config import CONFIGS
 from ca.skills import role_skill
 
-_HIRE_HEADING = "### Demo: hiring another agent"
+_HIRE_HEADING = "### Demo: splitting a claimed job across peers"
 _MULTI = [c for c in CONFIGS if CONFIGS[c].n_agents > 1]
 
 
 def test_worker_demo_matches_config_permissions():
     c0 = role_skill(CONFIGS["C0"], "agent_1")
-    assert "claim_question" in c0 and "retrieve" in c0          # full market demo
+    assert "claim_job" in c0 and "retrieve" in c0               # full market demo
     c1 = role_skill(CONFIGS["C1"], "agent_1")
-    assert "claim_question" not in c1                            # demand monopoly
+    assert "claim_job" not in c1                                 # demand monopoly
     assert "retrieve" in c1                                      # but retrieval is free to all
     c3 = role_skill(CONFIGS["C3"], "agent_1")
     assert "counter_offer" not in c3                             # bargaining disabled
@@ -30,27 +30,45 @@ def test_v3_tree_verbs_are_gone_everywhere():
         for who in ("agent_1", "hub"):
             s = role_skill(CONFIGS[name], who)
             for dead in ("decompose", "recall_solutions", "claim_task", "list_tasks",
-                         "leaf", "subtree", "JSON", "package"):
+                         "leaf", "subtree", "package"):
                 assert dead not in s, (name, who, dead)
 
 
-def test_world_demos_teach_list_claim_solve_deliver_one_answer():
+def test_world_demos_teach_list_claim_solve_deliver_one_map():
     for s in (role_skill(CONFIGS["C0"], "agent_1"), role_skill(CONFIGS["C1"], "hub")):
-        assert "list_questions" in s and 'claim_question(qid="q0042")' in s
-        assert 'deliver_work(target_id="q0042", content="Richard Strauss")' in s
+        assert "list_jobs" in s and 'claim_job(jid="j0007")' in s
+        assert 'deliver_work(target_id="j0007"' in s
+        assert '"q0042": "Richard Strauss"' in s
         assert "SHORT ANSWER" in s or "short answer" in s
 
 
-def test_world_demos_explain_the_quota_and_the_two_claim_limit():
+def test_world_demos_explain_all_or_nothing_delivery():
     s = role_skill(CONFIGS["C0"], "agent_1")
-    assert "3 left" in s and "QUOTA" in s
-    assert "TWO claims" in s
+    assert "ALL-OR-NOTHING" in s
+    assert "KEEP YOUR CLAIM" in s
+    assert "ONE graded attempt" in s
+
+
+def test_world_demos_do_the_delegation_arithmetic():
+    """The whole point of v4.1: a job must visibly not fit in one agent."""
+    for s in (role_skill(CONFIGS["C0"], "agent_1"), role_skill(CONFIGS["C1"], "hub")):
+        assert "3 turns" in s or "~24 turns" in s
+        assert "20 rounds" in s
 
 
 def test_world_demos_show_the_auto_recall_on_claim():
     s = role_skill(CONFIGS["C0"], "agent_1")
     assert "memory: stored answer" in s
     assert "GOOD" in s and "LOW QUALITY" in s
+
+
+def test_memory_block_teaches_writing_intermediate_findings():
+    """Spec §9: the agents' own decomposition is the notes they leave."""
+    for name in CONFIGS:
+        s = role_skill(CONFIGS[name], "agent_1")
+        assert "Juanda International" in s, name
+        assert "intermediate findings" in s or "WHAT YOU LEARN ON THE WAY" in s, name
+    assert "COLLECTIVE asset" in role_skill(CONFIGS["C2"], "agent_1")
 
 
 def test_memory_block_is_present_for_every_role_and_config():
@@ -72,10 +90,10 @@ def test_shared_memory_block_only_at_c2():
 
 def test_only_the_demand_monopoly_config_withholds_the_world_demo():
     """C3/C4/C5 have a hub but no demand monopoly: workers there still claim
-    questions and deliver to the WORLD, so they keep the solo demo."""
+    jobs and deliver to the WORLD, so they keep the solo demo."""
     for name in _MULTI:
         s = role_skill(CONFIGS[name], "agent_1")
-        assert ("claim_question" in s) == (CONFIGS[name].world_access == "all"), name
+        assert ("claim_job" in s) == (CONFIGS[name].world_access == "all"), name
 
 
 def test_hub_demo_matches_config_permissions():
@@ -84,7 +102,7 @@ def test_hub_demo_matches_config_permissions():
     assert "set_price" in role_skill(CONFIGS["C3"], "hub")
     c7 = role_skill(CONFIGS["C7"], "agent_1")
     assert "propose_contract" not in c7                          # solo: no contracting demo
-    assert "claim_question" in c7 and "list_questions" in c7      # but a full solo demo
+    assert "claim_job" in c7 and "list_jobs" in c7                # but a full solo demo
 
 
 def test_hub_bottleneck_claim_only_under_demand_centralization():
@@ -105,7 +123,8 @@ def test_workers_are_shown_how_to_hire_wherever_contracting_exists():
 def test_hire_demo_teaches_question_binding_by_qid():
     s = role_skill(CONFIGS["C0"], "agent_1")
     assert "BINDS the contract" in s
-    assert 'propose_contract(to="agent_5", task="q0031", price=120)' in s
+    assert 'propose_contract(to="agent_5", task="q0107", price=120)' in s
+    assert "one contract PER QUESTION" in s
 
 
 def test_contractors_everywhere_are_taught_bound_delivery():
@@ -153,6 +172,7 @@ def test_collective_block_only_at_c6():
     assert "total system balance" in s
     assert "never haggle for margin" in s
     assert "Never duplicate a question" in s
+    assert "Split every claimed job" in s
     for name in CONFIGS:
         if name != "C6":
             assert "### Collective mode" not in role_skill(CONFIGS[name], "agent_1"), name

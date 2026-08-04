@@ -14,7 +14,7 @@ from fixtures import HashEmbedding, demo_bank, demo_infra
 
 from ca.actions import permission_error
 from ca.agent import Agent, ScriptedPolicy
-from ca.bank import Question, QuestionBank
+from ca.bank import Job, Question, QuestionBank
 from ca.config import CONFIGS, ExperimentConfig
 from ca.context import render_turn
 from ca.infra import Infra
@@ -26,11 +26,18 @@ from ca.scheduler import Scheduler
 DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
 
 
-def paris_bank(n=1, quota=1) -> QuestionBank:
-    """n copies of one easy question, so payout arithmetic stays trivial."""
-    return QuestionBank([
-        Question(f"q{i:04d}", "capital of France?", ["Paris"], "2hop", 100, quota, "k00")
-        for i in range(1, n + 1)])
+def paris_bank(n=1, repeats=1) -> QuestionBank:
+    """n easy questions, each posted in `repeats` single-question jobs, so the
+    payout arithmetic stays trivial and a repeat is simply the same qid turning
+    up in more than one job."""
+    qs = [Question(f"q{i:04d}", "capital of France?", ["Paris"], "2hop", 100, "k00")
+          for i in range(1, n + 1)]
+    jobs, k = [], 0
+    for i in range(1, n + 1):
+        for _ in range(repeats):
+            k += 1
+            jobs.append(Job(f"j{k:04d}", [f"q{i:04d}"], 100))
+    return QuestionBank(qs, jobs)
 
 
 def build(level, scripts, tmp_path, bank=None, seed_capital_total=1000,
@@ -59,10 +66,10 @@ def _results(trace, agent, action):
 
 def test_solo_answer_flow_C7(tmp_path):
     scripts = {"agent_1": [
-        ("list_questions", {}),
-        ("claim_question", {"qid": "q0001"}),
+        ("list_jobs", {}),
+        ("claim_job", {"jid": "j0001"}),
         ("retrieve", {"query": "capital of France"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
     ]}
     infra, sched = build("C7", scripts, tmp_path)
     summary = sched.run()
@@ -72,7 +79,7 @@ def test_solo_answer_flow_C7(tmp_path):
     assert summary["conservation_ok"] is True
     # solving turns: retrieve + deliver_work = 2 * 15 tokens
     assert summary["tokens"]["agent_1"]["solving"] == 30
-    # admin turns: list_questions + claim_question = 2 * 15 tokens
+    # admin turns: list_jobs + claim_job = 2 * 15 tokens
     assert summary["tokens"]["agent_1"]["admin"] == 30
     assert len(_trace(tmp_path)) >= 4
     m = compute_metrics(summary)
@@ -81,21 +88,21 @@ def test_solo_answer_flow_C7(tmp_path):
     assert m["coordination_overhead"] == pytest.approx(0.5)
 
 
-def test_quota_lets_two_agents_be_paid_for_the_same_question(tmp_path):
-    """The v4 repeat: one question with quota 2 is claimed and delivered by two
-    different agents, and the WORLD pays both."""
+def test_the_same_question_in_two_jobs_pays_both_agents(tmp_path):
+    """The v4.1 repeat: q0001 is posted in two jobs, two agents each take one,
+    and the WORLD pays both."""
     scripts = {
-        "agent_1": [("claim_question", {"qid": "q0001"}),
-                    ("deliver_work", {"target_id": "q0001", "content": "Paris"})],
-        "agent_2": [("claim_question", {"qid": "q0001"}),
-                    ("deliver_work", {"target_id": "q0001", "content": "Paris"})],
+        "agent_1": [("claim_job", {"jid": "j0001"}),
+                    ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'})],
+        "agent_2": [("claim_job", {"jid": "j0002"}),
+                    ("deliver_work", {"target_id": "j0002", "content": '{"q0001": "Paris"}'})],
     }
-    infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(1, quota=2),
+    infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(1, repeats=2),
                          max_rounds=3)
     summary = sched.run()
     assert {d["agent"] for d in summary["deliveries"]} == {"agent_1", "agent_2"}
     assert sum(d["payout"] for d in summary["deliveries"]) == 200
-    assert infra.board.remaining["q0001"] == 0
+    assert infra.board.open_jobs() == []
     assert compute_metrics(summary)["demand_absorbed"] == 1.0
     assert summary["conservation_ok"] is True
 
@@ -114,12 +121,12 @@ def test_subcontract_flow_C1(tmp_path):
     agent_1 delivers the contract, hub delivers the answer to the WORLD."""
     scripts = {
         "hub": [
-            ("claim_question", {"qid": "q0001"}),
+            ("claim_job", {"jid": "j0001"}),
             ("propose_contract", {"to": "agent_1", "task": "find the capital of France",
                                   "price": 40}),
             ("check_balance", {}),                      # waits while agent_1 works
             ("check_balance", {}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+            ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
         ],
         "agent_1": [
             ("check_balance", {}),                      # waits for the hub's claim (r1)
@@ -140,7 +147,7 @@ def test_subcontract_flow_C1(tmp_path):
     assert summary["balances"]["hub"] == 125 - 75 - 40 + 100
     assert summary["balances"]["agent_1"] == 125 - 75 + 40
     # workers cannot reach the board at C1
-    assert permission_error(infra, "agent_1", "claim_question", {"qid": "q0001"}) is not None
+    assert permission_error(infra, "agent_1", "claim_job", {"qid": "q0001"}) is not None
 
 
 def test_question_bound_subcontract_flow_C1(tmp_path):
@@ -149,12 +156,12 @@ def test_question_bound_subcontract_flow_C1(tmp_path):
     claim of the same question hands it straight back."""
     scripts = {
         "hub": [
-            ("claim_question", {"qid": "q0001"}),
+            ("claim_job", {"jid": "j0001"}),
             ("propose_contract", {"to": "agent_1", "task": "q0001", "price": 40}),
             ("check_balance", {}),
             ("check_balance", {}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-            ("claim_question", {"qid": "q0001"}),        # second unit of the quota
+            ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
+            ("claim_job", {"jid": "j0002"}),        # the same question, second job
         ],
         "agent_1": [
             ("check_balance", {}),
@@ -163,7 +170,7 @@ def test_question_bound_subcontract_flow_C1(tmp_path):
             ("deliver_work", {"target_id": "c0001", "content": "Paris"}),
         ],
     }
-    infra, sched = build("C1", scripts, tmp_path, bank=paris_bank(1, quota=2),
+    infra, sched = build("C1", scripts, tmp_path, bank=paris_bank(1, repeats=2),
                          max_rounds=6)
     summary = sched.run()
     trace = _trace(tmp_path)
@@ -175,7 +182,7 @@ def test_question_bound_subcontract_flow_C1(tmp_path):
     assert infra.memory.answer("agent_1", "q0001")["f1"] is None       # ungraded
     assert infra.memory.answer("hub", "q0001")["f1"] == 1.0            # graded by the WORLD later
 
-    reclaim = _results(trace, "hub", "claim_question")[1]
+    reclaim = _results(trace, "hub", "claim_job")[1]
     assert "memory: stored answer" in reclaim and "Paris" in reclaim
     assert summary["memory"]["hub"]["n_memory_hits"] == 1
     assert infra.ledger.escrow == {} and summary["conservation_ok"] is True
@@ -202,8 +209,8 @@ def test_central_pricing_flow_C3(tmp_path):
             ("deliver_work", {"target_id": "c0001", "content": "Paris"}),
         ],
         "agent_3": [                                          # unrelated worker, direct WORLD
-            ("claim_question", {"qid": "q0001"}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+            ("claim_job", {"jid": "j0001"}),
+            ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
         ],
     }
     infra, sched = build("C3", scripts, tmp_path, bank=paris_bank(2), max_rounds=6)
@@ -217,9 +224,9 @@ def test_central_pricing_flow_C3(tmp_path):
     assert _results(trace, "agent_1", "counter_offer")[0].startswith("ERROR")
 
     # ... while agent_3's ordinary WORLD claim/deliver went through untouched
-    assert not _results(trace, "agent_3", "claim_question")[0].startswith("ERROR")
+    assert not _results(trace, "agent_3", "claim_job")[0].startswith("ERROR")
     assert not _results(trace, "agent_3", "deliver_work")[0].startswith("ERROR")
-    assert infra.board.remaining == {"q0001": 0, "q0002": 1}
+    assert [j.jid for j in infra.board.open_jobs()] == ["j0002"]
     assert infra.ledger.escrow == {} and summary["conservation_ok"] is True
 
 
@@ -364,24 +371,24 @@ def test_expired_claim_returns_the_unit_but_keeps_the_strike(tmp_path):
     attempts. After the second, the question is closed to it for good."""
     scripts = {
         "agent_1": [
-            ("claim_question", {"qid": "q0001"}),   # r1: claimed, then idles
+            ("claim_job", {"jid": "j0001"}),   # r1: claimed, then idles
             ("check_balance", {}),
             ("check_balance", {}),
             ("check_balance", {}),
-            ("claim_question", {"qid": "q0001"}),   # r5: strike 2 (unit is back)
+            ("claim_job", {"jid": "j0001"}),   # r5: strike 2 (unit is back)
             ("check_balance", {}),
             ("check_balance", {}),
             ("check_balance", {}),
-            ("claim_question", {"qid": "q0001"}),   # r9: refused, two strikes
+            ("claim_job", {"jid": "j0001"}),   # r9: refused, two strikes
         ],
     }
     infra, sched = build("C0", scripts, tmp_path, claim_ttl=2, max_rounds=9)
     summary = sched.run()
-    claims = _results(_trace(tmp_path), "agent_1", "claim_question")
+    claims = _results(_trace(tmp_path), "agent_1", "claim_job")
     assert not claims[0].startswith("ERROR")
     assert not claims[1].startswith("ERROR")        # the expired unit was reusable
     assert claims[2].startswith("ERROR") and "twice" in claims[2]
-    assert infra.board.strikes[("q0001", "agent_1")] == 2
+    assert infra.board.strikes[("j0001", "agent_1")] == 2
     assert summary["conservation_ok"] is True
 
 
@@ -399,17 +406,17 @@ def test_adversarial_scripted(tmp_path):
             ("accept_contract", {"contract_id": "c0001"}),
         ],
         "agent_3": [
-            ("claim_question", {"qid": "q0001"}),                        # claims, then idles
+            ("claim_job", {"jid": "j0001"}),                        # claims, then idles
         ],
         "agent_4": [
-            ("claim_question", {"qid": "q0002"}),
-            ("deliver_work", {"target_id": "q0002", "content": "Paris"}),
-            ("deliver_work", {"target_id": "q0002", "content": "Paris"}),  # no claim left
+            ("claim_job", {"jid": "j0002"}),
+            ("deliver_work", {"target_id": "j0002", "content": '{"q0002": "Paris"}'}),
+            ("deliver_work", {"target_id": "j0002", "content": '{"q0002": "Paris"}'}),  # no claim left
         ],
         "agent_5": [
             ("check_balance", {}),
-            ("claim_question", {"qid": "q0002"}),                        # quota exhausted
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),  # never claimed it
+            ("claim_job", {"jid": "j0002"}),                        # quota exhausted
+            ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),  # never claimed it
         ],
     }
     infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(2), claim_ttl=2)
@@ -420,12 +427,12 @@ def test_adversarial_scripted(tmp_path):
     assert _results(trace, "agent_1", "cancel_contract")[0].startswith("ERROR")
     delivers = _results(trace, "agent_4", "deliver_work")
     assert not delivers[0].startswith("ERROR") and delivers[1].startswith("ERROR")
-    assert _results(trace, "agent_5", "claim_question")[0].startswith("ERROR")
+    assert _results(trace, "agent_5", "claim_job")[0].startswith("ERROR")
     assert _results(trace, "agent_5", "deliver_work")[0].startswith("ERROR")
 
-    # the hoarded claim was returned to the pool; the answered unit stays spent
-    assert infra.board.remaining["q0001"] == 1 and infra.board.active["q0001"] == []
-    assert infra.board.remaining["q0002"] == 0
+    # the hoarded claim was returned to the pool; the answered job stays closed
+    assert [j.jid for j in infra.board.open_jobs()] == ["j0001"]
+    assert "j0001" not in infra.board.active
     assert [r.agent for r in infra.board.results] == ["agent_4"]
     # the honest contract survived the payer's cancel attempt, still funded
     assert infra.contracts.get("c0001").status == "accepted"
@@ -438,14 +445,14 @@ def test_adversarial_scripted(tmp_path):
 def _cross_agent_scripts():
     return {
         "agent_1": [
-            ("claim_question", {"qid": "q0001"}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+            ("claim_job", {"jid": "j0001"}),
+            ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
             ("check_balance", {}),
         ],
         "agent_2": [
             ("check_balance", {}),
             ("check_balance", {}),
-            ("claim_question", {"qid": "q0001"}),      # r3: after agent_1's delivery
+            ("claim_job", {"jid": "j0002"}),      # r3: the same q0001, after agent_1's delivery
         ],
     }
 
@@ -455,9 +462,9 @@ def test_shared_memory_reuse_across_agents_C2(tmp_path):
     SAME question one round later and is handed agent_1's answer, without ever
     doing any work of its own."""
     infra, sched = build("C2", _cross_agent_scripts(), tmp_path,
-                         bank=paris_bank(1, quota=2), max_rounds=3)
+                         bank=paris_bank(1, repeats=2), max_rounds=3)
     summary = sched.run()
-    out = _results(_trace(tmp_path), "agent_2", "claim_question")[0]
+    out = _results(_trace(tmp_path), "agent_2", "claim_job")[0]
     assert "memory: stored answer" in out
     assert '"Paris" (F1 1.00)' in out and "GOOD" in out
     assert summary["memory"]["agent_2"]["n_memory_hits"] == 1
@@ -468,9 +475,9 @@ def test_private_memory_does_not_leak_across_agents_C0(tmp_path):
     """The C0 control for the test above: the SAME script at C0 hands agent_2
     a bare claim line -- agent_1's answer is invisible to it."""
     infra, sched = build("C0", _cross_agent_scripts(), tmp_path,
-                         bank=paris_bank(1, quota=2), max_rounds=3)
+                         bank=paris_bank(1, repeats=2), max_rounds=3)
     summary = sched.run()
-    out = _results(_trace(tmp_path), "agent_2", "claim_question")[0]
+    out = _results(_trace(tmp_path), "agent_2", "claim_job")[0]
     assert "memory:" not in out and "Paris" not in out.split("?")[-1]
     assert summary["memory"]["agent_2"]["n_memory_hits"] == 0
     assert infra.memory.answer("agent_2", "q0001") is None
@@ -482,16 +489,16 @@ def test_reuse_and_improvement_show_up_in_the_metrics(tmp_path):
     low-quality answer), and beats it: memory_hit_rate and improvement_rate
     both move."""
     scripts = {"agent_1": [
-        ("claim_question", {"qid": "q0001"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Lyon"}),
-        ("claim_question", {"qid": "q0001"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("claim_job", {"jid": "j0001"}),
+        ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Lyon"}'}),
+        ("claim_job", {"jid": "j0002"}),
+        ("deliver_work", {"target_id": "j0002", "content": '{"q0001": "Paris"}'}),
     ]}
-    infra, sched = build("C7", scripts, tmp_path, bank=paris_bank(1, quota=2),
+    infra, sched = build("C7", scripts, tmp_path, bank=paris_bank(1, repeats=2),
                          max_rounds=5)
     summary = sched.run()
     trace = _trace(tmp_path)
-    assert "LOW QUALITY" in _results(trace, "agent_1", "claim_question")[1]
+    assert "LOW QUALITY" in _results(trace, "agent_1", "claim_job")[1]
     assert "IMPROVED on your stored F1 0.00" in _results(trace, "agent_1", "deliver_work")[1]
     m = compute_metrics(summary)
     assert m["memory_hit_rate"] == pytest.approx(1 / 2)
@@ -529,14 +536,14 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
     """T28: every round appends one cumulative system snapshot to
     timeseries.jsonl; the last line agrees with summary.json / metrics."""
     scripts = {"agent_1": [
-        ("list_questions", {}),
-        ("claim_question", {"qid": "q0001"}),
+        ("list_jobs", {}),
+        ("claim_job", {"jid": "j0001"}),
         ("retrieve", {"query": "capital of France"}),
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ("claim_question", {"qid": "q0001"}),        # memory hit
-        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("deliver_work", {"target_id": "j0001", "content": '{"q0001": "Paris"}'}),
+        ("claim_job", {"jid": "j0002"}),        # memory hit
+        ("deliver_work", {"target_id": "j0002", "content": '{"q0001": "Paris"}'}),
     ]}
-    infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(1, quota=2),
+    infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(1, repeats=2),
                          max_rounds=6)
     summary = sched.run()
     lines = [json.loads(l) for l in open(tmp_path / "timeseries.jsonl")]
@@ -553,8 +560,9 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
                 "n_claims", "n_memory_hits", "demand_absorbed"):
         vals = [s[key] for s in lines]
         assert vals == sorted(vals), key
-    assert [s["board"]["delivered"] for s in lines] == [0, 0, 0, 1, 1, 2]
-    assert [s["remaining_units"] for s in lines] == [2, 1, 1, 1, 0, 0]
+    assert [s["board"]["closed"] for s in lines] == [0, 0, 0, 1, 1, 2]
+    # a unit leaves the pool when its JOB closes, not when it is claimed
+    assert [s["remaining_units"] for s in lines] == [2, 2, 2, 1, 1, 0]
 
     last = lines[-1]
     m = compute_metrics(summary)
@@ -584,7 +592,7 @@ def test_timeseries_line_count_matches_max_rounds_run(tmp_path):
     summary = sched.run()
     lines = [json.loads(l) for l in open(tmp_path / "timeseries.jsonl")]
     assert len(lines) == summary["rounds_used"] == 10
-    assert lines[-1]["board"] == {"open": 1, "active_claims": 0, "delivered": 0}
+    assert lines[-1]["board"] == {"open": 1, "active_claims": 0, "closed": 0}
 
 
 def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
@@ -624,20 +632,20 @@ def test_specialization_is_computable_from_a_real_run(tmp_path):
     """Topics never reach the agents, but every delivery row carries one, so
     the metric works straight off the summary."""
     scripts = {
-        "agent_1": [("claim_question", {"qid": "q0001"}),        # k01
-                    ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-                    ("claim_question", {"qid": "q0002"}),        # k01
-                    ("deliver_work", {"target_id": "q0002", "content": "Loire"})],
-        "agent_2": [("claim_question", {"qid": "q0003"}),        # k07
-                    ("deliver_work", {"target_id": "q0003", "content": "4"}),
-                    ("claim_question", {"qid": "q0005"}),        # k02
-                    ("deliver_work", {"target_id": "q0005", "content": "sedimentary"})],
+        "agent_1": [("claim_job", {"jid": "j0001"}),        # k01, k01, k07
+                    ("deliver_work", {"target_id": "j0001",
+                                      "content": '{"q0001": "Paris", "q0002": "Loire", '
+                                                 '"q0003": "4"}'})],
+        "agent_2": [("claim_job", {"jid": "j0003"}),        # k02 only
+                    ("deliver_work", {"target_id": "j0003",
+                                      "content": '{"q0005": "sedimentary"}'})],
     }
     infra, sched = build("C0", scripts, tmp_path, bank=demo_bank(), max_rounds=4)
     summary = sched.run()
     m = compute_metrics(summary)
-    assert m["specialization"]["agent_1"] == pytest.approx(1.0)   # both in k01
-    assert m["specialization"]["agent_2"] == pytest.approx(0.5)   # k07 + k02
-    assert m["mean_specialization"] == pytest.approx(0.75)
-    assert m["demand_absorbed"] == pytest.approx(4 / 7)
+    # a job is all-or-nothing, so its topic mix is what the deliverer gets
+    assert m["specialization"]["agent_1"] == pytest.approx((2 / 3) ** 2 + (1 / 3) ** 2)
+    assert m["specialization"]["agent_2"] == pytest.approx(1.0)   # k02 alone
+    assert m["mean_specialization"] == pytest.approx(((5 / 9) + 1.0) / 2)
+    assert m["demand_absorbed"] == pytest.approx(4 / 6)
     assert summary["conservation_ok"] is True

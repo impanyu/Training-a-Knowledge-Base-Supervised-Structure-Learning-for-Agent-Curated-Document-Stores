@@ -31,6 +31,22 @@ def specialization(summary: dict) -> dict[str, float]:
     return result
 
 
+def delegation_rate(deliveries: list[dict], contracts: list[dict]) -> float:
+    """Share of delivered (job, question) units whose answer was bought rather
+    than produced: a qid-bound contract that some OTHER agent actually
+    delivered. This is the v4.1 headline -- the market either exists or it does
+    not, and this number says which."""
+    sellers: dict[str, set[str]] = defaultdict(set)
+    for c in contracts:
+        if c.get("status") == "delivered" and c.get("qid"):
+            sellers[c["qid"]].add(c["contractor"])
+    if not deliveries:
+        return 0.0
+    bought = sum(1 for d in deliveries
+                 if any(s != d["agent"] for s in sellers.get(d["qid"], ())))
+    return bought / len(deliveries)
+
+
 def compute_metrics(summary: dict) -> dict:
     deliveries = summary.get("deliveries", [])
     total_f1 = sum(d["f1"] for d in deliveries)
@@ -40,6 +56,7 @@ def compute_metrics(summary: dict) -> dict:
     all_tok = solving + admin
     prices = summary.get("contract_prices", [])
     total_units = summary.get("total_units", 0)
+    jobs_posted = summary.get("jobs_posted", 0)
     loans = summary.get("loans", {})
     debtors = loans.get("debtors", {})
     bankrupt_with_debt = loans.get("bankrupt_with_debt", [])
@@ -53,9 +70,12 @@ def compute_metrics(summary: dict) -> dict:
         "total_f1": total_f1,
         "total_em": total_em,
         "n_answered": len(deliveries),
-        # v4 headline: how much of the WORLD's posted demand (sum of quotas)
-        # the economy actually absorbed
+        # v4.1 headline: how much of the WORLD's posted demand -- the
+        # (job, question) units -- the economy actually absorbed
         "demand_absorbed": len(deliveries) / total_units if total_units else 0.0,
+        "job_completion_rate": (summary.get("jobs_closed", 0) / jobs_posted
+                                if jobs_posted else 0.0),
+        "delegation_rate": delegation_rate(deliveries, summary.get("contracts", [])),
         "accuracy_per_ktok_solving": total_f1 / (solving / 1000) if solving else 0.0,
         "accuracy_per_ktok_all": total_f1 / (all_tok / 1000) if all_tok else 0.0,
         "coordination_overhead": admin / all_tok if all_tok else 0.0,

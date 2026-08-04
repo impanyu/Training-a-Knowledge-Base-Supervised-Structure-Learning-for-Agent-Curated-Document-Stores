@@ -19,8 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--level", required=True, choices=list(CONFIGS))
     ap.add_argument("--bank", required=True,
-                    help="bank.json from build_bank.py: the flat question bank "
-                         "(text, gold answers, price, quota, topic)")
+                    help="bank.json from build_bank.py + build_jobs.py: the flat "
+                         "question bank (text, gold answers, price, topic) and the "
+                         "jobs the WORLD posts over it")
     ap.add_argument("--index", required=True, help="chroma persist dir from prepare_data")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--capital", type=int, default=400_000)

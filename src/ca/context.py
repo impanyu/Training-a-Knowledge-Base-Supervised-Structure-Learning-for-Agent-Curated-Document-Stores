@@ -24,20 +24,30 @@ turn's LLM call consumed. If your balance drops to 0 or below you are BANKRUPT
 and can no longer perform answer-related actions (retrieve, work_on, delivering
 to the WORLD); you may still coordinate and borrow.
 
-The WORLD posts QUESTIONS, one at a time, each with a QUOTA: the "N left" in a
-listing is how many more times that question may be claimed and paid for, so a
-question several agents answer pays each of them. The pipeline is always the
-same three steps: claim -> solve -> deliver ONE short answer.
-`claim_question(qid="q0042")`, then `deliver_work(target_id="q0042",
-content="Richard Strauss")`. `content` must be ONLY the short answer itself (a
-name / date / phrase) - never a sentence, an explanation or JSON - because it is
-graded by token-overlap F1 against a short gold answer and pays round(price x F1).
-You get ONE graded attempt per claim and at most TWO claims on any one question,
-so a claim you let expire costs you one of your two attempts.
+The WORLD posts JOBS. A job is a BUNDLE of 6-10 related questions, claimed and
+delivered as a unit, and its reward is the sum of its questions' prices. The
+pipeline is always: list_jobs -> claim_job -> answer every question -> deliver
+them all at once. `claim_job(jid="j0007")` reveals the text of every question in
+the job (and marks the ones already in your memory), then
+`deliver_work(target_id="j0007", content='{{"q0042": "Richard Strauss",
+"q0107": "1911"}}')`. Each answer in that map must be ONLY the short answer
+itself (a name / date / phrase) - never a sentence or an explanation - because
+each is graded by token-overlap F1 against a short gold answer, and the job pays
+the sum of round(price x F1).
+
+Delivery is ALL-OR-NOTHING: a map that misses one of the job's questions, or
+names a question that is not in it, is REJECTED and you keep your claim - so a
+malformed attempt costs you only the turn. A complete map is your ONE graded
+attempt. You get at most TWO claims on any one job, and a claim you let expire
+(see the countdown in your active-claims block) burns one of them.
+
+A job does not fit comfortably in one agent's claim window. Subcontracting is
+the normal way to finish one: name a QUESTION id as a contract task and the
+contractor owes you that question's short answer, which you merge into your map.
 
 Your long-term memory fills itself: every answer you deliver is stored, and
-claiming a question you already answered shows you that stored answer with its
-F1, so you can deliver it as-is or re-solve it if it scored badly.
+claiming a job shows you, per question, the answer you already have with its F1,
+so you can reuse it as-is or re-solve it if it scored badly.
 
 You earn tokens ONLY from: (a) delivering answers to the WORLD, or
 (b) payments from other agents (contract escrow settlements or transfers).
@@ -45,15 +55,14 @@ You earn tokens ONLY from: (a) delivering answers to the WORLD, or
 Each turn you must choose EXACTLY ONE action (tool call). Unread messages
 are delivered automatically into your context every turn - you never need
 to poll read_chat (use it only to re-read older history). Think about
-profitability: estimate what a question will cost to solve vs its reward.
-You may subcontract a question to another agent: naming its q-id as the
-contract task binds the contract, and the contractor owes you that answer.
+profitability: estimate what a job will cost to finish vs its reward, and what
+a peer will charge for one of its questions.
 {level_rules}"""
 
 _HUB_EXTRA_DEMAND = """
-YOU ARE THE HUB AGENT: the only agent allowed to take questions from the
-question board and deliver answers to the WORLD. Other agents can work for you
-via contracts. Your profit = WORLD rewards minus what you pay them."""
+YOU ARE THE HUB AGENT: the only agent allowed to take jobs from the job board
+and deliver answers to the WORLD. Other agents can work for you via contracts.
+Your profit = WORLD rewards minus what you pay them."""
 
 # C3/C4/C5: the hub holds exactly ONE power (named in the configuration
 # rules above) and is an ordinary market participant in every other respect --
@@ -61,14 +70,14 @@ via contracts. Your profit = WORLD rewards minus what you pay them."""
 _HUB_EXTRA = """
 YOU ARE THE HUB AGENT: the hub of this configuration. Apart from the one
 privilege named in the configuration rules above you are an ordinary agent -
-every other agent may claim questions and deliver to the WORLD exactly as you
-can, and you earn by solving and delivering questions just like they do."""
+every other agent may claim jobs and deliver to the WORLD exactly as you can,
+and you earn by solving and delivering jobs just like they do."""
 
 
 def _level_rules(level: LevelConfig, is_iface: bool) -> str:
     rules = []
     if level.world_access == "hub":
-        rules.append("Only the hub agent can list/claim questions and deliver answers "
+        rules.append("Only the hub agent can list/claim jobs and deliver answers "
                      "to the WORLD.")
     if level.central_pricing:
         rules.append("ALL contract prices are set by the hub agent (set_price); bargaining is disabled."
@@ -108,6 +117,39 @@ def system_prompt(level: LevelConfig, agent_id: str, all_ids: list[str]) -> str:
     return sp
 
 
+def _claims_block(infra: Infra, agent_id: str, mine: list, pad: dict) -> str:
+    """The anti-amnesia device (spec §8): for every job this agent holds, the
+    FULL question list with per-question status and the expiry countdown. v3's
+    worst pathology was agents forgetting what a claimed task contained, so the
+    working set is re-rendered every single turn and never scrolls out."""
+    ttl = infra.cfg.claim_ttl
+    lines = []
+    for jid, claim in mine:
+        job = infra.bank.jobs[jid]
+        left = max(claim.round + ttl - infra.round, 0)
+        rows, known = [], 0
+        for qid in job.qids:
+            rec = infra.memory.answer(agent_id, qid)
+            if rec is None:
+                n = len(pad.get(qid) or [])
+                note = f" ({n} scratchpad note(s))" if n else ""
+                rows.append(f"    {qid} — unanswered{note}")
+            else:
+                known += 1
+                f1 = rec["f1"]
+                score = "ungraded" if f1 is None else f"F1 {f1:.2f}"
+                rows.append(f"    {qid} ✓ answered ({score}, in memory)")
+        lines.append(f"- [{jid}] {len(job.qids)} questions, reward {job.price} — "
+                     f"{known} of {len(job.qids)} answered — "
+                     f"claim EXPIRES in {left} round(s)")
+        lines += rows
+        lines.append(f'    deliver ALL {len(job.qids)} at once: '
+                     f'deliver_work(target_id="{jid}", '
+                     f'content=\'{{"{job.qids[0]}": "...", ...}}\')')
+    return ("Your ACTIVE JOB CLAIMS (this is your whole working set):\n"
+            + "\n".join(lines))
+
+
 def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack) -> str:
     own = infra.ledger.balance(agent_id)
     if infra.cfg.level.collective_goal:
@@ -132,32 +174,20 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
     n_notes = infra.memory.n_entries(agent_id) - n_answers
     if n_answers or n_notes:
         parts.append(f"Long-term memory: {n_answers} answers, {n_notes} notes "
-                     "(claiming a question you answered before shows you that "
-                     "answer; memory_search finds the rest by meaning)")
-    # questions this agent already delivered: a delivered unit is gone from the
+                     "(claiming a job shows you the ones it already covers; "
+                     "memory_search finds the rest by meaning)")
+    # questions this agent already delivered: a delivered job is gone from the
     # board, and agents were observed re-claiming their own finished work
     done = [r for r in infra.board.results if r.agent == agent_id]
     if done:
         shown = ", ".join(f"{r.qid} (F1 {r.f1:.2f}, paid {r.payout})" for r in done[-8:])
         if len(done) > 8:
             shown += f" … +{len(done) - 8} more"
-        parts.append("Questions you already answered - re-claim one only if you "
-                     f"can beat that F1: {shown}")
-    mine = [(qid, c) for qid, claims in infra.board.active.items()
-            for c in claims if c.agent == agent_id]
+        parts.append("Questions you already answered - their answers are in your "
+                     f"memory, reuse them: {shown}")
+    mine = [(jid, c) for jid, c in infra.board.active.items() if c.agent == agent_id]
     if mine:
-        ttl = infra.cfg.claim_ttl
-        lines = []
-        for qid, claim in mine:
-            q = infra.bank.questions[qid]
-            left = claim.round + ttl - infra.round
-            lines.append(f"- [{qid}] {q.text} ({q.difficulty}, reward {q.price})  "
-                         f"[claim EXPIRES in {max(left, 0)} round(s) - deliver before then!]")
-            notes = pad.get(qid) or []
-            lines.append(f"    progress: {len(notes)} note(s) on your scratchpad; "
-                         "deliver ONE short answer with "
-                         f'deliver_work(target_id="{qid}", content="...")')
-        parts.append("Your ACTIVE CLAIMS (deliver these first):\n" + "\n".join(lines))
+        parts.append(_claims_block(infra, agent_id, mine, pad))
     pend = infra.contracts.pending_for(agent_id)
     if pend:
         lines = []

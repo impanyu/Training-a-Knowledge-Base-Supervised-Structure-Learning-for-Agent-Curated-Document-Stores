@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from fixtures import demo_questions
+from fixtures import demo_jobs, demo_questions
 
 from ca.bank import QuestionBank
 from ca.runner import build_parser
@@ -44,11 +44,15 @@ def test_defaults():
 
 def test_bank_json_loads_through_the_same_path_the_runner_uses(tmp_path):
     p = tmp_path / "bank.json"
-    p.write_text(json.dumps({"questions": [
-        {"qid": q.qid, "text": q.text, "answers": q.answers,
-         "difficulty": q.difficulty, "price": q.price, "quota": q.quota,
-         "topic": q.topic, "source": "hotpot"}          # unknown fields ignored
-        for q in demo_questions()]}))
+    p.write_text(json.dumps({
+        "questions": [
+            {"qid": q.qid, "text": q.text, "answers": q.answers,
+             "difficulty": q.difficulty, "price": q.price,
+             "topic": q.topic, "source": "hotpot"}      # unknown fields ignored
+            for q in demo_questions()],
+        "jobs": [{"jid": j.jid, "qids": j.qids, "price": j.price}
+                 for j in demo_jobs()]}))
     bank = QuestionBank.from_json(str(p))
-    assert len(bank.questions) == 5 and bank.total_units() == 7
+    assert len(bank.questions) == 5 and len(bank.jobs) == 3
+    assert bank.total_units() == 6
     assert bank.get("q0004").topic == "k07"

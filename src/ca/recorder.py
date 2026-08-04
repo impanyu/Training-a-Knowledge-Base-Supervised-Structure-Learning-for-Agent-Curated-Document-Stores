@@ -14,8 +14,9 @@ end of that round (a crash mid-round loses only that round's line):
     coordination_overhead_by_agent {agent: same, per agent}
     answered                       {agent: {n_answered, f1_sum, em_sum}}
     n_answered / total_f1 / total_em
-    board                          {open, active_claims, delivered} question counts
+    board                          {open, active_claims, closed} JOB counts
     total_units / remaining_units / demand_absorbed
+    jobs_posted / jobs_closed / job_completion_rate / delegation_rate
     n_contracts / contracts_by_status {status: count}
     n_loans / loan_principal_outstanding / interest_paid_total
     memory                         {agent: {answers, notes, n_claims,
@@ -31,11 +32,20 @@ from collections import defaultdict
 from pathlib import Path
 
 from ca.actions import IMPROVED_MARKER, MEMORY_HIT_MARKER, STORED_F1_MARKER
+from ca.metrics import delegation_rate
 
 
 def _mem_tally() -> dict:
     return {"n_claims": 0, "n_memory_hits": 0,
             "n_repeat_deliveries": 0, "n_improved": 0}
+
+
+def _contract_rows(infra) -> list[dict]:
+    """Contract records, JSON-safe: `delegation_rate` reads who actually sold
+    which question to whom."""
+    return [{"cid": c.cid, "proposer": c.proposer, "contractor": c.contractor,
+             "task": c.task, "qid": c.qid, "price": c.price, "status": c.status}
+            for c in infra.contracts.contracts.values()]
 
 
 class Recorder:
@@ -55,17 +65,17 @@ class Recorder:
         self._tokens[event["agent"]][event["category"]] += spent
         result = str(event["result"])
         tally = self._memory[event["agent"]]
-        if event["action"] == "claim_question" and not result.startswith("ERROR"):
+        if event["action"] == "claim_job" and not result.startswith("ERROR"):
             tally["n_claims"] += 1
-            # a "hit" is a claim whose result carried a stored answer -- the
-            # auto-recall header is the stable marker
+            # a "hit" is a claim whose result carried a stored answer for at
+            # least one member question -- the auto-recall header is the marker
             if MEMORY_HIT_MARKER in result:
                 tally["n_memory_hits"] += 1
         elif event["action"] == "deliver_work" and STORED_F1_MARKER in result:
-            # a repeat delivery of a question this agent already had graded
-            tally["n_repeat_deliveries"] += 1
-            if IMPROVED_MARKER in result:
-                tally["n_improved"] += 1
+            # one job delivery can repeat SEVERAL already-graded questions, so
+            # these are per-question counts
+            tally["n_repeat_deliveries"] += result.count(STORED_F1_MARKER)
+            tally["n_improved"] += result.count(IMPROVED_MARKER)
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
 
@@ -95,9 +105,11 @@ class Recorder:
             tally["f1_sum"] += r.f1
             tally["em_sum"] += r.em
         total_units = infra.bank.total_units()
-        board = {"open": sum(1 for n in infra.board.remaining.values() if n > 0),
-                 "active_claims": sum(len(c) for c in infra.board.active.values()),
-                 "delivered": len(infra.board.results)}
+        jobs_posted = len(infra.bank.jobs)
+        jobs_closed = len(infra.board.closed)
+        board = {"open": len(infra.board.open_jobs()),
+                 "active_claims": len(infra.board.active),
+                 "closed": jobs_closed}
 
         contracts_by_status: dict[str, int] = defaultdict(int)
         for c in infra.contracts.contracts.values():
@@ -132,9 +144,14 @@ class Recorder:
             "total_em": sum(v["em_sum"] for v in answered.values()),
             "board": board,
             "total_units": total_units,
-            "remaining_units": sum(infra.board.remaining.values()),
+            "remaining_units": total_units - len(infra.board.results),
             "demand_absorbed": (len(infra.board.results) / total_units
                                 if total_units else 0.0),
+            "jobs_posted": jobs_posted,
+            "jobs_closed": jobs_closed,
+            "job_completion_rate": jobs_closed / jobs_posted if jobs_posted else 0.0,
+            "delegation_rate": delegation_rate(infra.board.results_json(),
+                                               _contract_rows(infra)),
             "n_contracts": len(infra.contracts.contracts),
             "contracts_by_status": dict(contracts_by_status),
             "n_loans": len(loans),
@@ -162,16 +179,20 @@ class Recorder:
             "level": infra.cfg.level.level,
             "seed": infra.cfg.seed,
             "rounds_used": rounds_used,
-            # v4: one row per DELIVERED UNIT -- the thing that is graded and
-            # paid, and what the metrics read (topic rides along for
-            # specialization, price/difficulty for post-hoc slicing).
+            # v4.1: one row per DELIVERED (job, question) UNIT -- the thing
+            # that is graded and paid, and what the metrics read (jid for the
+            # job it settled under, topic for specialization, price/difficulty
+            # for post-hoc slicing).
             "deliveries": infra.board.results_json(),
             "total_units": infra.bank.total_units(),
-            "remaining_units": sum(infra.board.remaining.values()),
+            "remaining_units": infra.bank.total_units() - len(infra.board.results),
+            "jobs_posted": len(infra.bank.jobs),
+            "jobs_closed": len(infra.board.closed),
             "balances": {a: infra.ledger.balance(a) for a in infra.agent_ids},
             "tokens": {a: dict(self._tokens[a]) for a in infra.agent_ids},
             "bankrupt": [a for a in infra.agent_ids if infra.ledger.is_bankrupt(a)],
             "n_contracts": len(infra.contracts.contracts),
+            "contracts": _contract_rows(infra),
             "contract_prices": [c.price for c in infra.contracts.contracts.values()
                                 if c.status == "delivered"],
             "loans": {
