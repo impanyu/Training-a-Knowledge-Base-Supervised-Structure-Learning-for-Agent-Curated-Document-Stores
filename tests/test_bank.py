@@ -1,20 +1,19 @@
-"""v4.1 question bank: flat questions, posted as jobs, id-only addressing."""
+"""v5 question bank: flat questions, id-only addressing, no job layer."""
 import json
 from pathlib import Path
 
 import pytest
-from ca.bank import BankError, Job, Question, QuestionBank
+from ca.bank import BankError, Question, QuestionBank
 
-REAL_BANK = Path(__file__).resolve().parents[1] / "data" / "v4" / "bank.json"
+REAL_BANK = Path(__file__).resolve().parents[1] / "data" / "v5" / "bank.json"
 
 
 def demo_bank() -> QuestionBank:
     return QuestionBank([
-        Question("q0001", "capital of France?", ["Paris"], "2hop", 63000, "k01"),
-        Question("q0002", "longest river in France?", ["Loire"], "3hop", 105000, "k01"),
-        Question("q0003", "2+2?", ["4", "four"], "4hop", 157500, "k07"),
-    ], [Job("j0001", ["q0001", "q0002"], 168000),
-        Job("j0002", ["q0002", "q0003"], 262500)])
+        Question("q0001", "capital of France?", ["Paris"], "2hop", 18000, "k01"),
+        Question("q0002", "longest river in France?", ["Loire"], "3hop", 30000, "k01"),
+        Question("q0003", "2+2?", ["4", "four"], "4hop", 45000, "k07"),
+    ])
 
 
 def test_questions_are_addressed_by_qid():
@@ -22,8 +21,7 @@ def test_questions_are_addressed_by_qid():
     assert set(bank.questions) == {"q0001", "q0002", "q0003"}
     q = bank.get("q0002")
     assert q.text == "longest river in France?"
-    assert q.price == 105000 and q.topic == "k01"
-    assert not hasattr(q, "quota")
+    assert q.price == 30000 and q.topic == "k01"
 
 
 def test_get_strips_whitespace_but_does_no_fuzzy_matching():
@@ -38,56 +36,38 @@ def test_unknown_qid_names_a_few_valid_ids():
     with pytest.raises(BankError) as e:
         bank.get("q9999")
     msg = str(e.value)
-    assert "q9999" in msg
+    assert "q9999" in msg and "list_questions" in msg
     assert sum(qid in msg for qid in ("q0001", "q0002", "q0003")) >= 2
 
 
-# ---------------- jobs ----------------
-
-def test_jobs_are_addressed_by_jid():
+def test_the_job_layer_is_gone():
+    import ca.bank as bank_mod
+    assert not hasattr(bank_mod, "Job")
     bank = demo_bank()
-    job = bank.get_job(" j0002 ")
-    assert job.qids == ["q0002", "q0003"] and job.price == 262500
-    assert bank.job_price("j0001") == 168000
+    for dead in ("jobs", "get_job", "job_price"):
+        assert not hasattr(bank, dead), dead
 
 
-def test_unknown_jid_names_a_few_valid_ids():
-    bank = demo_bank()
-    with pytest.raises(BankError) as e:
-        bank.get_job("j9999")
-    msg = str(e.value)
-    assert "j9999" in msg and "j0001" in msg and "list_jobs" in msg
+def test_total_units_is_the_question_count():
+    assert demo_bank().total_units() == 3
 
 
-def test_total_units_is_the_sum_of_job_sizes():
-    assert demo_bank().total_units() == 4          # not 3: q0002 sits in two jobs
-
-
-def test_from_json_reads_questions_and_jobs_and_ignores_extra_fields(tmp_path):
+def test_from_json_reads_questions_and_ignores_extra_fields(tmp_path):
     p = tmp_path / "bank.json"
     p.write_text(json.dumps({
         "questions": [
             {"qid": "q0001", "text": "capital of France?", "answers": ["Paris"],
-             "difficulty": "2hop", "price": 63000, "topic": "k20",
+             "difficulty": "2hop", "price": 18000, "topic": "k20",
              "source": "hotpotqa", "quota": 4},
             {"qid": "q0002", "text": "2+2?", "answers": ["4"],
              "difficulty": "2hop", "price": 1000, "topic": "k20"}],
-        "jobs": [{"jid": "j0001", "qids": ["q0001", "q0002"], "price": 64000}],
-        "total_units": 2, "n_topics": 1}))
+        "n_topics": 1}))
     bank = QuestionBank.from_json(str(p))
     q = bank.get("q0001")
     assert q.topic == "k20" and q.answers == ["Paris"]
     assert not hasattr(q, "source") and not hasattr(q, "quota")
     assert bank.total_units() == 2
-    assert bank.get_job("j0001").price == 64000
 
-
-def test_a_bank_may_have_no_jobs_at_all():
-    bank = QuestionBank([Question("q0001", "a", ["x"], "2hop", 1, "k0")])
-    assert bank.jobs == {} and bank.total_units() == 0
-
-
-# ---------------- build-time invariants ----------------
 
 def test_duplicate_qids_are_a_build_error():
     with pytest.raises(BankError):
@@ -95,45 +75,13 @@ def test_duplicate_qids_are_a_build_error():
                       Question("q0001", "b", ["y"], "2hop", 1, "k0")])
 
 
-def test_duplicate_jids_are_a_build_error():
-    qs = [Question("q0001", "a", ["x"], "2hop", 1, "k0")]
-    with pytest.raises(BankError):
-        QuestionBank(qs, [Job("j0001", ["q0001"], 1), Job("j0001", ["q0001"], 1)])
-
-
-def test_an_empty_job_is_a_build_error():
-    with pytest.raises(BankError):
-        QuestionBank([Question("q0001", "a", ["x"], "2hop", 1, "k0")],
-                     [Job("j0001", [], 0)])
-
-
-def test_a_job_listing_a_question_twice_is_a_build_error():
-    with pytest.raises(BankError):
-        QuestionBank([Question("q0001", "a", ["x"], "2hop", 1, "k0")],
-                     [Job("j0001", ["q0001", "q0001"], 2)])
-
-
-def test_a_job_referencing_an_unknown_question_is_a_build_error():
-    with pytest.raises(BankError) as e:
-        QuestionBank([Question("q0001", "a", ["x"], "2hop", 1, "k0")],
-                     [Job("j0001", ["q0001", "q9999"], 2)])
-    assert "q9999" in str(e.value)
-
-
 # ---------------- the real bank ----------------
 
-def test_real_v4_bank_loads():
+@pytest.mark.skipif(not REAL_BANK.exists(), reason="v5 bank not built yet")
+def test_real_v5_bank_loads():
     bank = QuestionBank.from_json(str(REAL_BANK))
-    assert len(bank.questions) == 500
+    assert len(bank.questions) == 1000
+    assert bank.total_units() == 1000
     assert all(q.topic for q in bank.questions.values())
-    assert len(bank.jobs) == 185
-    assert bank.total_units() == sum(len(j.qids) for j in bank.jobs.values())
-    assert 1000 <= bank.total_units() <= 1550          # ~1478 posted units
-
-
-def test_real_jobs_are_2_to_10_questions_from_one_topic_and_priced_by_sum():
-    bank = QuestionBank.from_json(str(REAL_BANK))
-    for job in bank.jobs.values():
-        assert 2 <= len(job.qids) <= 10
-        assert len({bank.get(qid).topic for qid in job.qids}) == 1
-        assert job.price == sum(bank.get(qid).price for qid in job.qids)
+    assert {q.price for q in bank.questions.values()} <= {18000, 30000, 45000}
+    assert {q.difficulty for q in bank.questions.values()} <= {"2hop", "3hop", "4hop"}

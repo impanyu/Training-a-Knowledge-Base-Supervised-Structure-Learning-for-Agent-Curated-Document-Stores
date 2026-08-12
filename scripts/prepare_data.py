@@ -1,26 +1,22 @@
-"""Build the mixed HotpotQA+MuSiQue pool, pooled paragraph corpus, Chroma index.
+"""Build the mixed HotpotQA+MuSiQue pool, pooled paragraph corpus, and the
+precomputed corpus embeddings that seed every agent's memory (v5).
 
 Corpus strategy (standard open-retrieval practice, cf. IRCoT): pool the
 per-question paragraph sets (gold + distractors) across all sampled questions
 into one deduplicated corpus. Gold paragraphs are guaranteed present.
+Embeddings are chroma's default ONNX model -- the same space AgentMemory
+queries in -- computed ONCE here and reused verbatim by every seeding.
 """
 import argparse
 import json
 import random
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from ca.retrieval import ChromaBackend  # noqa: E402
+import numpy as np
 
 # Pricing rule (spec §8): R(q) ~= 1.5x the average billable token burn to solve a
 # question of that tier, so solving is profitable. Calibrated from pilot round 1
 # (2026-07: clean 2-hop solve ~11-15k billable tokens incl. context growth).
-# v4 (2026-08-01): back to the 1.5x-marginal rule. The 3.5x profit-regime
-# multiplier compensated for the v3 tree machinery (exploration, decompose,
-# all-or-nothing package rejects); v4 deleted that overhead, and a smoke run
-# measured 4.6x revenue coverage at 3.5x prices. At 1x, coverage lands ~1.3:
-# profitable for a well-run economy, not for a badly-run one.
 PRICES = {"2hop": 18000, "3hop": 30000, "4hop": 45000}
 
 
@@ -68,12 +64,21 @@ def build_pool_and_corpus(hotpot_n: int, musique_n: int, seed: int) -> tuple[lis
     return pool, corpus
 
 
+def embed_corpus(corpus: list[dict], batch: int = 256) -> np.ndarray:
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+    ef = DefaultEmbeddingFunction()
+    vecs = []
+    for i in range(0, len(corpus), batch):
+        vecs.extend(ef([p["text"] for p in corpus[i:i + batch]]))
+    return np.asarray(vecs, dtype=np.float32)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hotpot-n", type=int, default=150)
-    ap.add_argument("--musique-n", type=int, default=50)
+    ap.add_argument("--hotpot-n", type=int, default=700)
+    ap.add_argument("--musique-n", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="data")
+    ap.add_argument("--out", default="data/v5")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -83,10 +88,15 @@ def main():
     with open(out / "pool.jsonl", "w") as f:
         for r in pool:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    with open(out / "corpus.jsonl", "w") as f:
+        for r in corpus:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
     print(f"pool: {len(pool)} questions; corpus: {len(corpus)} paragraphs")
 
-    ChromaBackend(corpus, persist_dir=str(out / "index"))  # builds + persists embeddings
-    print(f"chroma index saved to {out}/index")
+    emb = embed_corpus(corpus)
+    np.save(out / "corpus_emb.npy", emb)
+    print(f"corpus_emb.npy saved: {emb.shape} {emb.dtype}")
+    print("next: scripts/build_bank.py labels topics and writes bank.json")
 
 
 if __name__ == "__main__":

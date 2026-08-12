@@ -1,12 +1,9 @@
 """Role handbooks with action-trajectory demos, assembled per configuration so
 a demo never shows an action the agent lacks there.
 
-v4.1: what the WORLD posts is a JOB -- 2-10 flat questions claimed and
-delivered as a unit. Every demo is built around that pipeline: list, claim
-(which marks the members you already know), solve or subcontract the rest,
-assemble ONE map, deliver. Jobs come in a range of sizes, so the handbooks
-spell out the arithmetic of picking one you can finish -- and of buying the
-rest when a bigger job is worth more than what a peer charges for a question.
+v5: a task is ONE question, and the corpus is memory. Every demo is built
+around the same pipeline: list, claim (which hands back the stored answer if
+one exists), memory_search the born-in corpus, deliver ONE short answer.
 
 Configurations are single-factor, so a demo may only assume the ONE mechanism
 that config centralizes. In particular the hub is not privileged in general --
@@ -16,36 +13,29 @@ every other respect.
 from ca.config import LevelConfig
 
 _SOLO_ANSWER = """
-### Demo: the job pipeline (list -> claim -> solve -> deliver ONE map)
-1. list_jobs
-   -> "[j0007] 8 questions, topic k07, reward 512000"
-   A job is a BUNDLE of 8 related questions. Its reward is the sum of their
-   prices; you are paid the sum of round(price x F1) over all of them.
-2. claim_job(jid="j0007")
-   -> "claimed [j0007] 8 questions, topic k07, reward 512000"
-      "memory: stored answer for 2 of these 8 questions (marked ✓ below)"
-      "  ✓ q0042 Who composed Salome? -> "Richard Strauss" (F1 1.00) GOOD: deliver as-is"
-      "  ✓ q0055 Where is Juanda? -> "Sidoarjo" (F1 0.30) LOW QUALITY: re-solve it"
-      "  — q0107 In what year did Der Rosenkavalier premiere? (unanswered)"
-      ... every question of the job, every time
-   A GOOD ✓ row is free money: that answer is already yours. A LOW QUALITY one
-   is a warning. Spend tokens on those and on the "—" rows.
-3. retrieve(query="Der Rosenkavalier premiere year")     # COSTS TOKENS
+### Demo: the question pipeline (list -> claim -> search memory -> deliver)
+1. list_questions
+   -> "[q0107] In what year did Der Rosenkavalier premiere? (2hop, reward 18000)"
+      ... one line per open question
+2. claim_question(qid="q0107")
+   -> "claimed [q0107] In what year did Der Rosenkavalier premiere? (2hop, reward 18000)"
+      "deliver ONE short answer: deliver_work(target_id="q0107", content="<answer>")"
+   If your memory already held an answer you would see it here with its F1:
+      "memory: stored answer: [q0107] ... -> "1911" (F1 1.00) GOOD: deliver it as-is"
+   A GOOD stored answer is free money. A LOW QUALITY one is a warning: re-solve.
+3. memory_search(query="Der Rosenkavalier premiere")     # COSTS TOKENS
+   -> "- [Der Rosenkavalier] Der Rosenkavalier ... premiered in 1911 at the ..."
 4. memory_write(content="q0107: Der Rosenkavalier premiered 1911, Dresden")
    # persists reasoning across turns - your recent-actions window is short
-5. deliver_work(target_id="j0007",
-                content='{"q0042": "Richard Strauss", "q0107": "1911", ...}')
-   -> ALL-OR-NOTHING. The map must name EVERY question of the job and nothing
-      else. An incomplete or malformed map is rejected and YOU KEEP YOUR CLAIM,
-      so a typo costs only the turn. A complete map is your ONE graded attempt.
-      Each value is the SHORT ANSWER ONLY (a name / date / phrase).
-DO THE ARITHMETIC BEFORE YOU CLAIM: one answer takes about 3 turns (a retrieve,
-a note, a check), so a job of 2 is ~6 turns of your own while a job of 10 is
-~30. Claims never expire, but every turn burns tokens, so claim a size you can
-actually finish - or plan to buy the rest (see below).
-CUT LOSSES on any single question: if it is not converging after 2-3 retrieves,
-put your best guess in the map (partial F1 still pays) rather than sinking
-unlimited tokens into it - and NEVER let the claim expire over one question."""
+5. deliver_work(target_id="q0107", content="1911")
+   -> `content` is the SHORT ANSWER ONLY (a name / date / phrase), a bare
+      string - never a sentence. This is your ONE graded attempt on the
+      claim; it pays round(price x F1).
+DO THE ARITHMETIC BEFORE YOU CLAIM: one answer takes about 3 turns (a search,
+a note, a check). Claims never expire, but every turn burns tokens, so claim
+only what you can answer profitably.
+CUT LOSSES: if a question is not converging after 2-3 searches, deliver your
+best guess (partial F1 still pays) rather than sinking unlimited tokens in."""
 
 _CONTRACTOR = """
 ### Demo: earning tokens as a contractor
@@ -53,60 +43,55 @@ _CONTRACTOR = """
   [bound to q0031: the deliverable is the short answer to "In what year did
   Der Rosenkavalier premiere?"]"
 - accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
-- do the work (retrieve, reason), then:
+- do the work (memory_search, reason), then:
 - deliver_work(target_id="c0007", content="1911")
   -> escrow released to you, and the answer lands in the payer's chat AND in
      both of your memories. A bound deliverable is NOT machine-graded, but
      cheaters lose future business. A free-text contract takes any text.
-Selling single questions is steady income and it costs you nothing to look:
-job holders with big jobs are steady buyers of single questions."""
+Selling answers is steady income and it costs you nothing to look:
+agents holding claims they cannot finish are steady buyers."""
 
 _HIRE_PEER = """
-### Demo: splitting a claimed job across peers (this is how jobs get finished)
-You hold [j0007]: 8 questions, ~24 turns of your own work. Every question you
-buy for less than its own price is profit, and it frees your turns:
+### Demo: buying an answer instead of solving it (per-question subcontracts)
+You hold [q0107] but your turns are worth more elsewhere. Any answer you buy
+for less than the question pays is profit:
 - propose_contract(to="{peer}", task="q0107"{price_arg})
-  propose_contract(to="agent_2", task="q0111"{price_arg})   # one contract PER QUESTION
-  -> naming a QUESTION ID as the task BINDS the contract, so the contractor owes
-     you that question's short answer - not vague prose
+  -> naming a QUESTION ID as the task BINDS the contract, so the contractor
+     owes you that question's short answer - not vague prose
 - they accept -> your tokens move into escrow; you keep taking your own turns
-  and solve 2-3 of the questions yourself
-- each deliverable lands in your chat AND in your memory, so your active-claims
-  block flips that row to "✓ answered"
-- when every row is ✓, assemble ONE map and deliver_work(target_id="j0007", ...)
-The arithmetic: 5 contracts at ~a tenth of the job reward each still leaves you
-most of it, and it turns turns you do not have into answers you do. Offer less than a question's own price, and check what you are sent."""
+- the deliverable lands in your chat AND in your memory, so claiming (or
+  holding) q0107 now hands you the answer to deliver
+- deliver_work(target_id="q0107", content="1911") and pocket the difference
+The arithmetic: pay a peer a fraction of the reward and keep the rest without
+spending your own solving turns. Offer less than the question's own price,
+and check what you are sent."""
 
 _IFACE_PIPELINE = """
 ### Demo: your production pipeline
-1. list_jobs -> pick jobs whose reward exceeds expected cost
-2. claim_job(jid="j0007")   # reveals all 8 questions; ✓ = already in memory
-3. For each unanswered question EITHER solve it yourself (retrieve),
+1. list_questions -> pick questions whose reward exceeds expected cost
+2. claim_question(qid="q0107")   # hands back your stored answer, if any
+3. EITHER solve it yourself (memory_search, then reason),
    OR subcontract it BY ITS QUESTION ID:
    propose_contract(to="agent_3", task="q0107", price=300)
    -> bound to q0107, so agent_3 owes you that short answer, which lands in
       your chat and in your memory
-4. deliver_work(target_id="j0007",
-                content='{"q0042": "Richard Strauss", "q0107": "1911", ...}')
-   -> the map must cover EVERY question of the job; the WORLD pays the sum of
-      round(price x F1). ONE graded attempt per claim.
+4. deliver_work(target_id="q0107", content="1911")
+   -> ONE short answer, ONE graded attempt; the WORLD pays round(price x F1).
 Your profit = WORLD rewards - subcontract payments - your own token burn.
-A job of 8 is ~24 turns of solving if you do it alone: parallelize. Claims
-never expire, but every turn you hold one burns tokens and an undelivered claim
-pays nothing, so keep several agents working on different questions at once and
-buy any question for less than it is worth to you."""
+Hold several claims and keep several agents answering different questions at
+once; buy any answer for less than its question is worth to you."""
 
 # Only true when the hub holds the demand monopoly (C1): there it is the
 # system's single income channel, so its turns are the scarcest resource. At
 # C3/C4/C5 every agent earns from the WORLD directly, so this must NOT appear.
 _IFACE_BOTTLENECK = """
 YOUR TURN IS THE SCARCEST RESOURCE IN THE SYSTEM: you are the only agent who
-can claim jobs and be paid by the WORLD, so never spend a turn on greetings or
-per-worker small talk. Priority every turn:
-(1) deliver jobs whose questions are all answered (the only income),
+can claim questions and be paid by the WORLD, so never spend a turn on
+greetings or per-worker small talk. Priority every turn:
+(1) deliver answers you already hold (the only income),
 (2) respond to pending contracts and collect deliverables,
-(3) subcontract the questions still open on your claimed jobs,
-(4) claim a new job only when the current ones are nearly done,
+(3) subcontract the questions still open on your claims,
+(4) claim new questions only when the current ones are nearly done,
 (5) only if nothing above is pending: messaging.
 Workers do not need replies to work - contracts speak for themselves."""
 
@@ -131,36 +116,41 @@ Every worker who runs low on tokens must borrow from you - keep an eye on loan
 requests and fund the ones worth funding."""
 
 _MEMORY = """
-### Demo: your memory works for you, unprompted
-Every answer you deliver is written to long-term memory automatically, and
-claiming a job hands those answers straight back to you, question by question.
-Because a question sits in about THREE different jobs, an answer you paid for
-once keeps paying: a job whose rows are mostly ✓ is the cheapest money on the
-board.
+### Demo: your memory was born knowing the corpus
+Your long-term memory starts pre-loaded with the WORLD's whole knowledge
+corpus (~12k encyclopedia paragraphs). memory_search is the ONE way to look
+anything up, and it searches everything at once - corpus paragraphs, your own
+notes, and every answer you have delivered:
+- memory_search(query="Lion Air hub airport")
+  -> "- [Juanda International Airport] Juanda International Airport ... serves
+      Surabaya ..."          (a corpus paragraph)
+     "- Lion Air's hub airport = Juanda International, Surabaya"  (your note)
+Every answer you deliver is written back automatically, and claiming a
+question hands its stored answer straight back with its F1, so an answer you
+paid for once keeps paying.
 ALSO WRITE DOWN WHAT YOU LEARN ON THE WAY, not just final answers:
 - memory_write(content="Lion Air's hub airport = Juanda International, Surabaya")
 - memory_write(content="Der Rosenkavalier premiered 1911, Dresden Hofoper")
-These intermediate findings are the only decomposition in this world - nobody
-hands you sub-questions. memory_search(query="Surabaya airport") retrieves them
-BY MEANING, so a fact you noted while working one question answers the next one
-for free. Jobs are drawn from one topic, so the questions around you keep
-rewarding the same notes."""
+Multi-hop questions need TWO facts chained: search for the first, note the
+bridge, search for the second. These intermediate findings come back by
+MEANING on your next search, so a fact you noted while answering one question
+answers the next one for free."""
 
 _MEMORY_SHARED = """
 Memory is SHARED at this configuration: every agent writes into the same store
 and reads the same store. Answers your peers deliver come back to you on
-claim_job exactly as your own do, and the intermediate findings you write down
-become a COLLECTIVE asset - your note about Juanda International is on your
-peers' next claim too. Claim first, look at what is already known, and only
-then spend tokens."""
+claim_question exactly as your own do, and the intermediate findings you write
+down become a COLLECTIVE asset - your note about Juanda International is in
+your peers' next search too. Claim first, look at what is already known, and
+only then spend tokens."""
 
 _COLLECTIVE = """
 ### Collective mode
 All agents share ONE goal: total system balance. Contract prices only
 redistribute - never haggle for margin; pay whatever coordinates work fastest.
 Never duplicate a question another agent is already solving (check chat / ask).
-Split every claimed job you cannot finish alone, and write your intermediate
-findings down - income is the only way the system grows."""
+Buy answers you cannot produce cheaply, and write your intermediate findings
+down - income is the only way the system grows."""
 
 
 def role_skill(level: LevelConfig, agent_id: str) -> str:

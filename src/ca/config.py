@@ -8,8 +8,9 @@ for follow-up experiments -- the C0-C7 table just does not use them.
 
 C7 is the solo baseline (one agent, no collaboration at all).
 
-Info centralization was deleted in v3: `retrieve` reads a shared corpus that is
-infrastructure, so there is nothing for an agent-level monopoly to add.
+Info centralization was deleted in v3: knowledge is infrastructure (v5: every
+memory is born knowing the corpus), so there is nothing for an agent-level
+monopoly to add.
 """
 from dataclasses import dataclass
 
@@ -53,8 +54,8 @@ class ExperimentConfig:
     seed: int
     seed_capital_total: int
     fifo_k: int = 10
-    retrieve_k: int = 3          # passages per retrieve call (billable-cost knob)
-    list_top_n: int = 20            # open jobs shown per page by list_jobs
+    memory_k: int = 5            # rows per memory_search (billable-cost knob)
+    list_top_n: int = 20         # open questions shown per page by list_questions
     # None = claims never expire. The TTL exists only to stop an agent squatting
     # on work it will not deliver; v4.1 briefly misused it as a device to force
     # delegation, which produced deadline behaviour (filler answers) rather than

@@ -1,12 +1,8 @@
-"""Build the flat question bank (v4).
+"""Build the question bank (v5): the pool, topic-labeled.
 
-v4 drops the hierarchical task trees: a question is one stand-alone question,
-addressed by id, with no sub-questions of its own.
-
-Each question carries a `topic` id from a light clustering of question
-embeddings, which serves two purposes: per-agent specialization stays
-measurable without a task tree, and `scripts/build_jobs.py` draws each posted
-job from ONE cluster. Run this first, then build_jobs.py to post the demand.
+A task is one question; the bank IS the posted demand. Each question carries a
+`topic` id from a light clustering of question embeddings -- metadata for the
+specialization metric only, never shown to agents. Run prepare_data.py first.
 """
 import argparse
 import json
@@ -17,7 +13,7 @@ import numpy as np
 
 
 def embed_texts(texts: list[str]) -> np.ndarray:
-    """Chroma's local ONNX embedder -- the same model the retriever indexes
+    """Chroma's local ONNX embedder -- the same model the corpus is embedded
     with, so topic clusters live in the corpus's own semantic space."""
     from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
     ef = DefaultEmbeddingFunction()
@@ -71,9 +67,9 @@ def build_bank(pool: list[dict], n_topics: int, seed: int, embed=None) -> dict:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pool", default="data/v4/pool.jsonl")
-    ap.add_argument("--out", default="data/v4/bank.json")
-    ap.add_argument("--topics", type=int, default=25)
+    ap.add_argument("--pool", default="data/v5/pool.jsonl")
+    ap.add_argument("--out", default="data/v5/bank.json")
+    ap.add_argument("--topics", type=int, default=40)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -91,7 +87,6 @@ def main(argv: list[str] | None = None) -> None:
     print("difficulty:", dict(Counter(q["difficulty"] for q in qs)))
     print("topic sizes:", sorted(Counter(q["topic"] for q in qs).values()))
     print("total question value:", sum(q["price"] for q in qs))
-    print("next: scripts/build_jobs.py posts these questions as jobs")
 
 
 if __name__ == "__main__":

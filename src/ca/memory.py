@@ -1,4 +1,12 @@
-"""Per-agent short-term (FIFO, goal stack) and long-term (vector) memory."""
+"""Per-agent short-term (FIFO, goal stack) and long-term (vector) memory.
+
+v5: the corpus IS long-term memory. Every bucket is seeded at birth with the
+full paragraph corpus (precomputed embeddings, so seeding never re-embeds);
+`memory_search` is the single knowledge query, over corpus + notes + answers
+alike. Corpus entries are static furniture: excluded from checkpoints and
+re-seeded deterministically on resume.
+"""
+import json
 import re
 import uuid
 from collections import deque
@@ -6,6 +14,18 @@ from collections import deque
 import chromadb
 
 SHARED_BUCKET = "shared"
+
+
+def load_corpus(corpus_path, emb_path):
+    """corpus.jsonl ({title, text} per line) + corpus_emb.npy (float32, row i =
+    paragraph i, chroma default-ONNX space)."""
+    import numpy as np
+    with open(corpus_path) as f:
+        paras = [json.loads(line) for line in f]
+    emb = np.load(emb_path)
+    if len(emb) != len(paras):
+        raise ValueError(f"{emb_path} has {len(emb)} rows for {len(paras)} paragraphs")
+    return paras, emb
 
 
 class FifoMemory:
@@ -67,7 +87,7 @@ class AgentMemory:
     (`answer`), and answering a question twice leaves both attempts on record.
 
     `embedding_function` defaults to chroma's local ONNX model; unit tests pass
-    a cheap deterministic stub instead (as KeywordBackend does for retrieval).
+    a cheap deterministic stub instead.
     """
 
     def __init__(self, shared: bool = False, persist_dir: str | None = None,
@@ -81,6 +101,7 @@ class AgentMemory:
         self._prefix = "mem" if persist_dir else f"mem{uuid.uuid4().hex[:8]}"
         self._cols: dict[str, object] = {}
         self._seq = 0
+        self._n_corpus = 0
 
     # ---------- buckets ----------
 
@@ -88,12 +109,37 @@ class AgentMemory:
         return SHARED_BUCKET if self.shared else str(agent)
 
     def _col(self, agent: str):
-        bucket = self._bucket(agent)
+        return self._bucket_col(self._bucket(agent))
+
+    def _bucket_col(self, bucket: str):
         if bucket not in self._cols:
             name = f"{self._prefix}-" + re.sub(r"[^a-zA-Z0-9_-]", "-", bucket) + "-0"
             kw = {"embedding_function": self._ef} if self._ef is not None else {}
             self._cols[bucket] = self._client.get_or_create_collection(name, **kw)
         return self._cols[bucket]
+
+    # ---------- seeding (v5: the corpus is memory) ----------
+
+    def seed_corpus(self, paras: list[dict], embeddings, agents: list[str]) -> None:
+        """Add every paragraph as a `{kind: corpus, title}` entry to each listed
+        agent's bucket (one physical seeding when shared=True), using the
+        PRECOMPUTED embeddings so nothing is ever re-embedded. Corpus entries
+        consume seq 1..N first -- identically in every bucket and on every
+        (re-)seed -- so note/answer ids stay deterministic across save/restore."""
+        n = len(paras)
+        for bucket in sorted({self._bucket(a) for a in agents}):
+            col = self._bucket_col(bucket)
+            for i in range(0, n, 1000):     # stay under chroma batch limits
+                batch = paras[i:i + 1000]
+                col.add(
+                    ids=[f"m{i + j + 1}" for j in range(len(batch))],
+                    documents=[p["text"] for p in batch],
+                    embeddings=embeddings[i:i + len(batch)],
+                    metadatas=[{"kind": "corpus", "title": p["title"],
+                                "seq": i + j + 1}
+                               for j, p in enumerate(batch)])
+        self._n_corpus = n
+        self._seq = max(self._seq, n)
 
     # ---------- writing (append-only) ----------
 
@@ -121,7 +167,8 @@ class AgentMemory:
 
     def answer(self, agent: str, qid: str) -> dict | None:
         """The best answer stored for `qid`: highest F1, ties broken by
-        recency. An ungraded answer (F1 unknown) never displaces a graded one."""
+        recency. An ungraded answer (F1 unknown) never displaces a graded one.
+        Corpus entries are never answers."""
         got = self._col(agent).get(where={"$and": [{"kind": "answer"},
                                                    {"qid": str(qid)}]})
         if not got["ids"]:
@@ -133,27 +180,35 @@ class AgentMemory:
     def n_answers(self, agent: str) -> int:
         return len(self._col(agent).get(where={"kind": "answer"})["ids"])
 
+    def n_notes(self, agent: str) -> int:
+        return len(self._col(agent).get(where={"kind": "note"})["ids"])
+
     def n_entries(self, agent: str) -> int:
         return self._col(agent).count()
 
     # ---------- checkpoint (T29) ----------
 
     def to_state(self) -> dict:
-        """(id, text, metadata) triples per bucket; embeddings are recomputed
-        on restore rather than stored."""
+        """(id, text, metadata) triples per bucket, notes and answers ONLY --
+        the corpus is static furniture, re-seeded on restore rather than
+        serialized 12k-fold."""
         state = {}
         for bucket in sorted(self._cols):
-            got = self._cols[bucket].get()
+            got = self._cols[bucket].get(where={"kind": {"$ne": "corpus"}})
             rows = sorted(zip(got["ids"], got["documents"], got["metadatas"]),
                           key=lambda r: r[2]["seq"])
             state[bucket] = [[i, doc, dict(meta)] for i, doc, meta in rows]
         return state
 
     def from_state(self, state: dict) -> None:
+        """Assumes a freshly re-seeded store: wipes notes/answers (never the
+        corpus) and re-adds the dumped rows on top. Embeddings are recomputed;
+        the corpus keeps its precomputed ones."""
         for col in self._cols.values():
-            self._client.delete_collection(col.name)
-        self._cols = {}
-        self._seq = 0
+            got = col.get(where={"kind": {"$ne": "corpus"}})
+            if got["ids"]:
+                col.delete(ids=got["ids"])
+        self._seq = self._n_corpus
         for bucket, rows in state.items():
             if not rows:
                 continue
@@ -162,16 +217,8 @@ class AgentMemory:
                 metadatas=[dict(r[2]) for r in rows])
             self._seq = max(self._seq, max(r[2]["seq"] for r in rows))
 
-    def _bucket_col(self, bucket: str):
-        """_col() by bucket name (from_state restores whatever was dumped,
-        including the shared bucket)."""
-        saved, self.shared = self.shared, False
-        try:
-            return self._col(bucket)
-        finally:
-            self.shared = saved
-
 
 def _row(doc: str, meta: dict) -> dict:
     return {"text": doc, "kind": meta.get("kind"),
-            "qid": meta.get("qid"), "f1": meta.get("f1")}
+            "qid": meta.get("qid"), "f1": meta.get("f1"),
+            "title": meta.get("title")}

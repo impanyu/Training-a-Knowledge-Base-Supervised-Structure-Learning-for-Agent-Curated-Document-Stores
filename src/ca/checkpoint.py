@@ -3,10 +3,11 @@
 A checkpoint is one JSON file (`checkpoint_XXXX.json`, XXXX = completed round)
 holding every piece of MUTABLE run state: ledger, board, contracts, loans,
 chat, per-agent short-term memories (fifo / goals), the vector
-long-term memory, recorder tallies, and the scheduler's RNG state. Static
-structure (question bank, retriever index, policies, action tables) is NOT
-serialized -- a resumed run rebuilds it from the same CLI args and `restore`
-overwrites only the mutable parts. Restoring the RNG makes the per-round
+long-term memory (notes/answers only -- the seeded corpus is static), recorder
+tallies, and the scheduler's RNG state. Static structure (question bank,
+corpus + embeddings, policies, action tables) is NOT serialized -- a resumed
+run rebuilds and re-seeds it from the same CLI args and `restore` overwrites
+only the mutable parts. Restoring the RNG makes the per-round
 shuffle -- and therefore the whole continuation -- identical to a run that
 never stopped.
 """

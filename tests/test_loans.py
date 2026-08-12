@@ -10,11 +10,8 @@ from ca.infra import Infra
 from ca.loans import LoanError, LoanSystem
 from ca.economy import Ledger
 from ca.recorder import Recorder
-from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
-from fixtures import HashEmbedding, demo_bank
-
-DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
+from fixtures import demo_infra
 
 
 def setup(bal=None):
@@ -24,9 +21,7 @@ def setup(bal=None):
 
 
 def make_infra(level="C0", capital=1000):
-    cfg = ExperimentConfig(level=CONFIGS[level], seed=0, seed_capital_total=capital)
-    return Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
-                 embedding_function=HashEmbedding())
+    return demo_infra(level, capital)
 
 
 # ---------------- LoanSystem unit tests ----------------
@@ -305,9 +300,8 @@ def test_repay_broke_borrower_returns_error_via_dispatch():
 
 
 def test_scheduler_logs_interest_events_and_conserves(tmp_path):
-    cfg = ExperimentConfig(level=CONFIGS["C0"], seed=1, seed_capital_total=1000, max_rounds=3)
-    infra = Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
-                  embedding_function=HashEmbedding())
+    infra = demo_infra("C0", capital=1000, seed=1, max_rounds=3)
+    cfg = infra.cfg
     scripts = {
         "agent_1": [("propose_loan", {"to": "agent_2", "amount": 100})],
         "agent_2": [("check_balance", {}), ("accept_loan", {"loan_id": "n0001"})],

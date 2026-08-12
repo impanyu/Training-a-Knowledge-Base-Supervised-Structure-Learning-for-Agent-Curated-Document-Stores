@@ -1,9 +1,12 @@
-"""T29: full-state checkpoint every N rounds + resume."""
+"""T29: full-state checkpoint every N rounds + resume, with v5 seeded memory:
+the corpus never enters a checkpoint, and a resumed run restores notes/answers
+on top of a freshly re-seeded store."""
 import json
 import random
 
 import pytest
-from fixtures import HashEmbedding, demo_bank, demo_infra
+from fixtures import (DEMO_CORPUS, HashEmbedding, demo_bank,
+                      demo_corpus_embeddings, demo_infra)
 
 from ca import checkpoint
 from ca.agent import Agent, ScriptedPolicy
@@ -11,63 +14,65 @@ from ca.config import CONFIGS, ExperimentConfig
 from ca.infra import Infra
 from ca.memory import FifoMemory, GoalStack
 from ca.recorder import Recorder
-from ca.retrieval import KeywordBackend
 from ca.scheduler import Scheduler
 
-DOCS = [{"title": "Paris", "text": "Paris is the capital of France."}]
+
+def _infra(level, seed, capital, max_rounds, **cfg_kw):
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
+                           max_rounds=max_rounds, **cfg_kw)
+    return Infra(cfg, demo_bank(), corpus=DEMO_CORPUS,
+                 corpus_embeddings=demo_corpus_embeddings(),
+                 embedding_function=HashEmbedding())
 
 
 def build(level, scripts, out_dir, seed=7, capital=4000, max_rounds=6, **cfg_kw):
-    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
-                           max_rounds=max_rounds, **cfg_kw)
-    infra = Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
-                  embedding_function=HashEmbedding())
-    agents = [Agent(a, cfg, infra,
+    infra = _infra(level, seed, capital, max_rounds, **cfg_kw)
+    agents = [Agent(a, infra.cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
-    sched = Scheduler(infra, agents, cfg, Recorder(str(out_dir)), random.Random(seed))
+    sched = Scheduler(infra, agents, infra.cfg, Recorder(str(out_dir)),
+                      random.Random(seed))
     return infra, agents, sched
 
 
 def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6, **cfg_kw):
-    """Rebuild everything fresh from 'CLI args', then restore the checkpoint --
-    the exact shape of the runner's --resume path."""
-    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
-                           max_rounds=max_rounds, **cfg_kw)
-    infra = Infra(cfg, demo_bank(), retriever=KeywordBackend(DOCS),
-                  embedding_function=HashEmbedding())
-    agents = [Agent(a, cfg, infra,
+    """Rebuild everything fresh from 'CLI args' -- including the corpus
+    seeding -- then restore the checkpoint: the exact shape of the runner's
+    --resume path."""
+    infra = _infra(level, seed, capital, max_rounds, **cfg_kw)
+    agents = [Agent(a, infra.cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
     recorder = Recorder(str(out_dir), append=True)
     rng = random.Random(seed)
     with open(ck_path) as f:
         state = json.load(f)
-    checkpoint.validate(state, cfg)
+    checkpoint.validate(state, infra.cfg)
     checkpoint.restore(state, infra, agents, recorder, rng)
-    sched = Scheduler(infra, agents, cfg, recorder, rng)
+    sched = Scheduler(infra, agents, infra.cfg, recorder, rng)
     return infra, sched.run(start_round=state["round"] + 1)
 
 
 # 6-round C0 workload that touches every stateful subsystem, with activity on
 # both sides of a round-3 checkpoint boundary (loan interest, an open escrowed
-# contract, chat, scratchpads, memories all cross it).
+# contract, chat, goals, seeded memories all cross it; the qid-bound contract
+# delivers AFTER the boundary and agent_4's round-6 claim is a memory hit on
+# the bought answer).
 SCRIPTS = {
     "agent_1": [
-        ("list_jobs", {}),
-        ("claim_job", {"jid": "j0001"}),
-        ("retrieve", {"query": "capital of France"}),
-        ("deliver_work", {"target_id": "j0001",
-                          "content": '{"q0001": "Paris", "q0002": "Loire", "q0003": "4"}'}),
-        ("claim_job", {"jid": "j0002"}),      # q0003 comes back with its stored answer
-        ("deliver_work", {"target_id": "j0002", "content": '{"q0003": "4", "q0004": "6"}'}),
+        ("list_questions", {}),
+        ("claim_question", {"qid": "q0001"}),
+        ("memory_search", {"query": "capital of France"}),
+        ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ("claim_question", {"qid": "q0002"}),
+        ("deliver_work", {"target_id": "q0002", "content": "Loire"}),
     ],
     "agent_2": [
-        ("claim_job", {"jid": "j0003"}),
+        ("claim_question", {"qid": "q0005"}),
         ("propose_loan", {"to": "agent_3", "amount": 100}),
-        ("work_on", {"question_id": "q0005", "thought": "chalk is sedimentary"}),
+        ("memory_write", {"content": "chalk is sedimentary"}),
         ("check_balance", {}),
-        ("deliver_work", {"target_id": "j0003", "content": '{"q0005": "sedimentary"}'}),
+        ("deliver_work", {"target_id": "q0005", "content": "sedimentary"}),
     ],
     "agent_3": [
         ("check_balance", {}),
@@ -77,18 +82,19 @@ SCRIPTS = {
         ("memory_search", {"query": "tokens owed"}),
     ],
     "agent_4": [
-        ("propose_contract", {"to": "agent_5", "task": "q0002", "price": 40}),
+        ("propose_contract", {"to": "agent_5", "task": "q0004", "price": 40}),
         ("push_goal", {"note": "await c0001 delivery"}),
         ("check_balance", {}),
         ("check_balance", {}),
         ("read_chat", {"with_agent": "agent_5"}),
+        ("claim_question", {"qid": "q0004"}),      # r6: memory hit (bought answer)
     ],
     "agent_5": [
         ("check_balance", {}),
         ("accept_contract", {"contract_id": "c0001"}),
-        ("retrieve", {"query": "capital of France"}),
-        ("work_on", {"question_id": "q0002", "thought": "the Loire is longest"}),
-        ("deliver_work", {"target_id": "c0001", "content": "Loire"}),
+        ("memory_search", {"query": "3+3 arithmetic"}),
+        ("memory_write", {"content": "3+3 makes 6"}),
+        ("deliver_work", {"target_id": "c0001", "content": "6"}),
     ],
     "agent_6": [
         ("memory_write", {"content": "q0003 looks like easy arithmetic"}),
@@ -98,13 +104,13 @@ SCRIPTS = {
     ],
     "agent_7": [
         ("push_goal", {"note": "find a niche"}),
-        ("list_jobs", {}),
+        ("list_questions", {}),
         ("pop_goal", {}),
         ("check_balance", {}),
         ("read_chat", {"with_agent": "agent_6"}),
     ],
     "agent_8": [
-        ("list_jobs", {}),
+        ("list_questions", {}),
         ("check_balance", {}),
         ("check_balance", {}),
     ],
@@ -135,16 +141,16 @@ def test_ledger_state_roundtrip():
 
 def test_board_state_roundtrip():
     infra = demo_infra("C0")
-    infra.board.claim("agent_1", "j0001", round_no=2)
-    infra.board.claim("agent_2", "j0003", round_no=3)
-    infra.board.deliver("agent_2", "j0003", {"q0005": "sedimentary"})
+    infra.board.claim("agent_1", "q0001", round_no=2)
+    infra.board.claim("agent_2", "q0005", round_no=3)
+    infra.board.deliver("agent_2", "q0005", "sedimentary")
     state = json.loads(json.dumps(infra.board.to_state()))
     fresh = demo_infra("C0")
     fresh.board.from_state(state)
-    assert fresh.board.open_jobs() == infra.board.open_jobs()
-    assert fresh.board.active["j0001"].agent == "agent_1"
-    assert fresh.board.active["j0001"].round == 2
-    assert "j0003" not in fresh.board.active
+    assert fresh.board.open_questions() == infra.board.open_questions()
+    assert fresh.board.active["q0001"].agent == "agent_1"
+    assert fresh.board.active["q0001"].round == 2
+    assert "q0005" not in fresh.board.active
     assert fresh.board.strikes == infra.board.strikes
     assert fresh.board.results_json() == infra.board.results_json()
 
@@ -209,26 +215,27 @@ def test_short_term_memories_state_roundtrip():
 
 
 def test_agent_memory_state_roundtrip_including_the_shared_bucket():
-    infra = demo_infra("C2")                 # shared bucket
+    infra = demo_infra("C2")                 # shared bucket, corpus-seeded
     infra.memory.write("agent_1", "paris facts")
     infra.memory.write("agent_2", '[q0003] 2+2? -> "4" (F1 1.00)',
                        kind="answer", qid="q0003", f1=1.0)
     state = json.loads(json.dumps(infra.memory.to_state()))
-    fresh = demo_infra("C2")
+    fresh = demo_infra("C2")                 # freshly re-seeded shared store
     fresh.memory.from_state(state)
     assert fresh.memory.answer("agent_5", "q0003")["f1"] == 1.0
     assert fresh.memory.search("agent_5", "paris facts")[0]["text"] == "paris facts"
     assert fresh.memory.n_answers("agent_1") == infra.memory.n_answers("agent_1")
+    assert fresh.memory.n_entries("agent_1") == len(DEMO_CORPUS) + 2
 
 
 def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec = Recorder(str(tmp_path))
-    rec.log({"round": 1, "agent": "agent_1", "action": "retrieve", "input": {},
+    rec.log({"round": 1, "agent": "agent_1", "action": "memory_search", "input": {},
              "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5,
              "balance_after": 0})
-    rec.log({"round": 1, "agent": "agent_1", "action": "claim_job", "input": {},
-             "result": 'claimed [j0001] 3 questions, reward 600\n'
-                       '  q0001 capital of France? -- memory: stored answer "Paris" (F1 1.00)',
+    rec.log({"round": 1, "agent": "agent_1", "action": "claim_question", "input": {},
+             "result": 'claimed [q0001] capital of France? (2hop, reward 100)\n'
+                       'memory: stored answer: ... "Paris" (F1 1.00)',
              "category": "admin", "tokens_in": 1, "tokens_out": 1, "balance_after": 0})
     state = json.loads(json.dumps(rec.to_state()))
     rec.close()
@@ -270,20 +277,30 @@ def test_checkpoint_files_every_n_and_at_final_round(tmp_path):
 
 
 def test_checkpoint_written_when_run_stops_early(tmp_path):
-    """C7 solo agent absorbs the demo bank's whole 6-unit demand, so the run
-    breaks on all_done() before max_rounds."""
+    """C7 solo agent absorbs the demo bank's whole 5-question demand, so the
+    run breaks on all_done() before max_rounds."""
     script = []
-    for jid, answers in (("j0001", {"q0001": "Paris", "q0002": "Loire", "q0003": "4"}),
-                         ("j0002", {"q0003": "4", "q0004": "6"}),
-                         ("j0003", {"q0005": "sedimentary"})):
-        script += [("claim_job", {"jid": jid}),
-                   ("deliver_work", {"target_id": jid, "content": json.dumps(answers)})]
+    for qid, ans in (("q0001", "Paris"), ("q0002", "Loire"), ("q0003", "4"),
+                     ("q0004", "6"), ("q0005", "sedimentary")):
+        script += [("claim_question", {"qid": qid}),
+                   ("deliver_work", {"target_id": qid, "content": ans})]
     _, _, sched = build("C7", {"agent_1": script}, tmp_path, capital=1000,
                         max_rounds=40, checkpoint_every=50)
     summary = sched.run()
-    assert summary["rounds_used"] == 6         # 3 jobs x (claim + deliver)
+    assert summary["rounds_used"] == 10        # 5 questions x (claim + deliver)
     assert summary["remaining_units"] == 0
-    assert (tmp_path / "checkpoint_0006.json").exists()
+    assert (tmp_path / "checkpoint_0010.json").exists()
+
+
+def test_checkpoint_never_contains_the_corpus(tmp_path):
+    """The seeded corpus is static furniture: 12k paragraphs must not be
+    serialized into every checkpoint file."""
+    _, _, sched = build("C0", SCRIPTS, tmp_path, max_rounds=3, checkpoint_every=3)
+    sched.run()
+    ck = json.loads((tmp_path / "checkpoint_0003.json").read_text())
+    rows = [row for rows in ck["memory"].values() for row in rows]
+    assert rows                                          # notes/answers ARE saved
+    assert all(row[2]["kind"] != "corpus" for row in rows)
 
 
 def test_validate_rejects_level_or_seed_mismatch(tmp_path):
@@ -304,8 +321,9 @@ def test_validate_rejects_level_or_seed_mismatch(tmp_path):
 
 
 def test_resume_reproduces_a_straight_run_exactly(tmp_path):
-    """Run A: 6 rounds straight. Run B: 3 rounds, checkpoint, resume 4-6.
-    Summary, timeseries and trace must be indistinguishable."""
+    """Run A: 6 rounds straight. Run B: 3 rounds, checkpoint, resume 4-6 on a
+    freshly re-seeded store. Summary, timeseries and trace must be
+    indistinguishable."""
     dir_a, dir_b = tmp_path / "a", tmp_path / "b"
 
     _, _, sched_a = build("C0", SCRIPTS, dir_a, max_rounds=6)
@@ -313,9 +331,10 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
     assert summary_a["rounds_used"] == 6
     assert summary_a["conservation_ok"] is True
     assert summary_a["n_contracts"] == 1 and summary_a["loans"]["n_active"] == 1
-    # the workload really did exercise memory across the boundary
-    assert summary_a["memory"]["agent_1"]["n_memory_hits"] == 1
-    assert len(summary_a["deliveries"]) >= 3
+    # the workload really did exercise memory across the boundary: the bought
+    # q0004 answer (delivered r5) made agent_4's r6 claim a hit
+    assert summary_a["memory"]["agent_4"]["n_memory_hits"] == 1
+    assert len(summary_a["deliveries"]) == 3
 
     _, _, sched_b = build("C0", SCRIPTS, dir_b, max_rounds=3, checkpoint_every=3)
     sched_b.run()
@@ -338,8 +357,9 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
 
 
 def test_resume_restores_the_vector_memory_contents(tmp_path):
-    """The store is rebuilt from the checkpoint, not merely re-created empty:
-    an answer written before the boundary is still recallable after it."""
+    """The store is rebuilt from the checkpoint on top of a fresh re-seed: an
+    answer written before the boundary is still recallable after it, the
+    corpus is still searchable, and privacy still holds."""
     dir_b = tmp_path / "b"
     _, _, sched = build("C0", SCRIPTS, dir_b, max_rounds=3, checkpoint_every=3)
     sched.run()
@@ -349,6 +369,8 @@ def test_resume_restores_the_vector_memory_contents(tmp_path):
     rec = infra_b.memory.answer("agent_1", "q0001")
     assert rec is not None and "Paris" in rec["text"] and rec["f1"] == 1.0
     assert infra_b.memory.answer("agent_2", "q0001") is None      # private at C0
+    hit = infra_b.memory.search("agent_8", "capital of France.", k=1)[0]
+    assert hit["kind"] == "corpus" and hit["title"] == "Paris"    # re-seeded
 
 
 def test_resume_continues_to_a_larger_max_rounds(tmp_path):

@@ -1,22 +1,22 @@
-"""The runner's CLI surface. v4 takes one --bank (the flat question bank);
---library / --posted are gone with the task trees."""
+"""The runner's CLI surface. v5 takes one --bank; corpus.jsonl and
+corpus_emb.npy are derived from its directory, so --index is gone."""
 import json
 
 import pytest
-from fixtures import demo_jobs, demo_questions
+from fixtures import demo_questions
 
 from ca.bank import QuestionBank
 from ca.runner import build_parser
 
 
-BASE = ["--level", "C0", "--index", "idx", "--out", "runs/x"]
+BASE = ["--level", "C0", "--out", "runs/x"]
 
 
-def test_bank_is_required_and_the_tree_flags_are_gone():
+def test_bank_is_required_and_the_dead_flags_are_gone():
     ap = build_parser()
-    args = ap.parse_args(BASE + ["--bank", "data/v4/bank.json"])
-    assert args.bank == "data/v4/bank.json"
-    for dead in ("--library", "--posted"):
+    args = ap.parse_args(BASE + ["--bank", "data/v5/bank.json"])
+    assert args.bank == "data/v5/bank.json"
+    for dead in ("--index", "--library", "--posted"):
         with pytest.raises(SystemExit):
             ap.parse_args(BASE + ["--bank", "b.json", dead, "x"])
     with pytest.raises(SystemExit):
@@ -32,7 +32,7 @@ def test_run_knobs_survive_the_port():
     assert (args.seed, args.capital, args.max_rounds) == (3, 5000, 12)
     assert args.checkpoint_every == 4 and args.solo_turns == 8
     assert args.resume.endswith("checkpoint_0004.json") and args.model == "m"
-    assert args.index == "idx" and args.out == "runs/x"
+    assert args.out == "runs/x"
 
 
 def test_defaults():
@@ -49,10 +49,8 @@ def test_bank_json_loads_through_the_same_path_the_runner_uses(tmp_path):
             {"qid": q.qid, "text": q.text, "answers": q.answers,
              "difficulty": q.difficulty, "price": q.price,
              "topic": q.topic, "source": "hotpot"}      # unknown fields ignored
-            for q in demo_questions()],
-        "jobs": [{"jid": j.jid, "qids": j.qids, "price": j.price}
-                 for j in demo_jobs()]}))
+            for q in demo_questions()]}))
     bank = QuestionBank.from_json(str(p))
-    assert len(bank.questions) == 5 and len(bank.jobs) == 3
-    assert bank.total_units() == 6
+    assert len(bank.questions) == 5
+    assert bank.total_units() == 5
     assert bank.get("q0004").topic == "k07"

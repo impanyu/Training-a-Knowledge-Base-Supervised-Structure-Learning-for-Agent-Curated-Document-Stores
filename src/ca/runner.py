@@ -2,16 +2,17 @@
 import argparse
 import json
 import random
+from pathlib import Path
 
 from ca import checkpoint
 from ca.agent import Agent
 from ca.bank import QuestionBank
 from ca.config import CONFIGS, ExperimentConfig, agent_ids
 from ca.infra import Infra
+from ca.memory import load_corpus
 from ca.metrics import compute_metrics
 from ca.providers import make_policy
 from ca.recorder import Recorder
-from ca.retrieval import ChromaBackend
 from ca.scheduler import Scheduler
 
 
@@ -19,10 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--level", required=True, choices=list(CONFIGS))
     ap.add_argument("--bank", required=True,
-                    help="bank.json from build_bank.py + build_jobs.py: the flat "
-                         "question bank (text, gold answers, price, topic) and the "
-                         "jobs the WORLD posts over it")
-    ap.add_argument("--index", required=True, help="chroma persist dir from prepare_data")
+                    help="bank.json from build_bank.py: the question bank (text, "
+                         "gold answers, price, topic). corpus.jsonl and "
+                         "corpus_emb.npy are read from the same directory to "
+                         "seed every agent's memory")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--capital", type=int, default=400_000)
     ap.add_argument("--max-rounds", type=int, default=60)
@@ -57,11 +58,14 @@ def main(argv: list[str] | None = None) -> None:
             cfg.solo_turns_per_round - 1 if level.n_agents == 1 else 0)
         cfg.max_rounds = max(1, args.turns // slots_per_round)
     bank = QuestionBank.from_json(args.bank)
+    data_dir = Path(args.bank).parent
+    corpus, corpus_emb = load_corpus(data_dir / "corpus.jsonl",
+                                     data_dir / "corpus_emb.npy")
     state = None
     if args.resume:
         state = checkpoint.load(args.resume)
         checkpoint.validate(state, cfg)  # level + seed must match
-    infra = Infra(cfg, bank, retriever=ChromaBackend.load(args.index))
+    infra = Infra(cfg, bank, corpus=corpus, corpus_embeddings=corpus_emb)
     agents = [Agent(a, cfg, infra, make_policy(cfg.model, cfg.max_tokens_per_turn, cfg.temperature))
               for a in infra.agent_ids]
     recorder = Recorder(args.out, append=state is not None)

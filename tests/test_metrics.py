@@ -1,6 +1,6 @@
 import pytest
 
-from ca.metrics import compute_metrics, delegation_rate, gini, specialization
+from ca.metrics import compute_metrics, gini, specialization
 
 
 def test_gini():
@@ -8,15 +8,10 @@ def test_gini():
     assert gini([0, 0, 0, 10]) == pytest.approx(0.75, abs=0.01)
 
 
-def delivery(agent, qid, f1=1.0, em=1.0, topic="k01", payout=100, jid="j0001"):
-    return {"qid": qid, "jid": jid, "agent": agent, "submitted": "x", "f1": f1,
+def delivery(agent, qid, f1=1.0, em=1.0, topic="k01", payout=100):
+    return {"qid": qid, "agent": agent, "submitted": "x", "f1": f1,
             "em": em, "payout": payout, "round": 1, "price": 100,
             "difficulty": "2hop", "topic": topic}
-
-
-def contract(cid, proposer, contractor, qid, status="delivered", price=30):
-    return {"cid": cid, "proposer": proposer, "contractor": contractor,
-            "task": qid or "free text", "qid": qid, "price": price, "status": status}
 
 
 def base_summary():
@@ -26,8 +21,6 @@ def base_summary():
             delivery("a", "q0002", f1=0.5, em=0.0),
         ],
         "total_units": 4,
-        "jobs_posted": 4,
-        "jobs_closed": 1,
         "contracts": [],
         "balances": {"a": 100, "b": 0},
         "tokens": {"a": {"solving": 1000, "admin": 500}, "b": {"solving": 0, "admin": 500}},
@@ -64,7 +57,6 @@ def test_compute_metrics_empty_summary_is_zero_guarded():
     m = compute_metrics(summary)
     assert m["bankrupt_rate"] == 0.0 and m["total_f1"] == 0.0
     assert m["demand_absorbed"] == 0.0 and m["n_answered"] == 0
-    assert m["job_completion_rate"] == 0.0 and m["delegation_rate"] == 0.0
     assert m["admin_solving_ratio"] == 0.0
     assert m["n_loans"] == 0 and m["loan_principal_outstanding"] == 0
     assert m["interest_paid_total"] == 0 and m["bad_debt"] == 0
@@ -72,63 +64,11 @@ def test_compute_metrics_empty_summary_is_zero_guarded():
     assert m["memory_hit_rate"] == 0.0 and m["improvement_rate"] == 0.0
 
 
-# ---------------- demand absorbed (replaces task_completion_rate) ----------------
+# ---------------- demand absorbed ----------------
 
-def test_demand_absorbed_is_delivered_units_over_total_job_membership():
+def test_demand_absorbed_is_closed_questions_over_total():
     m = compute_metrics(base_summary())
     assert m["demand_absorbed"] == pytest.approx(2 / 4)
-
-
-def test_demand_absorbed_counts_one_question_once_per_job_it_sits_in():
-    """A question posted in two jobs is two units of demand, so answering it
-    under each job counts twice: demand is (job, question) units."""
-    summary = base_summary()
-    summary["deliveries"] = [delivery("a", "q0001", jid="j0001"),
-                             delivery("b", "q0001", jid="j0002")]
-    assert compute_metrics(summary)["demand_absorbed"] == pytest.approx(2 / 4)
-
-
-# ---------------- job completion & delegation ----------------
-
-def test_job_completion_rate_is_closed_over_posted():
-    assert compute_metrics(base_summary())["job_completion_rate"] == pytest.approx(1 / 4)
-
-
-def test_job_completion_rate_zero_guarded_without_jobs():
-    summary = base_summary()
-    summary["jobs_posted"] = 0
-    assert compute_metrics(summary)["job_completion_rate"] == 0.0
-
-
-def test_delegation_rate_counts_units_bought_from_another_agent():
-    deliveries = [delivery("a", "q0001"), delivery("a", "q0002"),
-                  delivery("a", "q0003"), delivery("a", "q0004")]
-    contracts = [contract("c0001", "a", "b", "q0002"),
-                 contract("c0002", "a", "b", "q0003")]
-    assert delegation_rate(deliveries, contracts) == pytest.approx(2 / 4)
-
-
-def test_delegation_rate_ignores_undelivered_and_unbound_contracts():
-    deliveries = [delivery("a", "q0001"), delivery("a", "q0002")]
-    contracts = [contract("c0001", "a", "b", "q0002", status="accepted"),
-                 contract("c0002", "a", "b", None)]
-    assert delegation_rate(deliveries, contracts) == 0.0
-
-
-def test_delegation_rate_ignores_a_contract_the_deliverer_fulfilled_itself():
-    """Only work done by SOMEONE ELSE is delegation."""
-    deliveries = [delivery("a", "q0001")]
-    assert delegation_rate(deliveries, [contract("c0001", "b", "a", "q0001")]) == 0.0
-
-
-def test_delegation_rate_zero_guarded_without_deliveries():
-    assert delegation_rate([], [contract("c0001", "a", "b", "q0001")]) == 0.0
-
-
-def test_compute_metrics_carries_the_delegation_rate():
-    summary = base_summary()
-    summary["contracts"] = [contract("c0001", "a", "b", "q0002")]
-    assert compute_metrics(summary)["delegation_rate"] == pytest.approx(1 / 2)
 
 
 def test_demand_absorbed_zero_guarded_without_a_bank():
@@ -137,8 +77,11 @@ def test_demand_absorbed_zero_guarded_without_a_bank():
     assert compute_metrics(summary)["demand_absorbed"] == 0.0
 
 
-def test_task_completion_rate_is_gone():
-    assert "task_completion_rate" not in compute_metrics(base_summary())
+def test_the_job_metrics_are_gone():
+    m = compute_metrics(base_summary())
+    assert "job_completion_rate" not in m
+    assert "delegation_rate" not in m
+    assert "task_completion_rate" not in m
 
 
 # ---------------- specialization over topics ----------------
@@ -179,7 +122,7 @@ def test_specialization_empty_deliveries_yields_empty_dict():
 
 
 def test_compute_metrics_includes_specialization_without_any_extra_argument():
-    """v4 carries the topic on each delivery row, so specialization needs no
+    """Every delivery row carries its topic, so specialization needs no
     library / bank handed in alongside the summary."""
     summary = base_summary()
     summary["deliveries"] = [delivery("A", "q0001", topic="k01"),
