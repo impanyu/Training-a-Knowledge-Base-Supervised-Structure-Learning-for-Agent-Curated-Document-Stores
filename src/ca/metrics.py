@@ -2,18 +2,6 @@
 from collections import defaultdict
 
 
-def gini(values: list[int | float]) -> float:
-    vals = sorted(values)
-    n = len(vals)
-    total = sum(vals)
-    if n == 0 or total == 0:
-        return 0.0
-    cum = 0.0
-    for i, v in enumerate(vals, start=1):
-        cum += i * v
-    return (2 * cum) / (n * total) - (n + 1) / n
-
-
 def specialization(summary: dict) -> dict[str, float]:
     """Herfindahl index (Sum share^2) of each agent's delivered questions across
     TOPICS: 1.0 = every delivered question came from one topic (fully
@@ -33,16 +21,14 @@ def specialization(summary: dict) -> dict[str, float]:
 
 def compute_metrics(summary: dict) -> dict:
     deliveries = summary.get("deliveries", [])
+    n_answered = len(deliveries)
     total_f1 = sum(d["f1"] for d in deliveries)
     total_em = sum(d["em"] for d in deliveries)
     solving = sum(t["solving"] for t in summary["tokens"].values())
     admin = sum(t["admin"] for t in summary["tokens"].values())
     all_tok = solving + admin
-    prices = summary.get("contract_prices", [])
     total_units = summary.get("total_units", 0)
-    loans = summary.get("loans", {})
-    debtors = loans.get("debtors", {})
-    bankrupt_with_debt = loans.get("bankrupt_with_debt", [])
+    n_messages = summary.get("n_messages", 0)
     mem = summary.get("memory", {})
     n_claims = sum(v.get("n_claims", 0) for v in mem.values())
     n_memory_hits = sum(v.get("n_memory_hits", 0) for v in mem.values())
@@ -50,26 +36,22 @@ def compute_metrics(summary: dict) -> dict:
     n_improved = sum(v.get("n_improved", 0) for v in mem.values())
     spec = specialization(summary)
     return {
+        "n_answered": n_answered,
         "total_f1": total_f1,
         "total_em": total_em,
-        "n_answered": len(deliveries),
-        # v5 headline: how much of the WORLD's posted demand -- the questions
-        # themselves -- the economy actually absorbed (closed / total)
-        "demand_absorbed": len(deliveries) / total_units if total_units else 0.0,
+        "mean_f1": total_f1 / n_answered if n_answered else 0.0,
+        "mean_em": total_em / n_answered if n_answered else 0.0,
+        # headline: how much of the WORLD's posted demand -- the questions
+        # themselves -- the system actually absorbed (closed / total)
+        "demand_absorbed": n_answered / total_units if total_units else 0.0,
         "accuracy_per_ktok_solving": total_f1 / (solving / 1000) if solving else 0.0,
         "accuracy_per_ktok_all": total_f1 / (all_tok / 1000) if all_tok else 0.0,
+        # headline efficiency metric: tokens are measured, never charged
         "coordination_overhead": admin / all_tok if all_tok else 0.0,
         "admin_solving_ratio": admin / solving if solving else 0.0,
         "rounds_used": summary["rounds_used"],
-        "bankrupt_rate": (len(summary["bankrupt"]) / len(summary["balances"])
-                          if summary["balances"] else 0.0),
-        "gini_final": gini([max(b, 0) for b in summary["balances"].values()]),
-        "n_contracts": summary["n_contracts"],
-        "mean_contract_price": sum(prices) / len(prices) if prices else 0.0,
-        "n_loans": loans.get("n_proposed", 0),
-        "loan_principal_outstanding": loans.get("total_principal_outstanding", 0),
-        "interest_paid_total": loans.get("total_interest_paid", 0),
-        "bad_debt": sum(debtors.get(a, 0) for a in bankrupt_with_debt),
+        "n_messages": n_messages,
+        "messages_per_answer": n_messages / n_answered if n_answered else 0.0,
         "specialization": spec,
         "mean_specialization": (sum(spec.values()) / len(spec)) if spec else 0.0,
         # memory reuse: how often a claim came back with knowledge attached, and

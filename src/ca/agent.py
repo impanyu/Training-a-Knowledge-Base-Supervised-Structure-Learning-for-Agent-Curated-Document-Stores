@@ -8,7 +8,7 @@ import anthropic
 
 from ca.actions import classify, dispatch, permission_error, visible_tools
 from ca.config import ExperimentConfig
-from ca.context import render_turn, system_prompt
+from ca.context import ROOT_GOAL, ROOT_GOAL_SOLO, render_turn, system_prompt
 from ca.infra import Infra
 from ca.memory import FifoMemory, GoalStack
 
@@ -34,7 +34,7 @@ class ScriptedPolicy:
 
     def decide(self, system, context, tools) -> Decision:
         if not self.script:
-            return Decision("check_balance", {}, self.in_tokens, self.out_tokens)
+            return Decision("list_agents", {}, self.in_tokens, self.out_tokens)
         name, inp = self.script.pop(0)
         return Decision(name, inp, self.in_tokens, self.out_tokens)
 
@@ -60,7 +60,6 @@ class LLMPolicy:
         except Exception as e:
             # Deliberately broad: the SDK already retried: whatever still failed
             # must cost this agent one turn, not the whole multi-hour run.
-            # Nothing is billed, so a dead API cannot bankrupt anyone either.
             print(f"[llm-error] {e}", file=sys.stderr)
             return Decision("__noop__", {}, 0, 0)
         usage = resp.usage
@@ -78,8 +77,7 @@ class Agent:
         self.infra = infra
         self.policy = policy
         self.fifo = FifoMemory(cfg.fifo_k)
-        self.goals = GoalStack("maximize GLOBAL token balance"
-                               if cfg.level.collective_goal else "maximize token balance")
+        self.goals = GoalStack(ROOT_GOAL_SOLO if cfg.level.n_agents == 1 else ROOT_GOAL)
         self._system = system_prompt(cfg.level, agent_id, infra.agent_ids)
         self._tools = visible_tools(cfg.level, agent_id)
 
@@ -103,10 +101,6 @@ class Agent:
                 result = f"ERROR: {err}"
             else:
                 result = dispatch(self.infra, self.id, d.name, d.inp)
-        # T17: EVERY turn bills its input+output tokens, unconditionally --
-        # ERROR results and __noop__ turns included. A noop with 0 tokens
-        # burns 0, which is harmless.
-        self.infra.ledger.burn(self.id, d.in_tokens + d.out_tokens)
         self.infra.chat.mark_read(self.id)  # rendered messages are now "seen"
         # store the FULL action and result
         self.fifo.add(f"{d.name}({json.dumps(d.inp, ensure_ascii=False)})", result)
@@ -114,5 +108,4 @@ class Agent:
             "round": self.infra.round, "agent": self.id,
             "action": d.name, "input": d.inp, "result": result,
             "category": category, "tokens_in": d.in_tokens, "tokens_out": d.out_tokens,
-            "balance_after": self.infra.ledger.balance(self.id),
         }

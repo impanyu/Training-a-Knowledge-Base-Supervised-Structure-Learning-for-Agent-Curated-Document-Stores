@@ -78,12 +78,10 @@ def demo_bank() -> QuestionBank:
     return QuestionBank(demo_questions())
 
 
-def demo_infra(level: str = "C0", capital: int = 1000,
-               bank: QuestionBank | None = None, corpus=None, seed: int = 0,
-               **cfg_kw):
+def demo_infra(level: str = "C0", bank: QuestionBank | None = None,
+               corpus=None, seed: int = 0, **cfg_kw):
     from ca.infra import Infra
-    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
-                           **cfg_kw)
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, **cfg_kw)
     corpus = corpus or DEMO_CORPUS
     return Infra(cfg, bank or demo_bank(), corpus=corpus,
                  corpus_embeddings=demo_corpus_embeddings(corpus),

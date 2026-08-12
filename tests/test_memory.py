@@ -180,13 +180,15 @@ def test_best_f1_ties_are_broken_by_recency():
 
 
 def test_a_graded_answer_beats_an_ungraded_one_and_ungraded_falls_back_to_latest():
+    """The store itself stays generic: v6 only ever writes graded answers, but
+    an entry without an F1 must never displace one that has been scored."""
     m = mem()
-    m.write("a", "from a contract", kind="answer", qid="q1")       # F1 unknown
-    assert m.answer("a", "q1") == {"text": "from a contract", "kind": "answer",
+    m.write("a", "ungraded", kind="answer", qid="q1")              # F1 unknown
+    assert m.answer("a", "q1") == {"text": "ungraded", "kind": "answer",
                                    "qid": "q1", "f1": None, "title": None}
     m.write("a", "graded", kind="answer", qid="q1", f1=0.1)
     assert m.answer("a", "q1")["text"] == "graded"
-    m.write("a", "another contract", kind="answer", qid="q1")
+    m.write("a", "another ungraded", kind="answer", qid="q1")
     assert m.answer("a", "q1")["text"] == "graded"
 
 

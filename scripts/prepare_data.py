@@ -14,9 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
-# Pricing rule (spec §8): R(q) ~= 1.5x the average billable token burn to solve a
-# question of that tier, so solving is profitable. Calibrated from pilot round 1
-# (2026-07: clean 2-hop solve ~11-15k billable tokens incl. context growth).
+# v6: `price` is inert bank metadata -- nothing reads it as money any more. It
+# survives only as a per-difficulty weight for post-hoc slicing of delivery rows.
 PRICES = {"2hop": 18000, "3hop": 30000, "4hop": 45000}
 
 

@@ -25,15 +25,6 @@ class Scheduler:
                 rounds_used = r
                 if self.cfg.claim_ttl is not None:
                     self.infra.board.expire_claims(r, self.cfg.claim_ttl)
-                for ev in self.infra.loans.interest_tick():
-                    verb = "paid" if ev["paid"] else "capitalized"
-                    self.recorder.log({
-                        "round": r, "agent": ev["borrower"], "action": "__interest__",
-                        "input": {"lid": ev["lid"], "lender": ev["lender"]},
-                        "result": f"{verb} {ev['interest']}",
-                        "category": "admin", "tokens_in": 0, "tokens_out": 0,
-                        "balance_after": self.infra.ledger.balance(ev["borrower"]),
-                    })
                 order = list(self.agents)
                 if self.cfg.level.has_hub and self.cfg.hub_turns_per_round > 1:
                     iface = next(a for a in self.agents if a.id == "hub")
@@ -44,29 +35,23 @@ class Scheduler:
                 for agent in order:
                     event = agent.take_turn()
                     self.recorder.log(event)
-                assert self.infra.ledger.conservation_ok(), \
-                    f"conservation violated in round {r}"
-                # T28: snapshot each completed round (before the break checks,
+                # T28: snapshot each completed round (before the break check,
                 # so the final round is captured too); a crash mid-round means
                 # no line for that round, but the finally still writes summary.
                 self.recorder.log_round(self.infra, r)
-                # T29: checkpoint after the round is fully committed (assert +
-                # timeseries line included) -- every N rounds, at max_rounds,
-                # and whenever the run is about to stop, so the last completed
-                # round of ANY finished run is always resumable.
+                # T29: checkpoint after the round is fully committed (timeseries
+                # line included) -- every N rounds, at max_rounds, and whenever
+                # the run is about to stop, so the last completed round of ANY
+                # finished run is always resumable.
                 done = self.infra.board.all_done()
-                broke = all(self.infra.ledger.is_bankrupt(a)
-                            for a in self.infra.agent_ids)
                 if (r % self.cfg.checkpoint_every == 0 or r == self.cfg.max_rounds
-                        or done or broke):
+                        or done):
                     checkpoint.save(
                         self.recorder.dir / f"checkpoint_{r:04d}.json",
                         checkpoint.capture(self.infra, self.agents, self.recorder,
                                            self.rng, r))
                 if done:
                     break
-                if broke:
-                    break  # terminal: solving actions frozen for everyone, no income possible
         finally:
             # a crash (or a tripped invariant) must not cost us the run's data
             summary = self.recorder.write_summary(self.infra, rounds_used)

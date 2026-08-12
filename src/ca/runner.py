@@ -21,11 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--level", required=True, choices=list(CONFIGS))
     ap.add_argument("--bank", required=True,
                     help="bank.json from build_bank.py: the question bank (text, "
-                         "gold answers, price, topic). corpus.jsonl and "
+                         "gold answers, topic). corpus.jsonl and "
                          "corpus_emb.npy are read from the same directory to "
                          "seed every agent's memory")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--capital", type=int, default=400_000)
     ap.add_argument("--max-rounds", type=int, default=60)
     ap.add_argument("--turns", type=int, default=None,
                     help="total agent-turn budget; overrides --max-rounds with turns//n_agents")
@@ -48,7 +47,6 @@ def main(argv: list[str] | None = None) -> None:
 
     level = CONFIGS[args.level]
     cfg = ExperimentConfig(level=level, seed=args.seed,
-                           seed_capital_total=args.capital,
                            max_rounds=args.max_rounds, model=args.model,
                            solo_turns_per_round=args.solo_turns,
                            checkpoint_every=args.checkpoint_every)

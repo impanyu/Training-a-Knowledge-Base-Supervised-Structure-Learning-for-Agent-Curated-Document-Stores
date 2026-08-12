@@ -1,14 +1,11 @@
 """Crash-safe JSONL trace + per-round timeseries + end-of-run summary.
 
-T28 timeseries.jsonl schema -- one JSON object per round, appended by
-`log_round` after every completed round; every field is CUMULATIVE as of the
-end of that round (a crash mid-round loses only that round's line):
+timeseries.jsonl schema -- one JSON object per round, appended by `log_round`
+after every completed round; every field is CUMULATIVE as of the end of that
+round (a crash mid-round loses only that round's line):
 
     round                          1-based round index
-    bankrupt                       [agent, ...]
-    balances                       {agent: tokens}
-    total_balance / escrow_total / minted / burned
-    tokens                         {agent: {solving, admin}} burned
+    tokens                         {agent: {solving, admin}} measured, not charged
     solving_total / admin_total
     coordination_overhead          admin / (admin + solving), zero-guarded
     coordination_overhead_by_agent {agent: same, per agent}
@@ -16,8 +13,7 @@ end of that round (a crash mid-round loses only that round's line):
     n_answered / total_f1 / total_em
     board                          {open, active_claims, closed} QUESTION counts
     total_units / remaining_units / demand_absorbed
-    n_contracts / contracts_by_status {status: count}
-    n_loans / loan_principal_outstanding / interest_paid_total
+    n_messages                     chat messages sent so far
     memory                         {agent: {answers, notes, n_claims,
                                    n_memory_hits, n_repeat_deliveries, n_improved}}
     n_claims / n_memory_hits / memory_hit_rate / improvement_rate
@@ -36,13 +32,6 @@ from ca.actions import IMPROVED_MARKER, MEMORY_HIT_MARKER, STORED_F1_MARKER
 def _mem_tally() -> dict:
     return {"n_claims": 0, "n_memory_hits": 0,
             "n_repeat_deliveries": 0, "n_improved": 0}
-
-
-def _contract_rows(infra) -> list[dict]:
-    """Contract records, JSON-safe: who bought which answer from whom."""
-    return [{"cid": c.cid, "proposer": c.proposer, "contractor": c.contractor,
-             "task": c.task, "qid": c.qid, "price": c.price, "status": c.status}
-            for c in infra.contracts.contracts.values()]
 
 
 class Recorder:
@@ -104,10 +93,6 @@ class Recorder:
                  "active_claims": len(infra.board.active),
                  "closed": closed}
 
-        contracts_by_status: dict[str, int] = defaultdict(int)
-        for c in infra.contracts.contracts.values():
-            contracts_by_status[c.status] += 1
-        loans = list(infra.loans.loans.values())
         memory = self._memory_block(infra)
         n_claims = sum(v["n_claims"] for v in memory.values())
         n_hits = sum(v["n_memory_hits"] for v in memory.values())
@@ -116,12 +101,6 @@ class Recorder:
 
         snap = {
             "round": round_no,
-            "bankrupt": [a for a in agents if infra.ledger.is_bankrupt(a)],
-            "balances": {a: infra.ledger.balance(a) for a in agents},
-            "total_balance": sum(infra.ledger.balance(a) for a in agents),
-            "escrow_total": sum(infra.ledger.escrow.values()),
-            "minted": infra.ledger.minted,
-            "burned": infra.ledger.burned,
             "tokens": tokens,
             "solving_total": solving,
             "admin_total": admin,
@@ -139,12 +118,7 @@ class Recorder:
             "total_units": total_units,
             "remaining_units": total_units - closed,
             "demand_absorbed": closed / total_units if total_units else 0.0,
-            "n_contracts": len(infra.contracts.contracts),
-            "contracts_by_status": dict(contracts_by_status),
-            "n_loans": len(loans),
-            "loan_principal_outstanding": sum(l.principal for l in loans
-                                              if l.status == "active"),
-            "interest_paid_total": infra.loans.total_interest_paid,
+            "n_messages": len(infra.chat.messages),
             "memory": memory,
             "n_claims": n_claims,
             "n_memory_hits": n_hits,
@@ -157,43 +131,21 @@ class Recorder:
         return snap
 
     def write_summary(self, infra, rounds_used: int) -> dict:
-        loans = list(infra.loans.loans.values())
-        debtors: dict[str, int] = defaultdict(int)
-        for loan in loans:
-            if loan.status == "active":
-                debtors[loan.borrower] += loan.principal
         summary = {
             "level": infra.cfg.level.level,
             "seed": infra.cfg.seed,
             "rounds_used": rounds_used,
-            # v5: one row per DELIVERED question -- the thing that is graded
-            # and paid, and what the metrics read (topic for specialization,
-            # price/difficulty for post-hoc slicing).
+            # one row per DELIVERED question -- the thing that is graded, and
+            # what the metrics read (topic for specialization, price/difficulty
+            # for post-hoc slicing).
             "deliveries": infra.board.results_json(),
             "total_units": infra.bank.total_units(),
             "remaining_units": infra.bank.total_units() - len(infra.board.closed),
-            "balances": {a: infra.ledger.balance(a) for a in infra.agent_ids},
             "tokens": {a: dict(self._tokens[a]) for a in infra.agent_ids},
-            "bankrupt": [a for a in infra.agent_ids if infra.ledger.is_bankrupt(a)],
-            "n_contracts": len(infra.contracts.contracts),
-            "contracts": _contract_rows(infra),
-            "contract_prices": [c.price for c in infra.contracts.contracts.values()
-                                if c.status == "delivered"],
-            "loans": {
-                "n_proposed": len(loans),
-                "n_active": sum(1 for l in loans if l.status == "active"),
-                "n_repaid": sum(1 for l in loans if l.status == "repaid"),
-                "total_principal_outstanding": sum(debtors.values()),
-                "total_interest_paid": infra.loans.total_interest_paid,
-                "debtors": dict(debtors),
-                "bankrupt_with_debt": [a for a in debtors if infra.ledger.is_bankrupt(a)],
-            },
+            "n_messages": len(infra.chat.messages),
             # per-agent memory footprint (what is stored, corpus excluded) plus
             # how much it was hit and improved on this run
             "memory": self._memory_block(infra),
-            "minted": infra.ledger.minted,
-            "burned": infra.ledger.burned,
-            "conservation_ok": infra.ledger.conservation_ok(),
         }
         with open(self.dir / "summary.json", "w") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)

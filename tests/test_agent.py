@@ -1,11 +1,11 @@
 import ca.agent as agent_mod
 from fixtures import demo_infra
 
-from ca.agent import Agent, ScriptedPolicy, Decision, LLMPolicy
+from ca.agent import Agent, Decision, LLMPolicy, ScriptedPolicy
 
 
 def make(level="C0"):
-    infra = demo_infra(level, capital=1000)
+    infra = demo_infra(level)
     return infra.cfg, infra
 
 
@@ -18,47 +18,39 @@ def test_turn_executes_and_logs():
     assert len(ag.fifo.items) == 1
 
 
-def test_billing_on_solving_turn():
+def test_tokens_are_measured_not_charged():
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra,
                ScriptedPolicy([("memory_search", {"query": "capital of France"})],
                               in_tokens=100, out_tokens=20))
-    start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
-    assert ev["category"] == "solving" and ev["tokens_in"] == 100
-    assert infra.ledger.balance("agent_1") == start - 120
-    assert infra.ledger.conservation_ok()
+    assert ev["category"] == "solving"
+    assert ev["tokens_in"] == 100 and ev["tokens_out"] == 20
+    assert "balance_after" not in ev      # nothing is debited any more
 
 
-def test_permission_denied_still_bills_every_turn():
-    # T17: EVERY turn bills its tokens now, even a denied (ERROR) one.
+def test_permission_denied_turn_still_reports_its_tokens():
     cfg, infra = make("C1")
     ag = Agent("agent_1", cfg, infra,
                ScriptedPolicy([("claim_question", {"qid": "q0001"})],
                               in_tokens=10, out_tokens=5))
-    start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
     assert ev["result"].startswith("ERROR")
     assert ev["category"] == "admin"  # claim_question is admin even when denied
-    assert infra.ledger.balance("agent_1") == start - 15
-    assert infra.ledger.conservation_ok()
+    assert ev["tokens_in"] == 10 and ev["tokens_out"] == 5
 
 
-def test_noop_turn_bills_tokens():
-    # A __noop__ turn (e.g. LLM policy failure) still bills whatever tokens
-    # were actually spent producing it; zero tokens burns zero, harmlessly.
+def test_noop_turn_is_an_error_result():
     class _NoopPolicy:
         def decide(self, system, context, tools):
             return Decision("__noop__", {}, 7, 3)
 
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra, _NoopPolicy())
-    start = infra.ledger.balance("agent_1")
     ev = ag.take_turn()
     assert ev["result"].startswith("ERROR")
     assert ev["category"] == "admin"
-    assert infra.ledger.balance("agent_1") == start - 10
-    assert infra.ledger.conservation_ok()
+    assert ev["tokens_in"] == 7 and ev["tokens_out"] == 3
 
 
 def test_goal_actions_update_local_stack():
@@ -71,15 +63,24 @@ def test_goal_actions_update_local_stack():
     assert "solve q0001" not in ag.goals.render()
 
 
-def test_root_goal_is_private_by_default_and_global_at_c6():
+def test_root_goal_is_cooperative_and_solo_at_c7():
     cfg, infra = make()
     root = Agent("agent_1", cfg, infra, ScriptedPolicy([])).goals.render()
-    assert "[0] maximize token balance (root, permanent)" in root
-    assert "GLOBAL" not in root
+    assert ("[0] Cooperate with the other agents to answer as many questions "
+            "correctly as possible. (root, permanent)") in root
 
-    cfg6, infra6 = make("C6")
-    root6 = Agent("agent_1", cfg6, infra6, ScriptedPolicy([])).goals.render()
-    assert "[0] maximize GLOBAL token balance (root, permanent)" in root6
+    cfg7, infra7 = make("C7")
+    root7 = Agent("agent_1", cfg7, infra7, ScriptedPolicy([])).goals.render()
+    assert "[0] Answer as many questions correctly as possible. (root, permanent)" in root7
+    assert "Cooperate" not in root7
+
+
+def test_the_root_goal_cannot_be_popped():
+    cfg, infra = make()
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("pop_goal", {})]))
+    ev = ag.take_turn()
+    assert ev["result"].startswith("ERROR")
+    assert "Cooperate" in ag.goals.render()
 
 
 def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):
@@ -105,6 +106,6 @@ def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):
 def test_turn_marks_chat_read():
     cfg, infra = make()
     infra.chat.send("agent_2", "agent_1", "ping", 0)
-    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("check_balance", {})]))
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("list_agents", {})]))
     ag.take_turn()
     assert infra.chat.unread("agent_1") == []

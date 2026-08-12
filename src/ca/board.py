@@ -1,15 +1,15 @@
-"""WORLD's question board (v5): claim, expire and deliver per QUESTION.
+"""WORLD's question board (v6): claim, release and deliver per QUESTION.
 
 A question holds ONE claimant at a time. Delivery is the short answer itself
-(a bare string), graded by F1/EM and settled in one payment. Expiry returns
-the question to the pool; strikes are per (question, agent) and are never
-returned, so an agent gets at most two attempts at any question.
+(a bare string), graded by F1/EM and then closed for good. Releasing a claim
+puts the question back on the open board for anyone. Strikes are per
+(question, agent) and are never returned -- releasing included -- so an agent
+gets at most two attempts at any question.
 """
 import zlib
 from dataclasses import dataclass
 
 from ca.bank import BankError, Question, QuestionBank
-from ca.economy import Ledger
 from ca.grader import exact_match, f1
 
 MAX_STRIKES = 2
@@ -32,14 +32,12 @@ class Result:
     submitted: str
     f1: float
     em: float
-    payout: int
     round: int
 
 
 class QuestionBoard:
-    def __init__(self, bank: QuestionBank, ledger: Ledger):
+    def __init__(self, bank: QuestionBank):
         self.bank = bank
-        self.ledger = ledger
         self.active: dict[str, Claim] = {}          # qid -> its ONE claimant
         self.closed: set[str] = set()               # qid -> delivered, off the board
         self.strikes: dict[tuple[str, str], int] = {}
@@ -52,7 +50,7 @@ class QuestionBoard:
         """Questions nobody holds and nobody finished. Without a viewer: qid
         order (stable, for tests and summaries). With a viewer: a per-viewer
         stable shuffle -- everyone sees the same SET, each in its own fixed
-        order, so the whole economy does not stampede the same question."""
+        order, so the whole system does not stampede the same question."""
         qids = [qid for qid in self.bank.questions
                 if qid not in self.active and qid not in self.closed]
         if viewer is None:
@@ -83,9 +81,19 @@ class QuestionBoard:
         self.strikes[(q.qid, agent)] = self.strikes.get((q.qid, agent), 0) + 1
         return q
 
+    def release(self, agent: str, qid: str) -> Question:
+        """Hand a claim back to the open board so anyone may take it."""
+        q = self._get(qid)
+        claim = self.active.get(q.qid)
+        if claim is None or claim.agent != agent:
+            raise BoardError(f"you hold no active claim on {q.qid} - "
+                             "there is nothing to release")
+        del self.active[q.qid]
+        return q
+
     def expire_claims(self, round_no: int, ttl: int) -> list[str]:
         """Drop claims older than `ttl` rounds and put the question back on the
-        board, so one agent sitting on a claim cannot stall the whole economy.
+        board, so one agent sitting on a claim cannot stall everyone else.
         The strike stays: the attempt was spent."""
         self.round = max(self.round, round_no)
         expired = [qid for qid, c in self.active.items() if round_no - c.round > ttl]
@@ -95,7 +103,7 @@ class QuestionBoard:
 
     def deliver(self, agent: str, qid: str, answer: str,
                 round_no: int | None = None) -> Result:
-        """Grade the answer and settle once. One graded attempt per claim."""
+        """Grade the answer and close the question. One graded attempt per claim."""
         q = self._get(qid)
         claim = self.active.get(q.qid)
         if claim is None or claim.agent != agent:
@@ -104,14 +112,11 @@ class QuestionBoard:
         rnd = self.round if round_no is None else round_no
         self.round = max(self.round, rnd)
         submitted = str(answer)
-        score = f1(submitted, q.answers)
-        r = Result(q.qid, agent, submitted, score, exact_match(submitted, q.answers),
-                   round(q.price * score), rnd)
+        r = Result(q.qid, agent, submitted, f1(submitted, q.answers),
+                   exact_match(submitted, q.answers), rnd)
         del self.active[q.qid]
         self.closed.add(q.qid)
         self.results.append(r)
-        if r.payout > 0:
-            self.ledger.mint(agent, r.payout)
         return r
 
     def all_done(self) -> bool:
@@ -126,14 +131,15 @@ class QuestionBoard:
     # ---------- reporting ----------
 
     def results_json(self) -> list[dict]:
-        """One row per delivered question -- the thing that is graded and paid."""
+        """One row per delivered question -- the thing that is graded. `price`
+        and `difficulty` are inert bank metadata, carried for post-hoc slicing."""
         rows = []
         for r in self.results:
             q = self.bank.questions[r.qid]
             rows.append({"qid": r.qid, "agent": r.agent, "submitted": r.submitted,
-                         "f1": r.f1, "em": r.em, "payout": r.payout,
-                         "round": r.round, "price": q.price,
-                         "difficulty": q.difficulty, "topic": q.topic})
+                         "f1": r.f1, "em": r.em, "round": r.round,
+                         "price": q.price, "difficulty": q.difficulty,
+                         "topic": q.topic})
         return rows
 
     # ---------- checkpoint (T29) ----------
@@ -144,8 +150,8 @@ class QuestionBoard:
             "active": {qid: [c.agent, c.round] for qid, c in self.active.items()},
             "closed": sorted(self.closed),
             "strikes": [[qid, agent, n] for (qid, agent), n in self.strikes.items()],
-            "results": [[r.qid, r.agent, r.submitted, r.f1, r.em,
-                         r.payout, r.round] for r in self.results],
+            "results": [[r.qid, r.agent, r.submitted, r.f1, r.em, r.round]
+                        for r in self.results],
         }
 
     def from_state(self, state: dict) -> None:

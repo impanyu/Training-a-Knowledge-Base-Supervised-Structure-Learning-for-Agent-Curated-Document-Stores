@@ -167,8 +167,7 @@ class AgentMemory:
 
     def answer(self, agent: str, qid: str) -> dict | None:
         """The best answer stored for `qid`: highest F1, ties broken by
-        recency. An ungraded answer (F1 unknown) never displaces a graded one.
-        Corpus entries are never answers."""
+        recency. Corpus entries are never answers."""
         got = self._col(agent).get(where={"$and": [{"kind": "answer"},
                                                    {"qid": str(qid)}]})
         if not got["ids"]:

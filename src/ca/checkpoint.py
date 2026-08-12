@@ -1,10 +1,9 @@
 """Full-state checkpoint + resume (T29).
 
 A checkpoint is one JSON file (`checkpoint_XXXX.json`, XXXX = completed round)
-holding every piece of MUTABLE run state: ledger, board, contracts, loans,
-chat, per-agent short-term memories (fifo / goals), the vector
-long-term memory (notes/answers only -- the seeded corpus is static), recorder
-tallies, and the scheduler's RNG state. Static structure (question bank,
+holding every piece of MUTABLE run state: board, chat, per-agent short-term
+memories (fifo / goals), the vector long-term memory (notes/answers only --
+the seeded corpus is static), recorder tallies, and the scheduler's RNG state. Static structure (question bank,
 corpus + embeddings, policies, action tables) is NOT serialized -- a resumed
 run rebuilds and re-seeds it from the same CLI args and `restore` overwrites
 only the mutable parts. Restoring the RNG makes the per-round
@@ -19,10 +18,8 @@ from ca.config import ExperimentConfig
 
 
 def config_state(cfg: ExperimentConfig) -> dict:
-    return {"level": cfg.level.level, "seed": cfg.seed,
-            "seed_capital_total": cfg.seed_capital_total, "model": cfg.model,
+    return {"level": cfg.level.level, "seed": cfg.seed, "model": cfg.model,
             "fifo_k": cfg.fifo_k, "claim_ttl": cfg.claim_ttl,
-            "loan_rate": cfg.loan_rate,
             "hub_turns_per_round": cfg.hub_turns_per_round,
             "solo_turns_per_round": cfg.solo_turns_per_round,
             "checkpoint_every": cfg.checkpoint_every}
@@ -52,10 +49,7 @@ def capture(infra, agents, recorder, rng: random.Random, round_no: int) -> dict:
     return {
         "round": round_no,
         "config": config_state(infra.cfg),
-        "ledger": infra.ledger.to_state(),
         "board": infra.board.to_state(),
-        "contracts": infra.contracts.to_state(),
-        "loans": infra.loans.to_state(),
         "chat": infra.chat.to_state(),
         "memory": infra.memory.to_state(),
         "agents": {ag.id: {"fifo": ag.fifo.to_state(), "goals": ag.goals.to_state()}
@@ -80,10 +74,7 @@ def load(path) -> dict:
 
 
 def restore(state: dict, infra, agents, recorder, rng: random.Random) -> None:
-    infra.ledger.from_state(state["ledger"])
     infra.board.from_state(state["board"])
-    infra.contracts.from_state(state["contracts"])
-    infra.loans.from_state(state["loans"])
     infra.chat.from_state(state["chat"])
     infra.memory.from_state(state["memory"])
     for ag in agents:

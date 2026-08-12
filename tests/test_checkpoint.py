@@ -1,4 +1,4 @@
-"""T29: full-state checkpoint every N rounds + resume, with v5 seeded memory:
+"""T29: full-state checkpoint every N rounds + resume, with the seeded memory:
 the corpus never enters a checkpoint, and a resumed run restores notes/answers
 on top of a freshly re-seeded store."""
 import json
@@ -17,16 +17,16 @@ from ca.recorder import Recorder
 from ca.scheduler import Scheduler
 
 
-def _infra(level, seed, capital, max_rounds, **cfg_kw):
-    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed, seed_capital_total=capital,
+def _infra(level, seed, max_rounds, **cfg_kw):
+    cfg = ExperimentConfig(level=CONFIGS[level], seed=seed,
                            max_rounds=max_rounds, **cfg_kw)
     return Infra(cfg, demo_bank(), corpus=DEMO_CORPUS,
                  corpus_embeddings=demo_corpus_embeddings(),
                  embedding_function=HashEmbedding())
 
 
-def build(level, scripts, out_dir, seed=7, capital=4000, max_rounds=6, **cfg_kw):
-    infra = _infra(level, seed, capital, max_rounds, **cfg_kw)
+def build(level, scripts, out_dir, seed=7, max_rounds=6, **cfg_kw):
+    infra = _infra(level, seed, max_rounds, **cfg_kw)
     agents = [Agent(a, infra.cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
@@ -35,11 +35,11 @@ def build(level, scripts, out_dir, seed=7, capital=4000, max_rounds=6, **cfg_kw)
     return infra, agents, sched
 
 
-def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6, **cfg_kw):
+def resume(level, scripts, out_dir, ck_path, seed=7, max_rounds=6, **cfg_kw):
     """Rebuild everything fresh from 'CLI args' -- including the corpus
     seeding -- then restore the checkpoint: the exact shape of the runner's
     --resume path."""
-    infra = _infra(level, seed, capital, max_rounds, **cfg_kw)
+    infra = _infra(level, seed, max_rounds, **cfg_kw)
     agents = [Agent(a, infra.cfg, infra,
                     ScriptedPolicy(scripts.get(a, []), in_tokens=10, out_tokens=5))
               for a in infra.agent_ids]
@@ -54,10 +54,9 @@ def resume(level, scripts, out_dir, ck_path, seed=7, capital=4000, max_rounds=6,
 
 
 # 6-round C0 workload that touches every stateful subsystem, with activity on
-# both sides of a round-3 checkpoint boundary (loan interest, an open escrowed
-# contract, chat, goals, seeded memories all cross it; the qid-bound contract
-# delivers AFTER the boundary and agent_4's round-6 claim is a memory hit on
-# the bought answer).
+# both sides of a round-3 checkpoint boundary: chat, goals and seeded memories
+# all cross it, and the q0004 hand-off (agent_4 releases in r4, agent_5 claims
+# it in r5 and delivers in r6) happens entirely after the boundary.
 SCRIPTS = {
     "agent_1": [
         ("list_questions", {}),
@@ -69,50 +68,51 @@ SCRIPTS = {
     ],
     "agent_2": [
         ("claim_question", {"qid": "q0005"}),
-        ("propose_loan", {"to": "agent_3", "amount": 100}),
         ("memory_write", {"content": "chalk is sedimentary"}),
-        ("check_balance", {}),
+        ("send_message", {"to": "agent_3", "text": "chalk is a sedimentary rock"}),
+        ("list_questions", {}),
         ("deliver_work", {"target_id": "q0005", "content": "sedimentary"}),
     ],
     "agent_3": [
-        ("check_balance", {}),
-        ("check_balance", {}),
-        ("accept_loan", {"loan_id": "n0001"}),
-        ("memory_write", {"content": "agent_2 owes me 100 tokens"}),
-        ("memory_search", {"query": "tokens owed"}),
+        ("read_chat", {"with_agent": "agent_2"}),
+        ("memory_write", {"content": "agent_2 knows the geology questions"}),
+        ("memory_search", {"query": "chalk sedimentary rock"}),
+        ("send_message", {"to": "agent_2", "text": "thanks, noted"}),
+        ("list_agents", {}),
     ],
     "agent_4": [
-        ("propose_contract", {"to": "agent_5", "task": "q0004", "price": 40}),
-        ("push_goal", {"note": "await c0001 delivery"}),
-        ("check_balance", {}),
-        ("check_balance", {}),
+        ("claim_question", {"qid": "q0004"}),
+        ("push_goal", {"note": "answer q0004 or hand it on"}),
+        ("list_questions", {}),
+        ("release_question", {"qid": "q0004"}),     # r4: hand-off, after the boundary
         ("read_chat", {"with_agent": "agent_5"}),
-        ("claim_question", {"qid": "q0004"}),      # r6: memory hit (bought answer)
+        ("pop_goal", {}),
     ],
     "agent_5": [
-        ("check_balance", {}),
-        ("accept_contract", {"contract_id": "c0001"}),
         ("memory_search", {"query": "3+3 arithmetic"}),
         ("memory_write", {"content": "3+3 makes 6"}),
-        ("deliver_work", {"target_id": "c0001", "content": "6"}),
+        ("read_chat", {"with_agent": "agent_4"}),
+        ("list_questions", {}),
+        ("claim_question", {"qid": "q0004"}),       # r5: picks up what r4 released
+        ("deliver_work", {"target_id": "q0004", "content": "6"}),
     ],
     "agent_6": [
         ("memory_write", {"content": "q0003 looks like easy arithmetic"}),
-        ("check_balance", {}),
-        ("check_balance", {}),
+        ("list_questions", {}),
+        ("list_agents", {}),
         ("send_message", {"to": "agent_7", "text": "anything left on the board?"}),
     ],
     "agent_7": [
         ("push_goal", {"note": "find a niche"}),
         ("list_questions", {}),
         ("pop_goal", {}),
-        ("check_balance", {}),
         ("read_chat", {"with_agent": "agent_6"}),
+        ("list_agents", {}),
     ],
     "agent_8": [
         ("list_questions", {}),
-        ("check_balance", {}),
-        ("check_balance", {}),
+        ("list_agents", {}),
+        ("memory_write", {"content": "nothing worth claiming yet"}),
     ],
 }
 
@@ -125,25 +125,13 @@ def _lines(path):
 # ---------- subsystem round-trips ----------
 
 
-def test_ledger_state_roundtrip():
-    infra = demo_infra("C0", capital=800)
-    infra.ledger.mint("agent_1", 50)
-    infra.ledger.burn("agent_2", 30)
-    infra.ledger.lock_escrow("c0001", "agent_3", 25)
-    state = json.loads(json.dumps(infra.ledger.to_state()))
-    fresh = demo_infra("C0", capital=800)
-    fresh.ledger.from_state(state)
-    assert fresh.ledger.balances == infra.ledger.balances
-    assert fresh.ledger.escrow == {"c0001": 25}
-    assert fresh.ledger.minted == 50 and fresh.ledger.burned == 30
-    assert fresh.ledger.conservation_ok()
-
-
 def test_board_state_roundtrip():
     infra = demo_infra("C0")
     infra.board.claim("agent_1", "q0001", round_no=2)
     infra.board.claim("agent_2", "q0005", round_no=3)
     infra.board.deliver("agent_2", "q0005", "sedimentary")
+    infra.board.claim("agent_3", "q0004", round_no=3)
+    infra.board.release("agent_3", "q0004")
     state = json.loads(json.dumps(infra.board.to_state()))
     fresh = demo_infra("C0")
     fresh.board.from_state(state)
@@ -151,37 +139,9 @@ def test_board_state_roundtrip():
     assert fresh.board.active["q0001"].agent == "agent_1"
     assert fresh.board.active["q0001"].round == 2
     assert "q0005" not in fresh.board.active
+    assert "q0004" not in fresh.board.active          # released, still open
     assert fresh.board.strikes == infra.board.strikes
     assert fresh.board.results_json() == infra.board.results_json()
-
-
-def test_contracts_state_roundtrip_id_counter_continues():
-    infra = demo_infra("C0")
-    infra.contracts.propose("agent_1", "agent_2", "some work", 40)
-    infra.contracts.accept("agent_2", "c0001")
-    c = infra.contracts.propose("agent_3", "agent_4", "q0002", 10)
-    c.qid = "q0002"
-    state = json.loads(json.dumps(infra.contracts.to_state()))
-    fresh = demo_infra("C0")
-    fresh.contracts.from_state(state)
-    got = fresh.contracts.get("c0001")
-    assert got.status == "accepted" and got.price == 40 and got.contractor == "agent_2"
-    assert fresh.contracts.get("c0002").qid == "q0002"
-    assert fresh.contracts.propose("agent_1", "agent_5", "new", 5).cid == "c0003"
-
-
-def test_loans_state_roundtrip_id_counter_continues():
-    infra = demo_infra("C0")
-    infra.loans.propose("agent_1", "agent_2", 100)
-    infra.loans.accept("agent_2", "n0001")
-    infra.loans.interest_tick()
-    state = json.loads(json.dumps(infra.loans.to_state()))
-    fresh = demo_infra("C0")
-    fresh.loans.from_state(state)
-    loan = fresh.loans.get("n0001")
-    assert loan.status == "active" and loan.principal == 100
-    assert fresh.loans.total_interest_paid == 1
-    assert fresh.loans.propose("agent_3", "agent_4", 5).lid == "n0002"
 
 
 def test_chat_state_roundtrip_preserves_unread_cursors():
@@ -231,12 +191,11 @@ def test_agent_memory_state_roundtrip_including_the_shared_bucket():
 def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     rec = Recorder(str(tmp_path))
     rec.log({"round": 1, "agent": "agent_1", "action": "memory_search", "input": {},
-             "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5,
-             "balance_after": 0})
+             "result": "ok", "category": "solving", "tokens_in": 10, "tokens_out": 5})
     rec.log({"round": 1, "agent": "agent_1", "action": "claim_question", "input": {},
-             "result": 'claimed [q0001] capital of France? (2hop, reward 100)\n'
+             "result": 'claimed [q0001] capital of France? (2hop)\n'
                        'memory: stored answer: ... "Paris" (F1 1.00)',
-             "category": "admin", "tokens_in": 1, "tokens_out": 1, "balance_after": 0})
+             "category": "admin", "tokens_in": 1, "tokens_out": 1})
     state = json.loads(json.dumps(rec.to_state()))
     rec.close()
 
@@ -245,9 +204,8 @@ def test_recorder_tallies_roundtrip_and_append_mode(tmp_path):
     assert rec2._tokens["agent_1"] == {"solving": 15, "admin": 2}
     assert rec2._memory["agent_1"] == {"n_claims": 1, "n_memory_hits": 1,
                                        "n_repeat_deliveries": 0, "n_improved": 0}
-    rec2.log({"round": 2, "agent": "agent_1", "action": "check_balance", "input": {},
-              "result": "0", "category": "admin", "tokens_in": 1, "tokens_out": 1,
-              "balance_after": 0})
+    rec2.log({"round": 2, "agent": "agent_1", "action": "list_agents", "input": {},
+              "result": "agent_1", "category": "admin", "tokens_in": 1, "tokens_out": 1})
     rec2.close()
     assert len(_lines(tmp_path / "trace.jsonl")) == 3    # append, no rewrite
 
@@ -261,12 +219,21 @@ def test_rng_state_survives_json():
     assert [rng2.random() for _ in range(5)] == [rng.random() for _ in range(5)]
 
 
+def test_capture_holds_no_economy_state(tmp_path):
+    infra, agents, sched = build("C7", {}, tmp_path, max_rounds=1)
+    sched.run()
+    ck = json.loads((tmp_path / "checkpoint_0001.json").read_text())
+    assert set(ck) == {"round", "config", "board", "chat", "memory", "agents",
+                       "recorder", "rng"}
+    assert "seed_capital_total" not in ck["config"]
+    assert "loan_rate" not in ck["config"]
+
+
 # ---------- scheduler save discipline ----------
 
 
 def test_checkpoint_files_every_n_and_at_final_round(tmp_path):
-    _, _, sched = build("C7", {}, tmp_path, capital=1000, max_rounds=5,
-                        checkpoint_every=2)
+    _, _, sched = build("C7", {}, tmp_path, max_rounds=5, checkpoint_every=2)
     sched.run()
     names = sorted(p.name for p in tmp_path.glob("checkpoint_*.json"))
     assert names == ["checkpoint_0002.json", "checkpoint_0004.json",
@@ -284,7 +251,7 @@ def test_checkpoint_written_when_run_stops_early(tmp_path):
                      ("q0004", "6"), ("q0005", "sedimentary")):
         script += [("claim_question", {"qid": qid}),
                    ("deliver_work", {"target_id": qid, "content": ans})]
-    _, _, sched = build("C7", {"agent_1": script}, tmp_path, capital=1000,
+    _, _, sched = build("C7", {"agent_1": script}, tmp_path,
                         max_rounds=40, checkpoint_every=50)
     summary = sched.run()
     assert summary["rounds_used"] == 10        # 5 questions x (claim + deliver)
@@ -304,17 +271,14 @@ def test_checkpoint_never_contains_the_corpus(tmp_path):
 
 
 def test_validate_rejects_level_or_seed_mismatch(tmp_path):
-    _, _, sched = build("C7", {}, tmp_path, capital=1000, max_rounds=2)
+    _, _, sched = build("C7", {}, tmp_path, max_rounds=2)
     sched.run()
     state = json.loads((tmp_path / "checkpoint_0002.json").read_text())
-    cfg_ok = ExperimentConfig(level=CONFIGS["C7"], seed=7, seed_capital_total=1000)
-    checkpoint.validate(state, cfg_ok)
+    checkpoint.validate(state, ExperimentConfig(level=CONFIGS["C7"], seed=7))
     with pytest.raises(ValueError, match="level"):
-        checkpoint.validate(state, ExperimentConfig(
-            level=CONFIGS["C0"], seed=7, seed_capital_total=1000))
+        checkpoint.validate(state, ExperimentConfig(level=CONFIGS["C0"], seed=7))
     with pytest.raises(ValueError, match="seed"):
-        checkpoint.validate(state, ExperimentConfig(
-            level=CONFIGS["C7"], seed=8, seed_capital_total=1000))
+        checkpoint.validate(state, ExperimentConfig(level=CONFIGS["C7"], seed=8))
 
 
 # ---------- the fidelity test ----------
@@ -329,12 +293,12 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
     _, _, sched_a = build("C0", SCRIPTS, dir_a, max_rounds=6)
     summary_a = sched_a.run()
     assert summary_a["rounds_used"] == 6
-    assert summary_a["conservation_ok"] is True
-    assert summary_a["n_contracts"] == 1 and summary_a["loans"]["n_active"] == 1
-    # the workload really did exercise memory across the boundary: the bought
-    # q0004 answer (delivered r5) made agent_4's r6 claim a hit
-    assert summary_a["memory"]["agent_4"]["n_memory_hits"] == 1
-    assert len(summary_a["deliveries"]) == 3
+    # the workload really did exercise the board across the boundary: the
+    # question agent_4 released in r4 was answered by agent_5 in r6
+    assert len(summary_a["deliveries"]) == 4
+    assert [d["agent"] for d in summary_a["deliveries"] if d["qid"] == "q0004"] \
+        == ["agent_5"]
+    assert summary_a["n_messages"] == 3
 
     _, _, sched_b = build("C0", SCRIPTS, dir_b, max_rounds=3, checkpoint_every=3)
     sched_b.run()
@@ -342,10 +306,9 @@ def test_resume_reproduces_a_straight_run_exactly(tmp_path):
 
     # each C0 agent takes exactly one turn per round: entries 3+ remain
     rest = {a: s[3:] for a, s in SCRIPTS.items()}
-    infra_b, summary_b = resume("C0", rest, dir_b, dir_b / "checkpoint_0003.json",
-                                max_rounds=6, checkpoint_every=3)
+    _, summary_b = resume("C0", rest, dir_b, dir_b / "checkpoint_0003.json",
+                          max_rounds=6, checkpoint_every=3)
 
-    assert infra_b.ledger.conservation_ok()
     assert summary_b == summary_a
     assert _lines(dir_b / "timeseries.jsonl") == _lines(dir_a / "timeseries.jsonl")
     trace_a = _lines(dir_a / "trace.jsonl")
@@ -374,11 +337,10 @@ def test_resume_restores_the_vector_memory_contents(tmp_path):
 
 
 def test_resume_continues_to_a_larger_max_rounds(tmp_path):
-    _, _, sched = build("C7", {}, tmp_path, capital=1000, max_rounds=2,
-                        checkpoint_every=10)
+    _, _, sched = build("C7", {}, tmp_path, max_rounds=2, checkpoint_every=10)
     sched.run()
     _, summary = resume("C7", {}, tmp_path, tmp_path / "checkpoint_0002.json",
-                        capital=1000, max_rounds=4, checkpoint_every=10)
+                        max_rounds=4, checkpoint_every=10)
     assert summary["rounds_used"] == 4
     lines = [json.loads(l) for l in _lines(tmp_path / "timeseries.jsonl")]
     assert [s["round"] for s in lines] == [1, 2, 3, 4]

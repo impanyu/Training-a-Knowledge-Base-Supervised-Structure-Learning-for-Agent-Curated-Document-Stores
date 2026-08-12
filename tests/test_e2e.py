@@ -1,42 +1,39 @@
-"""v5 end-to-end scripted flows: the claim -> search -> deliver pipeline over
-single questions, question-bound subcontracts landing in both memories, the
-loan lifecycle through bankruptcy (memory_search frozen too -- it is solving),
-claim expiry and the two-strike rule, C2's shared memory against its C0
-control (corpus identical everywhere, notes/answers private), and the
-per-round timeseries contract. Deterministic, no LLM.
-
-Every scenario intent of the v4 e2e file is preserved here in v5 terms.
+"""v6 end-to-end scripted flows: the claim -> search -> deliver pipeline over
+single questions, the peer-assist round trip that replaces subcontracting,
+release_question as the hand-off mechanism, C1's board monopoly, C5's star
+topology, C2's shared memory against its C0 control (corpus identical
+everywhere, notes/answers private), and the per-round timeseries contract.
+Deterministic, no LLM.
 """
 import json
 import random
 
 import pytest
 from fixtures import (DEMO_CORPUS, HashEmbedding, demo_bank,
-                      demo_corpus_embeddings, demo_infra)
+                      demo_corpus_embeddings)
 
 from ca.actions import permission_error
 from ca.agent import Agent, ScriptedPolicy
 from ca.bank import Question, QuestionBank
 from ca.config import CONFIGS, ExperimentConfig
-from ca.context import render_turn
 from ca.infra import Infra
 from ca.metrics import compute_metrics
 from ca.recorder import Recorder
 from ca.scheduler import Scheduler
 
+IDLE = ("list_agents", {})     # a turn that touches no state
+
 
 def paris_bank(n=1) -> QuestionBank:
-    """n easy questions with the same gold answer, so the payout arithmetic
-    stays trivial."""
+    """n easy questions with the same gold answer."""
     return QuestionBank([
         Question(f"q{i:04d}", "capital of France?", ["Paris"], "2hop", 100, "k00")
         for i in range(1, n + 1)])
 
 
-def build(level, scripts, tmp_path, bank=None, seed_capital_total=1000,
-          in_tokens=10, out_tokens=5, max_rounds=10, **cfg_kw):
+def build(level, scripts, tmp_path, bank=None, in_tokens=10, out_tokens=5,
+          max_rounds=10, **cfg_kw):
     cfg = ExperimentConfig(level=CONFIGS[level], seed=7,
-                           seed_capital_total=seed_capital_total,
                            max_rounds=max_rounds, **cfg_kw)
     infra = Infra(cfg, bank or paris_bank(1), corpus=DEMO_CORPUS,
                   corpus_embeddings=demo_corpus_embeddings(),
@@ -68,9 +65,7 @@ def test_solo_answer_flow_C7(tmp_path):
     infra, sched = build("C7", scripts, tmp_path)
     summary = sched.run()
     assert summary["deliveries"][0]["f1"] == 1.0
-    assert summary["deliveries"][0]["payout"] == 100
     assert summary["remaining_units"] == 0
-    assert summary["conservation_ok"] is True
     # solving turns: memory_search + deliver_work = 2 * 15 tokens
     assert summary["tokens"]["agent_1"]["solving"] == 30
     # admin turns: list_questions + claim_question = 2 * 15 tokens
@@ -84,6 +79,7 @@ def test_solo_answer_flow_C7(tmp_path):
     assert m["total_f1"] == 1.0 and m["n_answered"] == 1
     assert m["demand_absorbed"] == 1.0
     assert m["coordination_overhead"] == pytest.approx(0.5)
+    assert m["n_messages"] == 0
 
 
 def test_two_agents_absorb_two_questions(tmp_path):
@@ -96,10 +92,8 @@ def test_two_agents_absorb_two_questions(tmp_path):
     infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(2), max_rounds=3)
     summary = sched.run()
     assert {d["agent"] for d in summary["deliveries"]} == {"agent_1", "agent_2"}
-    assert sum(d["payout"] for d in summary["deliveries"]) == 200
     assert infra.board.open_questions() == []
     assert compute_metrics(summary)["demand_absorbed"] == 1.0
-    assert summary["conservation_ok"] is True
 
 
 def test_max_rounds_stops_a_run_that_answers_nothing(tmp_path):
@@ -109,252 +103,137 @@ def test_max_rounds_stops_a_run_that_answers_nothing(tmp_path):
     assert summary["deliveries"] == [] and summary["remaining_units"] == 1
 
 
-# ---------------- subcontracting ----------------
+# ---------------- cooperation over chat ----------------
 
-def test_subcontract_flow_C1(tmp_path):
-    """Hub claims (demand monopoly), hires agent_1 for free-text help,
-    agent_1 delivers the contract, hub delivers the answer to the WORLD."""
+def test_peer_assist_round_trip_C0(tmp_path):
+    """The behaviour that replaces subcontracting: agent_1 holds a question it
+    does not search for itself, asks agent_2, agent_2 answers out of its own
+    memory, and agent_1 delivers a correct answer."""
     scripts = {
-        "hub": [
+        "agent_1": [
             ("claim_question", {"qid": "q0001"}),
-            ("propose_contract", {"to": "agent_1", "task": "find the capital of France",
-                                  "price": 40}),
-            ("check_balance", {}),                      # waits while agent_1 works
-            ("check_balance", {}),
+            ("send_message", {"to": "agent_2", "text": "what is the capital of France?"}),
+            IDLE,
+            IDLE,
             ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ],
-        "agent_1": [
-            ("check_balance", {}),                      # waits for the hub's claim (r1)
-            ("check_balance", {}),                      # waits for propose_contract (r2)
-            ("accept_contract", {"contract_id": "c0001"}),
-            ("memory_search", {"query": "capital of France"}),
-            ("deliver_work", {"target_id": "c0001", "content": "The answer is Paris"}),
-        ],
-    }
-    infra, sched = build("C1", scripts, tmp_path)
-    summary = sched.run()
-    assert summary["deliveries"][0]["f1"] == 1.0
-    assert summary["conservation_ok"] is True
-    # T17: EVERY turn bills 15 tokens (10 in + 5 out, fixed by ScriptedPolicy),
-    # idle check_balance turns included. The board empties on the hub's round-5
-    # delivery, so all 8 agents took 5 turns => 75 tokens burned each.
-    assert summary["rounds_used"] == 5
-    assert summary["balances"]["hub"] == 125 - 75 - 40 + 100
-    assert summary["balances"]["agent_1"] == 125 - 75 + 40
-    # workers cannot reach the board at C1
-    assert permission_error(infra, "agent_1", "claim_question", {"qid": "q0001"}) is not None
-
-
-def test_question_bound_subcontract_flow_C1(tmp_path):
-    """The contract task is EXACTLY a qid, so it binds: the deliverable is that
-    question's answer, it lands in BOTH parties' memories, and the hub's claim
-    of that question hands it straight back (a memory hit)."""
-    scripts = {
-        "hub": [
-            ("propose_contract", {"to": "agent_1", "task": "q0001", "price": 40}),
-            ("check_balance", {}),
-            ("check_balance", {}),
-            ("claim_question", {"qid": "q0001"}),   # r4: auto-recall of the bought answer
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ],
-        "agent_1": [
-            ("check_balance", {}),
-            ("accept_contract", {"contract_id": "c0001"}),
-            ("deliver_work", {"target_id": "c0001", "content": "Paris"}),
-        ],
-    }
-    infra, sched = build("C1", scripts, tmp_path, max_rounds=6)
-    summary = sched.run()
-    trace = _trace(tmp_path)
-
-    assert infra.contracts.get("c0001").qid == "q0001"
-    assert infra.contracts.get("c0001").status == "delivered"
-    # the payer picked the answer up in chat AND in memory
-    assert any("[deliverable for c0001]" in m.text for m in infra.chat.history("hub", "agent_1"))
-    assert infra.memory.answer("agent_1", "q0001")["f1"] is None       # ungraded
-    assert infra.memory.answer("hub", "q0001")["f1"] == 1.0            # graded by the WORLD later
-
-    claim = _results(trace, "hub", "claim_question")[0]
-    assert "memory: stored answer" in claim and "Paris" in claim
-    assert "UNVERIFIED" in claim                    # bought, never graded
-    assert summary["memory"]["hub"]["n_memory_hits"] == 1
-    assert infra.ledger.escrow == {} and summary["conservation_ok"] is True
-
-
-def test_central_pricing_flow_C3(tmp_path):
-    """C3 flips pricing ONLY: the hub prices a worker-to-worker contract while
-    an unrelated worker claims and delivers straight to the WORLD."""
-    scripts = {
-        "agent_1": [                                          # payer
-            ("propose_contract", {"to": "agent_2", "task": "find the capital of France"}),
-            ("check_balance", {}),                            # r2: waits for hub pricing
-            ("check_balance", {}),                            # r3: waits for agent_2 to accept
-            ("counter_offer", {"contract_id": "c0001", "price": 999}),  # r4: banned at C3
-        ],
-        "hub": [
-            ("check_balance", {}),                            # r1: waits for the proposal
-            ("set_price", {"contract_id": "c0001", "price": 30}),
-        ],
-        "agent_2": [                                          # contractor
-            ("check_balance", {}),
-            ("check_balance", {}),                            # r2: waits for the price
-            ("accept_contract", {"contract_id": "c0001"}),
-            ("deliver_work", {"target_id": "c0001", "content": "Paris"}),
-        ],
-        "agent_3": [                                          # unrelated worker, direct WORLD
-            ("claim_question", {"qid": "q0001"}),
-            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ],
-    }
-    infra, sched = build("C3", scripts, tmp_path, bank=paris_bank(2), max_rounds=6)
-    summary = sched.run()
-    trace = _trace(tmp_path)
-
-    c = infra.contracts.get("c0001")
-    assert c.status == "delivered" and c.price == 30
-    assert c.qid is None                                      # free-text, no binding
-    assert summary["contract_prices"] == [30]
-    assert _results(trace, "agent_1", "counter_offer")[0].startswith("ERROR")
-
-    # ... while agent_3's ordinary WORLD claim/deliver went through untouched
-    assert not _results(trace, "agent_3", "claim_question")[0].startswith("ERROR")
-    assert not _results(trace, "agent_3", "deliver_work")[0].startswith("ERROR")
-    assert [q.qid for q in infra.board.open_questions()] == ["q0002"]
-    assert infra.ledger.escrow == {} and summary["conservation_ok"] is True
-
-
-# ---------------- credit, bankruptcy, topology ----------------
-
-def test_loan_rescue_after_bankruptcy_C0(tmp_path):
-    """agent_1 is driven into bankruptcy (solving frozen -- memory_search
-    errors, because knowledge queries ARE solving in v5), borrows from agent_2
-    to climb back to a positive balance (memory_search works again), interest
-    ticks (paid, then capitalized once agent_1 sinks again), and a partial
-    repay lands. Conservation holds every round throughout."""
-    scripts = {
-        "agent_1": [
-            ("memory_search", {"query": "capital of France"}),     # r1: frozen, bankrupt
-            ("propose_loan", {"to": "agent_2", "amount": 80}),     # r2: admin, still allowed
-            ("check_balance", {}),                                  # r3: waits for accept
-            ("memory_search", {"query": "capital of France"}),     # r4: unfrozen, positive now
-            ("repay_loan", {"loan_id": "n0001", "amount": 10}),    # r5: partial repay
-            ("check_balance", {}),                                  # r6
         ],
         "agent_2": [
-            ("check_balance", {}),
-            ("check_balance", {}),
-            ("accept_loan", {"loan_id": "n0001"}),
+            IDLE,
+            IDLE,
+            ("memory_search", {"query": "capital of France"}),
+            ("send_message", {"to": "agent_1", "text": "the capital of France is Paris"}),
         ],
     }
-    infra, sched = build("C0", scripts, tmp_path, max_rounds=6)
-    infra.ledger.burn("agent_1", 130)   # 125 seed - 130 = -5: bankrupt before round 1
+    infra, sched = build("C0", scripts, tmp_path, max_rounds=5)
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    searches = _results(trace, "agent_1", "memory_search")
-    assert searches[0].startswith("ERROR: bankrupt")
-    assert not searches[1].startswith("ERROR") and "Paris" in searches[1]
-
-    assert not _results(trace, "agent_1", "propose_loan")[0].startswith("ERROR")
-    assert infra.loans.get("n0001").lender == "agent_2"
-    assert infra.loans.get("n0001").borrower == "agent_1"
-    assert not _results(trace, "agent_2", "accept_loan")[0].startswith("ERROR")
-
-    interest = [e for e in trace if e["action"] == "__interest__" and e["agent"] == "agent_1"]
-    assert [e["result"] for e in interest] == ["paid 1", "paid 1", "capitalized 1"]
-    assert [e["round"] for e in interest] == [4, 5, 6]
-
-    repays = _results(trace, "agent_1", "repay_loan")
-    assert "repaid 10" in repays[0] and "principal now 70" in repays[0]
-
-    loan = infra.loans.get("n0001")
-    assert loan.status == "active" and loan.principal == 71   # 70 + 1 capitalized
-    assert summary["loans"] == {
-        "n_proposed": 1, "n_active": 1, "n_repaid": 0,
-        "total_principal_outstanding": 71, "total_interest_paid": 2,
-        "debtors": {"agent_1": 71}, "bankrupt_with_debt": ["agent_1"],
-    }
-    assert summary["rounds_used"] == 6
-    assert summary["conservation_ok"] is True
+    # agent_2 answered out of its own (corpus-seeded) memory
+    assert "[Paris] Paris is the capital of France." in \
+        _results(trace, "agent_2", "memory_search")[0]
+    assert any("capital of France is Paris" in m.text
+               for m in infra.chat.history("agent_1", "agent_2"))
+    # agent_1 never searched: its only solving turn was the delivery
+    assert summary["tokens"]["agent_1"]["solving"] == 15
+    assert summary["deliveries"] == [{
+        "qid": "q0001", "agent": "agent_1", "submitted": "Paris", "f1": 1.0,
+        "em": 1.0, "round": 5, "price": 100, "difficulty": "2hop", "topic": "k00"}]
+    m = compute_metrics(summary)
+    assert m["n_messages"] == 2 and m["messages_per_answer"] == 2.0
 
 
-def test_run_terminates_when_all_bankrupt(tmp_path):
-    infra, sched = build("C7", {"agent_1": [("memory_search", {"query": "x"})]}, tmp_path)
-    infra.ledger.burn("agent_1", 990)  # 1000 seed - 990 = 10; next turn (15) sinks it
-    summary = sched.run()
-    assert summary["rounds_used"] <= 2
-    assert summary["bankrupt"] == ["agent_1"]
-
-
-def test_credit_centralization_C4(tmp_path):
-    """C4: the hub is the sole lender. A worker cannot borrow from a peer, can
-    borrow from the hub, and the hub itself cannot borrow."""
+def test_release_hands_a_question_to_another_agent(tmp_path):
+    """release_question is the only hand-off left: agent_1 gives up, agent_2
+    picks the question up and answers it."""
     scripts = {
         "agent_1": [
-            ("propose_loan", {"to": "agent_2", "amount": 50}),     # r1: ERROR, peer lender
-            ("propose_loan", {"to": "hub", "amount": 50}),         # r2: OK
-            ("check_balance", {}),
-            ("check_balance", {}),
+            ("claim_question", {"qid": "q0001"}),
+            ("release_question", {"qid": "q0001"}),
+            IDLE,
         ],
-        "hub": [
-            ("check_balance", {}),
-            ("check_balance", {}),
-            ("accept_loan", {"loan_id": "n0001"}),
-            ("propose_loan", {"to": "agent_1", "amount": 10}),     # r4: ERROR, sole lender
+        "agent_2": [
+            IDLE,
+            IDLE,
+            ("claim_question", {"qid": "q0001"}),
+            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
         ],
     }
-    infra, sched = build("C4", scripts, tmp_path, max_rounds=4)
+    infra, sched = build("C0", scripts, tmp_path, max_rounds=4)
+    summary = sched.run()
+    trace = _trace(tmp_path)
+    assert _results(trace, "agent_1", "release_question") == \
+        ["released q0001; it is open on the board again for any agent"]
+    assert not _results(trace, "agent_2", "claim_question")[0].startswith("ERROR")
+    assert [d["agent"] for d in summary["deliveries"]] == ["agent_2"]
+    # the releaser keeps its strike, the taker spends one of its own
+    assert infra.board.strikes[("q0001", "agent_1")] == 1
+    assert infra.board.strikes[("q0001", "agent_2")] == 1
+
+
+# ---------------- C1: the board monopoly ----------------
+
+def test_board_monopoly_C1(tmp_path):
+    """Only the hub may touch the board; a worker's board actions all error.
+    The worker contributes the only way it can -- by answering the hub's
+    question over chat -- and the hub delivers."""
+    scripts = {
+        "hub": [
+            ("claim_question", {"qid": "q0001"}),
+            ("send_message", {"to": "agent_1", "text": "what is the capital of France?"}),
+            IDLE,
+            IDLE,
+            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
+        ],
+        "agent_1": [
+            ("list_questions", {}),                                    # r1: refused
+            ("claim_question", {"qid": "q0001"}),                      # r2: refused
+            ("memory_search", {"query": "capital of France"}),         # r3: allowed
+            ("send_message", {"to": "hub", "text": "the capital of France is Paris"}),
+            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),  # r5: refused
+        ],
+    }
+    infra, sched = build("C1", scripts, tmp_path, max_rounds=5)
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    attempts = _results(trace, "agent_1", "propose_loan")
-    assert attempts[0].startswith("ERROR") and "hub" in attempts[0]
-    assert not attempts[1].startswith("ERROR")
-    assert not _results(trace, "hub", "accept_loan")[0].startswith("ERROR")
-    iface_borrow = _results(trace, "hub", "propose_loan")[0]
-    assert iface_borrow.startswith("ERROR") and "sole lender" in iface_borrow
-
-    loan = infra.loans.get("n0001")
-    assert loan.lender == "hub" and loan.borrower == "agent_1"
-    assert loan.status == "active" and loan.principal == 50
-    # 125 - 4*15 + 50 borrowed - 1 interest (round 4's tick)
-    assert infra.ledger.balance("agent_1") == 114
-    assert summary["conservation_ok"] is True
+    for action in ("list_questions", "claim_question", "deliver_work"):
+        out = _results(trace, "agent_1", action)[0]
+        assert out.startswith("ERROR") and "only the hub agent" in out, action
+    assert not _results(trace, "agent_1", "memory_search")[0].startswith("ERROR")
+    assert not _results(trace, "hub", "claim_question")[0].startswith("ERROR")
+    assert [d["agent"] for d in summary["deliveries"]] == ["hub"]
+    assert summary["deliveries"][0]["f1"] == 1.0
+    assert permission_error(infra, "agent_1", "release_question",
+                            {"qid": "q0001"}) is not None
 
 
-def test_star_C5_loans_and_payments_only_via_hub(tmp_path):
-    """C5 flips comms topology ONLY: lending rights are untouched, but the star
-    restricts every counterparty to the hub, so a worker can neither borrow
-    from nor PAY a peer -- and both work against the hub."""
+# ---------------- C5: the star topology ----------------
+
+def test_star_comms_C5_workers_reach_only_the_hub(tmp_path):
+    """C5 flips comms topology ONLY: a worker may message and read only the
+    hub, while its board access is untouched."""
     scripts = {
         "agent_1": [
-            ("propose_loan", {"to": "agent_2", "amount": 50}),   # r1: ERROR (star)
-            ("pay", {"to": "agent_2", "amount": 10}),            # r2: ERROR (star)
-            ("propose_loan", {"to": "hub", "amount": 50}),       # r3: OK
-            ("pay", {"to": "hub", "amount": 10}),                # r4: OK
-            ("check_balance", {}),
+            ("send_message", {"to": "agent_2", "text": "hello"}),      # r1: refused
+            ("read_chat", {"with_agent": "agent_2"}),                  # r2: refused
+            ("send_message", {"to": "hub", "text": "hello"}),          # r3: allowed
+            ("claim_question", {"qid": "q0001"}),                      # r4: allowed
+            ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
         ],
-        "hub": [
-            ("check_balance", {}), ("check_balance", {}), ("check_balance", {}),
-            ("check_balance", {}),
-            ("accept_loan", {"loan_id": "n0001"}),
-        ],
+        "hub": [IDLE, IDLE, IDLE,
+                ("send_message", {"to": "agent_2", "text": "relayed"})],  # hub may reach all
     }
     infra, sched = build("C5", scripts, tmp_path, max_rounds=5)
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    assert _results(trace, "agent_1", "propose_loan")[0].startswith("ERROR")
-    peer_pay = _results(trace, "agent_1", "pay")[0]
-    assert peer_pay.startswith("ERROR") and "interact with the hub agent" in peer_pay
-    assert not _results(trace, "agent_1", "propose_loan")[1].startswith("ERROR")
-    assert not _results(trace, "agent_1", "pay")[1].startswith("ERROR")
-
-    loan = infra.loans.get("n0001")
-    assert loan.lender == "hub" and loan.status == "active" and loan.principal == 50
-    assert infra.ledger.balance("agent_1") == 90    # 125 - 5*15 - 10 paid + 50 borrowed
-    assert infra.ledger.balance("hub") == 10        # 125 - 5*15 + 10 received - 50 lent
-    assert summary["conservation_ok"] is True
+    for action in ("send_message", "read_chat"):
+        out = _results(trace, "agent_1", action)[0]
+        assert out.startswith("ERROR") and "only interact with the hub" in out, action
+    assert _results(trace, "agent_1", "send_message")[1] == "sent to hub"
+    assert not _results(trace, "hub", "send_message")[0].startswith("ERROR")
+    # the board is untouched at C5
+    assert [d["agent"] for d in summary["deliveries"]] == ["agent_1"]
 
 
 # ---------------- claim expiry and the two-strike rule ----------------
@@ -367,24 +246,19 @@ def test_expired_claim_returns_the_question_but_keeps_the_strike(tmp_path):
     scripts = {
         "agent_1": [
             ("claim_question", {"qid": "q0001"}),   # r1: claimed, then idles
-            ("check_balance", {}),
-            ("check_balance", {}),
-            ("check_balance", {}),
+            IDLE, IDLE, IDLE,
             ("claim_question", {"qid": "q0001"}),   # r5: strike 2 (question is back)
-            ("check_balance", {}),
-            ("check_balance", {}),
-            ("check_balance", {}),
+            IDLE, IDLE, IDLE,
             ("claim_question", {"qid": "q0001"}),   # r9: refused, two strikes
         ],
     }
     infra, sched = build("C0", scripts, tmp_path, claim_ttl=2, max_rounds=9)
-    summary = sched.run()
+    sched.run()
     claims = _results(_trace(tmp_path), "agent_1", "claim_question")
     assert not claims[0].startswith("ERROR")
     assert not claims[1].startswith("ERROR")        # the expired question was reusable
     assert claims[2].startswith("ERROR") and "twice" in claims[2]
     assert infra.board.strikes[("q0001", "agent_1")] == 2
-    assert summary["conservation_ok"] is True
 
 
 def test_claims_never_expire_without_a_ttl(tmp_path):
@@ -401,17 +275,11 @@ def test_adversarial_scripted(tmp_path):
     """Every known exploit attempt is refused, and the run still terminates."""
     scripts = {
         "agent_1": [
-            ("pay", {"to": "agent_99", "amount": 10}),                   # unknown recipient
-            ("propose_contract", {"to": "agent_2", "task": "find X", "price": 20}),
-            ("check_balance", {}),                                       # agent_2 accepts here
-            ("cancel_contract", {"contract_id": "c0001"}),               # cancel after accept
-        ],
-        "agent_2": [
-            ("check_balance", {}), ("check_balance", {}),
-            ("accept_contract", {"contract_id": "c0001"}),
+            ("send_message", {"to": "agent_99", "text": "hi"}),        # unknown recipient
+            ("release_question", {"qid": "q0001"}),                    # holds no claim
         ],
         "agent_3": [
-            ("claim_question", {"qid": "q0001"}),                   # claims, then idles
+            ("claim_question", {"qid": "q0001"}),                      # claims, then idles
         ],
         "agent_4": [
             ("claim_question", {"qid": "q0002"}),
@@ -419,8 +287,8 @@ def test_adversarial_scripted(tmp_path):
             ("deliver_work", {"target_id": "q0002", "content": "Paris"}),  # no claim left
         ],
         "agent_5": [
-            ("check_balance", {}),
-            ("claim_question", {"qid": "q0002"}),                   # already closed
+            IDLE,
+            ("claim_question", {"qid": "q0002"}),                      # already closed
             ("deliver_work", {"target_id": "q0001", "content": "Paris"}),  # never claimed it
         ],
     }
@@ -428,8 +296,8 @@ def test_adversarial_scripted(tmp_path):
     summary = sched.run()
     trace = _trace(tmp_path)
 
-    assert _results(trace, "agent_1", "pay")[0].startswith("ERROR")
-    assert _results(trace, "agent_1", "cancel_contract")[0].startswith("ERROR")
+    assert _results(trace, "agent_1", "send_message")[0].startswith("ERROR")
+    assert _results(trace, "agent_1", "release_question")[0].startswith("ERROR")
     delivers = _results(trace, "agent_4", "deliver_work")
     assert not delivers[0].startswith("ERROR") and delivers[1].startswith("ERROR")
     assert _results(trace, "agent_5", "claim_question")[0].startswith("ERROR")
@@ -439,10 +307,7 @@ def test_adversarial_scripted(tmp_path):
     assert [q.qid for q in infra.board.open_questions()] == ["q0001"]
     assert "q0001" not in infra.board.active
     assert [r.agent for r in infra.board.results] == ["agent_4"]
-    # the honest contract survived the payer's cancel attempt, still funded
-    assert infra.contracts.get("c0001").status == "accepted"
-    assert infra.ledger.escrow["c0001"] == 20
-    assert summary["rounds_used"] == 10 and summary["conservation_ok"] is True
+    assert summary["rounds_used"] == 10
 
 
 # ---------------- C2 shared memory vs its C0 control ----------------
@@ -455,11 +320,11 @@ def _cross_agent_scripts():
         "agent_1": [
             ("claim_question", {"qid": "q0001"}),
             ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-            ("check_balance", {}),
+            IDLE,
         ],
         "agent_2": [
-            ("check_balance", {}),
-            ("check_balance", {}),
+            IDLE,
+            IDLE,
             ("memory_search", {"query": 'capital of France? -> "Paris"'}),   # r3
         ],
     }
@@ -471,31 +336,29 @@ def test_shared_memory_reuse_across_agents_C2(tmp_path):
     without agent_2 ever doing any work of its own."""
     infra, sched = build("C2", _cross_agent_scripts(), tmp_path,
                          bank=paris_bank(2), max_rounds=3)
-    summary = sched.run()
+    sched.run()
     out = _results(_trace(tmp_path), "agent_2", "memory_search")[0]
     assert '[q0001] capital of France? -> "Paris" (F1 1.00)' in out
     assert infra.memory.answer("agent_2", "q0001")["f1"] == 1.0
-    assert summary["conservation_ok"] is True
 
 
 def test_private_memory_does_not_leak_across_agents_C0(tmp_path):
-    """The C0 control for the test above, sharpened for v5: agent_2's private
-    store holds the IDENTICAL corpus (the Paris paragraph shows up), yet
-    agent_1's graded answer is invisible to it."""
+    """The C0 control for the test above: agent_2's private store holds the
+    IDENTICAL corpus (the Paris paragraph shows up), yet agent_1's graded
+    answer is invisible to it."""
     infra, sched = build("C0", _cross_agent_scripts(), tmp_path,
                          bank=paris_bank(2), max_rounds=3)
-    summary = sched.run()
+    sched.run()
     out = _results(_trace(tmp_path), "agent_2", "memory_search")[0]
     assert "[Paris] Paris is the capital of France." in out      # corpus: identical at birth
     assert "(F1 1.00)" not in out                                # the answer: private
     assert infra.memory.answer("agent_2", "q0001") is None
     assert infra.memory.answer("agent_1", "q0001")["f1"] == 1.0
-    assert summary["conservation_ok"] is True
 
 
 def test_reuse_and_improvement_show_up_in_the_metrics(tmp_path):
-    """A bought (stored) answer makes the later claim a memory hit, and the
-    graded delivery reports beating the stored attempt: memory_hit_rate and
+    """A stored answer makes the later claim a memory hit, and the graded
+    delivery reports beating the stored attempt: memory_hit_rate and
     improvement_rate both move."""
     scripts = {"agent_1": [
         ("claim_question", {"qid": "q0002"}),      # r1: bare claim, no hit
@@ -513,48 +376,24 @@ def test_reuse_and_improvement_show_up_in_the_metrics(tmp_path):
     assert m["memory_hit_rate"] == pytest.approx(1 / 2)
     assert m["improvement_rate"] == pytest.approx(1.0)
     assert m["answers_in_memory_total"] == 2       # append-only: both attempts
-    assert summary["conservation_ok"] is True
-
-
-# ---------------- C6 collective goal ----------------
-
-def test_collective_goal_prompt_C6(tmp_path):
-    """C6 flips the root goal only. Checked through the real Agent construction
-    (system prompt) and render_turn (per-turn view), with a permission spot
-    check confirming C6 is otherwise identical to C0."""
-    infra, sched = build("C6", {}, tmp_path, bank=demo_bank())
-    agent1 = next(a for a in sched.agents if a.id == "agent_1")
-
-    assert "maximize the TOTAL token balance of the ENTIRE SYSTEM" in agent1._system
-    assert "maximize your token balance" not in agent1._system
-
-    view = render_turn(infra, "agent_1", agent1.fifo, agent1.goals)
-    assert "Global balance:" in view
-
-    c6_err = permission_error(infra, "agent_1", "propose_contract",
-                              {"to": "agent_2", "task": "help me out", "price": 10})
-    infra0 = demo_infra("C0")
-    c0_err = permission_error(infra0, "agent_1", "propose_contract",
-                              {"to": "agent_2", "task": "help me out", "price": 10})
-    assert c6_err is None and c0_err is None
 
 
 # ---------------- timeseries / scheduler contracts ----------------
 
 def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
-    """T28: every round appends one cumulative system snapshot to
-    timeseries.jsonl; the last line agrees with summary.json / metrics."""
+    """Every round appends one cumulative system snapshot to timeseries.jsonl;
+    the last line agrees with summary.json / metrics."""
     scripts = {"agent_1": [
         ("list_questions", {}),
         ("claim_question", {"qid": "q0001"}),
         ("memory_search", {"query": "capital of France"}),
         ("deliver_work", {"target_id": "q0001", "content": "Paris"}),
-        ("claim_question", {"qid": "q0002"}),        # memory hit (pre-stored answer)
+        ("claim_question", {"qid": "q0002"}),
         ("deliver_work", {"target_id": "q0002", "content": "Paris"}),
-    ]}
+    ],
+        "agent_2": [("send_message", {"to": "agent_1", "text": "good luck"})],
+    }
     infra, sched = build("C0", scripts, tmp_path, bank=paris_bank(2), max_rounds=6)
-    infra.memory.write("agent_1", '[q0002] capital of France? -> "Paris" (F1 1.00)',
-                       kind="answer", qid="q0002", f1=1.0)
     summary = sched.run()
     lines = [json.loads(l) for l in open(tmp_path / "timeseries.jsonl")]
 
@@ -562,12 +401,11 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
     assert [s["round"] for s in lines] == list(range(1, 7))
     roster = set(infra.agent_ids)
     for s in lines:
-        for key in ("balances", "tokens", "answered", "memory"):
+        for key in ("tokens", "answered", "memory"):
             assert set(s[key]) == roster, key
     # cumulative counters never go down tick over tick
-    for key in ("minted", "burned", "solving_total", "admin_total", "n_answered",
-                "total_f1", "n_contracts", "n_loans", "interest_paid_total",
-                "n_claims", "n_memory_hits", "demand_absorbed"):
+    for key in ("solving_total", "admin_total", "n_answered", "total_f1",
+                "n_messages", "n_claims", "n_memory_hits", "demand_absorbed"):
         vals = [s[key] for s in lines]
         assert vals == sorted(vals), key
     assert [s["board"]["closed"] for s in lines] == [0, 0, 0, 1, 1, 2]
@@ -576,21 +414,14 @@ def test_timeseries_one_cumulative_snapshot_per_round(tmp_path):
 
     last = lines[-1]
     m = compute_metrics(summary)
-    assert last["balances"] == summary["balances"]
     assert last["tokens"] == summary["tokens"]
-    assert last["bankrupt"] == summary["bankrupt"]
-    assert last["minted"] == summary["minted"]
-    assert last["burned"] == summary["burned"]
-    assert last["n_contracts"] == summary["n_contracts"]
     assert last["memory"] == summary["memory"]
+    assert last["n_messages"] == summary["n_messages"] == 1
     assert last["total_f1"] == pytest.approx(m["total_f1"])
     assert last["total_em"] == pytest.approx(m["total_em"])
     assert last["n_answered"] == m["n_answered"]
     assert last["coordination_overhead"] == pytest.approx(m["coordination_overhead"])
     assert last["demand_absorbed"] == pytest.approx(m["demand_absorbed"])
-    assert last["n_loans"] == m["n_loans"]
-    assert last["loan_principal_outstanding"] == m["loan_principal_outstanding"]
-    assert last["interest_paid_total"] == m["interest_paid_total"]
     assert last["n_claims"] == m["n_claims"]
     assert last["memory_hit_rate"] == pytest.approx(m["memory_hit_rate"])
     assert last["improvement_rate"] == pytest.approx(m["improvement_rate"])
@@ -617,7 +448,7 @@ def test_summary_is_written_even_when_a_turn_crashes(tmp_path):
         sched.run()
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert summary["level"] == "C7"
-    assert summary["conservation_ok"] is True
+    assert summary["deliveries"] == []
 
 
 def test_hub_turns_per_round_knob(tmp_path):
@@ -656,4 +487,3 @@ def test_specialization_is_computable_from_a_real_run(tmp_path):
     assert m["specialization"]["agent_2"] == pytest.approx(1.0)   # k02 alone
     assert m["mean_specialization"] == pytest.approx(0.75)
     assert m["demand_absorbed"] == pytest.approx(3 / 5)
-    assert summary["conservation_ok"] is True

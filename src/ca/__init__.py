@@ -1,1 +1,1 @@
-"""Centralization-spectrum multi-agent economy testbed."""
+"""Centralization-spectrum multi-agent testbed."""

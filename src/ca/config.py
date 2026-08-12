@@ -1,16 +1,17 @@
-"""Centralization configurations C0-C7 (v3: single-factor design).
+"""Centralization configurations (v6: single-factor design, no economy).
 
 Configs are NOT cumulative. C0 is the fully decentralized baseline and every
 other multi-agent config flips EXACTLY ONE mechanism relative to it, so any
 measured effect attributes cleanly to that one mechanism. The flags are
 independent booleans, so arbitrary combinations remain mechanically possible
-for follow-up experiments -- the C0-C7 table just does not use them.
+for follow-up experiments -- the table just does not use them.
 
 C7 is the solo baseline (one agent, no collaboration at all).
 
-Info centralization was deleted in v3: knowledge is infrastructure (v5: every
-memory is born knowing the corpus), so there is nothing for an agent-level
-monopoly to add.
+The gap in the naming (no C3/C4/C6) is deliberate: those three centralized
+pricing, credit and the goal function, all of which died with the token
+economy in v6. The survivors keep the identities they had in v3-v5 so earlier
+results stay referenceable.
 """
 from dataclasses import dataclass
 
@@ -21,23 +22,17 @@ class LevelConfig:
     n_agents: int
     has_hub: bool
     world_access: str = "all"          # "all" | "hub" (list/claim/deliver to WORLD)
-    central_pricing: bool = False      # hub sets ALL contract prices; bargaining off
-    central_credit: bool = False       # hub is the sole lender
     star_comms: bool = False           # non-hub agents may only reach the hub
     shared_memory: bool = False        # one long-term memory for everyone (C2)
-    collective_goal: bool = False      # root goal = TOTAL system balance, not one's own
 
 
 CONFIGS: dict[str, LevelConfig] = {
-    # demand, pricing, credit and comms centralization each need a hub agent to
-    # hold the power; shared memory and the collective goal do not.
+    # task access and comms centralization each need a hub agent to hold the
+    # power; shared memory does not.
     "C0": LevelConfig("C0", 8, False),
     "C1": LevelConfig("C1", 8, True, world_access="hub"),
     "C2": LevelConfig("C2", 8, False, shared_memory=True),
-    "C3": LevelConfig("C3", 8, True, central_pricing=True),
-    "C4": LevelConfig("C4", 8, True, central_credit=True),
     "C5": LevelConfig("C5", 8, True, star_comms=True),
-    "C6": LevelConfig("C6", 8, False, collective_goal=True),
     "C7": LevelConfig("C7", 1, False),
 }
 
@@ -52,20 +47,18 @@ def agent_ids(level: LevelConfig) -> list[str]:
 class ExperimentConfig:
     level: LevelConfig
     seed: int
-    seed_capital_total: int
     fifo_k: int = 10
-    memory_k: int = 5            # rows per memory_search (billable-cost knob)
+    memory_k: int = 5            # rows per memory_search
     list_top_n: int = 20         # open questions shown per page by list_questions
     # None = claims never expire. The TTL exists only to stop an agent squatting
     # on work it will not deliver; v4.1 briefly misused it as a device to force
     # delegation, which produced deadline behaviour (filler answers) rather than
-    # cooperation. Cooperation has to be made profitable, not mandatory.
+    # cooperation. release_question is the voluntary way to hand work back.
     claim_ttl: int | None = None
     max_rounds: int = 60
     model: str = "gpt-5-mini"
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
-    loan_rate: float = 0.01      # interest charged per round on outstanding loan principal
     hub_turns_per_round: int = 1  # extra hub turns/round at has_hub levels
     solo_turns_per_round: int = 1  # solo-agent turns/round at C7 (8 = compute parity with 8-agent configs)
     checkpoint_every: int = 20   # full-state checkpoint every N rounds (T29)

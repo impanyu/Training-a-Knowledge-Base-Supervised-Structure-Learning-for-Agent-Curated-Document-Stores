@@ -86,7 +86,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"bank saved to {args.out}: {len(qs)} questions, {bank['n_topics']} topics")
     print("difficulty:", dict(Counter(q["difficulty"] for q in qs)))
     print("topic sizes:", sorted(Counter(q["topic"] for q in qs).values()))
-    print("total question value:", sum(q["price"] for q in qs))
 
 
 if __name__ == "__main__":
