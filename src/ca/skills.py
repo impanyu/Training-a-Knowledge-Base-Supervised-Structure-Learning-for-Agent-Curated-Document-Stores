@@ -31,7 +31,7 @@ _SOLO_ANSWER = """
    A GOOD ✓ row is free money: that answer is already yours. A LOW QUALITY one
    is a warning. Spend tokens on those and on the "—" rows.
 3. retrieve(query="Der Rosenkavalier premiere year")     # COSTS TOKENS
-4. work_on(question_id="q0107", thought="Der Rosenkavalier -> 1911")
+4. memory_write(content="q0107: Der Rosenkavalier premiered 1911, Dresden")
    # persists reasoning across turns - your recent-actions window is short
 5. deliver_work(target_id="j0007",
                 content='{"q0042": "Richard Strauss", "q0107": "1911", ...}')
@@ -40,7 +40,7 @@ _SOLO_ANSWER = """
       so a typo costs only the turn. A complete map is your ONE graded attempt.
       Each value is the SHORT ANSWER ONLY (a name / date / phrase).
 DO THE ARITHMETIC BEFORE YOU CLAIM: one answer takes about 3 turns (a retrieve,
-a work_on, a check), so a job of 2 is ~6 turns of your own while a job of 10 is
+a note, a check), so a job of 2 is ~6 turns of your own while a job of 10 is
 ~30. Claims never expire, but every turn burns tokens, so claim a size you can
 actually finish - or plan to buy the rest (see below).
 CUT LOSSES on any single question: if it is not converging after 2-3 retrieves,
@@ -53,7 +53,7 @@ _CONTRACTOR = """
   [bound to q0031: the deliverable is the short answer to "In what year did
   Der Rosenkavalier premiere?"]"
 - accept_contract(contract_id="c0007")     # 300 locked in escrow from the payer{counter_line}
-- do the work (retrieve / work_on), then:
+- do the work (retrieve, reason), then:
 - deliver_work(target_id="c0007", content="1911")
   -> escrow released to you, and the answer lands in the payer's chat AND in
      both of your memories. A bound deliverable is NOT machine-graded, but
@@ -81,7 +81,7 @@ _IFACE_PIPELINE = """
 ### Demo: your production pipeline
 1. list_jobs -> pick jobs whose reward exceeds expected cost
 2. claim_job(jid="j0007")   # reveals all 8 questions; ✓ = already in memory
-3. For each unanswered question EITHER solve it yourself (retrieve / work_on),
+3. For each unanswered question EITHER solve it yourself (retrieve),
    OR subcontract it BY ITS QUESTION ID:
    propose_contract(to="agent_3", task="q0107", price=300)
    -> bound to q0107, so agent_3 owes you that short answer, which lands in

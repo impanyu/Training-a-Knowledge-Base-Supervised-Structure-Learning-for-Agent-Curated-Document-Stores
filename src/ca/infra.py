@@ -1,5 +1,4 @@
 """Aggregate of all authoritative world state."""
-from collections import defaultdict
 
 from ca.bank import QuestionBank
 from ca.board import JobBoard
@@ -30,5 +29,4 @@ class Infra:
         self.memory = AgentMemory(shared=cfg.level.shared_memory,
                                   embedding_function=embedding_function)
         self.retriever = retriever
-        self.scratchpads: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         self.round = 0

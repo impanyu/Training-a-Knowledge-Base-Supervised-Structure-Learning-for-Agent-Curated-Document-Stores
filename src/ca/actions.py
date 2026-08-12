@@ -24,12 +24,6 @@ ACTION_SPECS: dict[str, dict] = {
         "description": "Search the external knowledge corpus. COSTS TOKENS.",
         "input_schema": _schema({"query": _S}, ["query"]),
     },
-    "work_on": {
-        "description": ("Record one reasoning step about a question in your private "
-                        "scratchpad. COSTS TOKENS."),
-        "input_schema": _schema({"question_id": _S, "thought": _S},
-                                ["question_id", "thought"]),
-    },
     "deliver_work": {
         "description": ("Deliver work. target_id = a JOB id ('j0007') submits the whole "
                         "job to the WORLD: `content` must be ONE JSON object mapping "
@@ -52,7 +46,7 @@ ACTION_SPECS: dict[str, dict] = {
     "list_jobs": {
         "description": ("List open jobs on the WORLD's board as "
                         "[j####] N questions, topic k##, reward R. A job is a BUNDLE of "
-                        "6-10 related questions claimed and delivered as a unit; the "
+                        "2-10 related questions claimed and delivered as a unit; the "
                         "reward is the sum of its questions' prices. Order is arbitrary "
                         "but stable for you (other agents see a different order, so the "
                         "reward listed next to each job is what matters, not its "
@@ -62,8 +56,7 @@ ACTION_SPECS: dict[str, dict] = {
     "claim_job": {
         "description": ("Claim an open job: this reveals the text of every question in it "
                         "and marks the ones you already have an answer for. A job holds "
-                        "ONE claimant at a time and you get at most TWO claims on any one "
-                        "job, so a claim you let expire burns one of them."),
+                        "ONE claimant at a time."),
         "input_schema": _schema({"jid": _S}, ["jid"]),
     },
     "send_message": {
@@ -200,7 +193,7 @@ def classify(name: str, inp: dict) -> str:
     """"solving" (answer-related) vs "admin" (coordination). EVERY action bills
     its turn's tokens (see agent.take_turn) -- this only labels *what kind* of
     work the tokens paid for, for recorder tallies / coordination_overhead."""
-    if name in ("retrieve", "work_on"):
+    if name == "retrieve":
         return "solving"
     if name == "deliver_work" and not _is_contract_target(inp.get("target_id", "")):
         return "solving"
@@ -296,7 +289,7 @@ def _verdict(rec: dict) -> str:
     if f1 is None:
         return "UNVERIFIED: the WORLD never scored this one, so check it before you use it"
     if f1 < _LOW_F1:
-        return (f"LOW QUALITY (F1 {f1:.2f} of 1.00): re-solve it (retrieve / work_on) "
+        return (f"LOW QUALITY (F1 {f1:.2f} of 1.00): re-solve it (retrieve, then reason) "
                 "instead of delivering it again")
     return (f"GOOD (F1 {f1:.2f} of 1.00): deliver it as-is and spend your tokens "
             "on the unanswered ones")
@@ -307,12 +300,6 @@ def _verdict(rec: dict) -> str:
 def _h_retrieve(infra, a, inp):
     hits = infra.retriever.search(inp["query"], k=infra.cfg.retrieve_k)
     return "\n\n".join(f"[{d['title']}] {d['text']}" for d in hits) or "(no results)"
-
-
-def _h_work_on(infra, a, inp):
-    qid = str(inp["question_id"])
-    infra.scratchpads[a][qid].append(inp["thought"])
-    return f"noted on scratchpad for {qid} ({len(infra.scratchpads[a][qid])} entries)"
 
 
 def _deliver_contract(infra, a, cid, content):
@@ -556,7 +543,7 @@ def _h_list_agents(infra, a, inp):
 
 
 _HANDLERS = {
-    "retrieve": _h_retrieve, "work_on": _h_work_on, "deliver_work": _h_deliver_work,
+    "retrieve": _h_retrieve, "deliver_work": _h_deliver_work,
     "list_jobs": _h_list_jobs, "claim_job": _h_claim_job,
     "send_message": _h_send_message, "read_chat": _h_read_chat,
     "propose_contract": _h_propose_contract, "accept_contract": _h_accept_contract,

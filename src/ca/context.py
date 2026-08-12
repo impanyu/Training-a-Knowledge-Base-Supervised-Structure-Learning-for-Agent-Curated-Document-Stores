@@ -21,7 +21,7 @@ Agents in the system: {peers}.
 {root_goal}
 Tokens are both your money and your fuel: EVERY action costs the tokens that
 turn's LLM call consumed. If your balance drops to 0 or below you are BANKRUPT
-and can no longer perform answer-related actions (retrieve, work_on, delivering
+and can no longer perform answer-related actions (retrieve, delivering
 to the WORLD); you may still coordinate and borrow.
 
 The WORLD posts JOBS. A job is a BUNDLE of 2-10 related questions, claimed and
@@ -120,40 +120,6 @@ def system_prompt(level: LevelConfig, agent_id: str, all_ids: list[str]) -> str:
     return sp
 
 
-def _claims_block(infra: Infra, agent_id: str, mine: list, pad: dict) -> str:
-    """The anti-amnesia device (spec §8): for every job this agent holds, the
-    FULL question list with per-question status (and an expiry countdown when
-    claims expire at all). v3's worst pathology was agents forgetting what a
-    claimed task contained, so the working set is re-rendered every single turn
-    and never scrolls out."""
-    ttl = infra.cfg.claim_ttl
-    lines = []
-    for jid, claim in mine:
-        job = infra.bank.jobs[jid]
-        left = None if ttl is None else max(claim.round + ttl - infra.round, 0)
-        rows, known = [], 0
-        for qid in job.qids:
-            rec = infra.memory.answer(agent_id, qid)
-            if rec is None:
-                n = len(pad.get(qid) or [])
-                note = f" ({n} scratchpad note(s))" if n else ""
-                rows.append(f"    {qid} — unanswered{note}")
-            else:
-                known += 1
-                f1 = rec["f1"]
-                score = "ungraded" if f1 is None else f"F1 {f1:.2f}"
-                rows.append(f"    {qid} ✓ answered ({score}, in memory)")
-        head = (f"- [{jid}] {len(job.qids)} questions, reward {job.price} — "
-                f"{known} of {len(job.qids)} answered")
-        lines.append(head if left is None else head + f" — claim EXPIRES in {left} round(s)")
-        lines += rows
-        lines.append(f'    deliver ALL {len(job.qids)} at once: '
-                     f'deliver_work(target_id="{jid}", '
-                     f'content=\'{{"{job.qids[0]}": "...", ...}}\')')
-    return ("Your ACTIVE JOB CLAIMS (this is your whole working set):\n"
-            + "\n".join(lines))
-
-
 def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack) -> str:
     own = infra.ledger.balance(agent_id)
     if infra.cfg.level.collective_goal:
@@ -164,34 +130,14 @@ def render_turn(infra: Infra, agent_id: str, fifo: FifoMemory, goals: GoalStack)
         balance_line = f"Balance: {own} tokens"
     parts = [f"== ROUND {infra.round} ==", balance_line]
     parts.append("Goal stack (bottom -> top):\n" + goals.render())
-    pad = infra.scratchpads.get(agent_id) or {}
-    pad_lines = []
-    for qid, thoughts in pad.items():
-        if not thoughts:
-            continue
-        pad_lines.append(f"[{qid}]")
-        pad_lines += [f"  - {t}" for t in thoughts[-5:]]
-    if pad_lines:
-        parts.append("Your scratchpad (latest thoughts per question):\n" + "\n".join(pad_lines))
-    # memory fills itself silently; agents only reuse what they know is there
-    n_answers = infra.memory.n_answers(agent_id)
-    n_notes = infra.memory.n_entries(agent_id) - n_answers
-    if n_answers or n_notes:
-        parts.append(f"Long-term memory: {n_answers} answers, {n_notes} notes "
-                     "(claiming a job shows you the ones it already covers; "
-                     "memory_search finds the rest by meaning)")
-    # questions this agent already delivered: a delivered job is gone from the
-    # board, and agents were observed re-claiming their own finished work
-    done = [r for r in infra.board.results if r.agent == agent_id]
-    if done:
-        shown = ", ".join(f"{r.qid} (F1 {r.f1:.2f}, paid {r.payout})" for r in done[-8:])
-        if len(done) > 8:
-            shown += f" … +{len(done) - 8} more"
-        parts.append("Questions you already answered - their answers are in your "
-                     f"memory, reuse them: {shown}")
     mine = [(jid, c) for jid, c in infra.board.active.items() if c.agent == agent_id]
     if mine:
-        parts.append(_claims_block(infra, agent_id, mine, pad))
+        lines = []
+        for jid, _ in mine:
+            job = infra.bank.jobs[jid]
+            lines.append(f"- [{jid}] {len(job.qids)} questions, reward {job.price} - "
+                         f'deliver_work(target_id="{jid}", content=\'{{"qid": "answer", ...}}\')')
+        parts.append("Your active job claims:\n" + "\n".join(lines))
     pend = infra.contracts.pending_for(agent_id)
     if pend:
         lines = []

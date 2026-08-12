@@ -136,108 +136,12 @@ def test_render_turn_contains_state():
     assert infra.chat.unread("agent_1")   # render must NOT consume unread
 
 
-def test_render_turn_lists_own_answered_questions_with_f1():
-    infra = make("C0")
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
-    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "Questions you already answered" in out
-    assert "q0005 (F1 1.00, paid 50)" in out
-    # not shown to other agents, and absent before any delivery
-    assert "already answered" not in render_turn(infra, "agent_2", FifoMemory(3),
-                                                 GoalStack("g"))
-
-
-def test_render_turn_renders_the_whole_question_list_of_every_claimed_job():
-    """The anti-amnesia device: a claim's full contents, per-question status
-    and expiry countdown are re-rendered every turn."""
-    infra = make("C0")
-    infra.round = 2
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
-    infra.round = 3
-    dispatch(infra, "agent_1", "work_on", {"question_id": "q0002", "thought": "Loire?"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    block = out.split("Your ACTIVE JOB CLAIMS")[1].splitlines()
-    assert block[1] == "- [j0001] 3 questions, reward 600 — 0 of 3 answered"
-    assert block[2] == "    q0001 — unanswered"
-    assert block[3] == "    q0002 — unanswered (1 scratchpad note(s))"
-    assert block[4] == "    q0003 — unanswered"
-    assert 'deliver_work(target_id="j0001"' in block[5]
-    # another agent's claim is not advertised
-    assert "ACTIVE JOB CLAIMS" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
-
-
-def test_claimed_job_rows_flip_to_answered_once_the_answer_is_in_memory():
-    infra = make("C0")
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0002"})
-    deliver(infra, "agent_1", "j0002", {"q0003": "4", "q0004": "6"})
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "1 of 3 answered" in out
-    assert "    q0003 ✓ answered (F1 1.00, in memory)" in out
-    assert "    q0001 — unanswered" in out
-
-
-def test_a_bought_answer_shows_as_answered_but_ungraded():
-    infra = make("C0")
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
-    dispatch(infra, "agent_1", "propose_contract",
-             {"to": "agent_2", "task": "q0002", "price": 30})
-    dispatch(infra, "agent_2", "accept_contract", {"contract_id": "c0001"})
-    dispatch(infra, "agent_2", "deliver_work", {"target_id": "c0001", "content": "Loire"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "    q0002 ✓ answered (ungraded, in memory)" in out
-    assert "1 of 3 answered" in out
-
-
 def test_render_turn_shows_every_concurrent_claim():
     infra = make("C0")
     for jid in ("j0001", "j0002"):
         dispatch(infra, "agent_1", "claim_job", {"jid": jid})
     out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
     assert out.count("questions, reward") == 2
-
-
-def test_render_turn_memory_line_counts_answers_and_notes():
-    infra = make("C0")
-    assert "Long-term memory:" not in render_turn(infra, "agent_1", FifoMemory(3),
-                                                  GoalStack("g"))
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
-    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
-    dispatch(infra, "agent_1", "memory_write", {"content": "geography pays well"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "Long-term memory: 1 answers, 1 notes" in out
-    # private at C0: nobody else sees a filled store
-    assert "Long-term memory:" not in render_turn(infra, "agent_2", FifoMemory(3),
-                                                  GoalStack("g"))
-
-
-def test_render_turn_memory_line_is_shared_at_c2():
-    infra = demo_infra("C2", capital=800)
-    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
-    deliver(infra, "agent_1", "j0003", {"q0005": "sedimentary"})
-    out = render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
-    assert "Long-term memory: 1 answers, 0 notes" in out
-
-
-def test_render_turn_shows_scratchpad_written_by_work_on():
-    infra = make("C0")
-    dispatch(infra, "agent_1", "work_on",
-             {"question_id": "q0001", "thought": "the author is Y, need Y birthplace"})
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "the author is Y, need Y birthplace" in out
-    assert "q0001" in out
-    # another agent's scratchpad stays private
-    assert "the author is Y" not in render_turn(infra, "agent_2", FifoMemory(3), GoalStack("g"))
-
-
-def test_render_turn_scratchpad_keeps_last_five_thoughts():
-    infra = make("C0")
-    for i in range(7):
-        infra.scratchpads["agent_1"]["q0001"].append(f"<thought{i}>")
-    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
-    assert "<thought0>" not in out and "<thought1>" not in out
-    assert "<thought2>" in out and "<thought6>" in out
 
 
 def test_render_turn_shows_all_unread_messages():
@@ -267,3 +171,33 @@ def test_repetition_warning_after_three_identical_actions():
     assert "MUST choose a different action" in out
     fifo.add("retrieve({})", "different")
     assert "MUST choose a different action" not in render_turn(infra, "agent_1", fifo, goals)
+
+
+def test_render_turn_active_claims_are_one_line_of_live_state():
+    """The dynamic view stays lean: a held job renders as ONE line (id, size,
+    reward, deliver hint) - no per-question status, no memory summary. What a
+    job contains, and what is already known, is the agent's own job to track
+    (FIFO, notes, memory_search)."""
+    infra = make("C0")
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0001"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    line = [l for l in out.splitlines() if l.startswith("- [j0001]")]
+    assert len(line) == 1
+    assert "3 questions, reward 600" in line[0] and 'deliver_work(target_id="j0001"' in line[0]
+    assert "unanswered" not in out and "in memory" not in out
+    assert "Your scratchpad" not in out and "Long-term memory:" not in out
+    assert "already answered" not in out
+    # not shown to agents without a claim
+    assert "active job claims" not in render_turn(infra, "agent_2", FifoMemory(3),
+                                                  GoalStack("g"))
+
+
+def test_render_turn_has_no_memory_or_scratchpad_summaries():
+    infra = make("C0")
+    dispatch(infra, "agent_1", "claim_job", {"jid": "j0003"})
+    dispatch(infra, "agent_1", "deliver_work",
+             {"target_id": "j0003", "content": json.dumps({"q0005": "sedimentary"})})
+    dispatch(infra, "agent_1", "memory_write", {"content": "geology pays"})
+    out = render_turn(infra, "agent_1", FifoMemory(3), GoalStack("g"))
+    for gone in ("Long-term memory:", "Your scratchpad", "already answered"):
+        assert gone not in out, gone

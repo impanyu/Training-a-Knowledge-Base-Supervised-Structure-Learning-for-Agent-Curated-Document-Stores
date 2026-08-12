@@ -36,7 +36,6 @@ def wide(n=25):
 
 def test_classify():
     assert classify("retrieve", {"query": "x"}) == "solving"
-    assert classify("work_on", {"question_id": "q0001", "thought": "t"}) == "solving"
     assert classify("deliver_work", {"target_id": "j0001", "content": "{}"}) == "solving"
     assert classify("deliver_work", {"target_id": "c0001", "content": "x"}) == "admin"
     assert classify("claim_job", {"jid": "j0001"}) == "admin"
@@ -542,7 +541,7 @@ def test_dispatch_error_string_not_exception():
 
 def test_visible_tools_filtered():
     names_c0 = {t["name"] for t in visible_tools(CONFIGS["C0"], "agent_1")}
-    assert {"claim_job", "list_jobs", "retrieve", "work_on"} <= names_c0
+    assert {"claim_job", "list_jobs", "retrieve"} <= names_c0
     assert "claim_task" not in names_c0 and "decompose" not in names_c0
     assert "counter_offer" in names_c0 and "set_price" not in names_c0
     names_c1 = {t["name"] for t in visible_tools(CONFIGS["C1"], "agent_1")}
@@ -595,7 +594,7 @@ def test_shared_memory_changes_reach_not_permissions():
 
 def test_C7_hides_multi_agent_tool_schemas():
     names = {t["name"] for t in visible_tools(CONFIGS["C7"], "agent_1")}
-    assert names == {"retrieve", "work_on", "deliver_work", "list_jobs",
+    assert names == {"retrieve", "deliver_work", "list_jobs",
                      "claim_job", "push_goal", "pop_goal",
                      "memory_write", "memory_search", "check_balance"}
 
@@ -623,12 +622,6 @@ def test_unknown_agent_error_lists_roster():
                                       {"to": "agent_99", "text": "x"})
 
 
-def test_work_on_files_notes_per_question():
-    i0 = make("C0")
-    out = dispatch(i0, "agent_1", "work_on",
-                   {"question_id": "q0001", "thought": "the answer is Paris"})
-    assert "q0001" in out and "1 entries" in out
-    assert i0.scratchpads["agent_1"]["q0001"] == ["the answer is Paris"]
 
 
 def test_full_solo_job_flow():

@@ -52,7 +52,7 @@ class ExperimentConfig:
     level: LevelConfig
     seed: int
     seed_capital_total: int
-    fifo_k: int = 6
+    fifo_k: int = 10
     retrieve_k: int = 3          # passages per retrieve call (billable-cost knob)
     list_top_n: int = 20            # open jobs shown per page by list_jobs
     # None = claims never expire. The TTL exists only to stop an agent squatting
