@@ -32,7 +32,8 @@ ACTION_SPECS: dict[str, dict] = {
     },
     "deliver_work": {
         "description": ("Deliver your answer to an external question from your "
-                        "`external` thread ('q0042'). `content` is the short answer "
+                        "`external` thread; `target_id` is the qid exactly as it "
+                        "appeared there. `content` is the short answer "
                         "itself (a name / date / phrase), never a sentence or an "
                         "explanation - it is graded by token-overlap F1 against a short "
                         "gold answer. Only the assignee may deliver, delivery is your "

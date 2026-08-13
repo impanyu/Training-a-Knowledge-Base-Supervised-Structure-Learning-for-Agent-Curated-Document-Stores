@@ -37,8 +37,11 @@ def test_root_goal_puts_external_questions_first():
 
 def test_system_prompt_teaches_the_external_protocol():
     s = sp("B0")
-    assert '"[q0042] <question text>"' in s
-    assert 'deliver_work(target_id="q0042", content="<answer>")' in s
+    assert '"[<qid>] <question text>"' in s
+    assert 'deliver_work(target_id="<qid from the thread>", content="<answer>")' in s
+    assert "never a qid you have not seen" in s
+    # no literal example qid anywhere an agent could parrot back
+    assert "q0042" not in s
     assert "ONLY the short answer itself" in s and "ONE graded attempt" in s
     assert "push_goal" in s and "pop_goal" in s
 
