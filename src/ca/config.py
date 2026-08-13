@@ -1,17 +1,17 @@
-"""Centralization configurations (v6: single-factor design, no economy).
+"""Experiment arms (v7: proactive vs passive).
 
-Configs are NOT cumulative. C0 is the fully decentralized baseline and every
-other multi-agent config flips EXACTLY ONE mechanism relative to it, so any
-measured effect attributes cleanly to that one mechanism. The flags are
-independent booleans, so arbitrary combinations remain mechanically possible
-for follow-up experiments -- the table just does not use them.
+The centralization spectrum is retired. v7 is ONE organizational form -- a
+cluster of always-on domain experts over one shared knowledge base -- and the
+two arms differ ONLY in what idle time is for:
 
-C7 is the solo baseline (one agent, no collaboration at all).
+    P0  proactive: idle turns invent likely questions, answer them, and bank
+        the results with record_qa.
+    B0  passive baseline: identical world, routing, threads, KB and actions,
+        EXCEPT record_qa is absent from the catalog and the system prompt
+        carries no proactive protocol.
 
-The gap in the naming (no C3/C4/C6) is deliberate: those three centralized
-pricing, credit and the goal function, all of which died with the token
-economy in v6. The survivors keep the identities they had in v3-v5 so earlier
-results stay referenceable.
+The `proactive` flag gates exactly those two things and nothing else, so any
+measured difference attributes cleanly to the proactive protocol.
 """
 from dataclasses import dataclass
 
@@ -19,46 +19,29 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class LevelConfig:
     level: str
-    n_agents: int
-    has_hub: bool
-    world_access: str = "all"          # "all" | "hub" (list/claim/deliver to WORLD)
-    star_comms: bool = False           # non-hub agents may only reach the hub
-    shared_memory: bool = False        # one long-term memory for everyone (C2)
+    proactive: bool
 
 
 CONFIGS: dict[str, LevelConfig] = {
-    # task access and comms centralization each need a hub agent to hold the
-    # power; shared memory does not.
-    "C0": LevelConfig("C0", 8, False),
-    "C1": LevelConfig("C1", 8, True, world_access="hub"),
-    "C2": LevelConfig("C2", 8, False, shared_memory=True),
-    "C5": LevelConfig("C5", 8, True, star_comms=True),
-    "C7": LevelConfig("C7", 1, False),
+    "P0": LevelConfig("P0", proactive=True),
+    "B0": LevelConfig("B0", proactive=False),
 }
 
 
-def agent_ids(level: LevelConfig) -> list[str]:
-    if level.has_hub:
-        return ["hub"] + [f"agent_{i}" for i in range(1, level.n_agents)]
-    return [f"agent_{i}" for i in range(1, level.n_agents + 1)]
+def agent_ids(n_agents: int) -> list[str]:
+    return [f"agent_{i}" for i in range(1, n_agents + 1)]
 
 
 @dataclass
 class ExperimentConfig:
     level: LevelConfig
     seed: int
+    n_agents: int = 8            # agents == domain clusters (CLI --agents)
+    arrival_rate: float = 0.5    # Poisson lambda: external questions per round
     fifo_k: int = 10
     memory_k: int = 5            # rows per memory_search
-    list_top_n: int = 20         # open questions shown per page by list_questions
-    # None = claims never expire. The TTL exists only to stop an agent squatting
-    # on work it will not deliver; v4.1 briefly misused it as a device to force
-    # delegation, which produced deadline behaviour (filler answers) rather than
-    # cooperation. release_question is the voluntary way to hand work back.
-    claim_ttl: int | None = None
     max_rounds: int = 60
     model: str = "gpt-5-mini"
     max_tokens_per_turn: int = 4096  # reasoning models spend thinking tokens from this budget
     temperature: float = 0.3     # low variance for stable agent policies
-    hub_turns_per_round: int = 1  # extra hub turns/round at has_hub levels
-    solo_turns_per_round: int = 1  # solo-agent turns/round at C7 (8 = compute parity with 8-agent configs)
     checkpoint_every: int = 20   # full-state checkpoint every N rounds (T29)

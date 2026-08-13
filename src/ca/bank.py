@@ -1,8 +1,8 @@
-"""v5 question bank: a task IS one question.
+"""The question bank: every external question that can ever arrive.
 
-The job layer is gone -- the WORLD posts individual questions, each claimed and
-answered on its own. Addressing is by id only (qid). `topic` is bank metadata
-for the specialization metric; the agents never see it.
+Addressing is by id only (qid). `topic` is bank metadata for the
+specialization metric and `price` an inert per-difficulty weight for post-hoc
+slicing; the agents never see either.
 """
 import json
 from dataclasses import dataclass, fields
@@ -43,13 +43,8 @@ class QuestionBank:
         q = self.questions.get(key)
         if q is None:
             raise BankError(f"unknown question id '{key}'; questions are addressed "
-                            f"by id only (e.g. {', '.join(_near(self.questions, key))})"
-                            " - call list_questions to see what is open")
+                            f"by id only (e.g. {', '.join(_near(self.questions, key))})")
         return q
-
-    def total_units(self) -> int:
-        """One unit per question: the WORLD's whole posted demand."""
-        return len(self.questions)
 
 
 def _near(ids, key: str, n: int = 3) -> list[str]:

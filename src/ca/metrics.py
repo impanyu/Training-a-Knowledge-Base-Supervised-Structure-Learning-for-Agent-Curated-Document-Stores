@@ -1,4 +1,10 @@
-"""Headline and auxiliary metrics computed from a run summary."""
+"""Headline and auxiliary metrics computed from a run summary.
+
+v7 headlines: latency (arrival -> delivery, in rounds), F1, coverage
+(answered / arrived) and tokens_per_answer -- the proactive arm pre-pays
+compute while idle, and these read off whether that bought anything.
+"""
+import statistics
 from collections import defaultdict
 
 
@@ -24,16 +30,15 @@ def compute_metrics(summary: dict) -> dict:
     n_answered = len(deliveries)
     total_f1 = sum(d["f1"] for d in deliveries)
     total_em = sum(d["em"] for d in deliveries)
+    latencies = [d["latency"] for d in deliveries]
     solving = sum(t["solving"] for t in summary["tokens"].values())
     admin = sum(t["admin"] for t in summary["tokens"].values())
     all_tok = solving + admin
-    total_units = summary.get("total_units", 0)
+    arrived = summary.get("arrived_total", 0)
     n_messages = summary.get("n_messages", 0)
-    mem = summary.get("memory", {})
-    n_claims = sum(v.get("n_claims", 0) for v in mem.values())
-    n_memory_hits = sum(v.get("n_memory_hits", 0) for v in mem.values())
-    n_repeats = sum(v.get("n_repeat_deliveries", 0) for v in mem.values())
-    n_improved = sum(v.get("n_improved", 0) for v in mem.values())
+    turns = summary.get("turns", {})
+    solving_turns = turns.get("solving", 0)
+    agents = summary.get("agents", {})
     spec = specialization(summary)
     return {
         "n_answered": n_answered,
@@ -41,23 +46,22 @@ def compute_metrics(summary: dict) -> dict:
         "total_em": total_em,
         "mean_f1": total_f1 / n_answered if n_answered else 0.0,
         "mean_em": total_em / n_answered if n_answered else 0.0,
-        # headline: how much of the WORLD's posted demand -- the questions
-        # themselves -- the system actually absorbed (closed / total)
-        "demand_absorbed": n_answered / total_units if total_units else 0.0,
-        "accuracy_per_ktok_solving": total_f1 / (solving / 1000) if solving else 0.0,
-        "accuracy_per_ktok_all": total_f1 / (all_tok / 1000) if all_tok else 0.0,
-        # headline efficiency metric: tokens are measured, never charged
+        # headline: how much of what the WORLD actually asked got answered
+        "coverage": n_answered / arrived if arrived else 0.0,
+        # headline: rounds from arrival to delivery
+        "mean_latency": sum(latencies) / n_answered if n_answered else 0.0,
+        "median_latency": statistics.median(latencies) if latencies else 0.0,
+        # the proactive arm's product, and how much of the solving effort it was
+        "selfqa_total": summary.get("kb_selfqa", 0),
+        "selfqa_per_agent": {a: v.get("selfqa", 0) for a, v in agents.items()},
+        "proactive_ratio": (turns.get("selfqa", 0) / solving_turns
+                            if solving_turns else 0.0),
+        # headline efficiency metrics: tokens are measured, never charged
+        "tokens_per_answer": all_tok / n_answered if n_answered else 0.0,
         "coordination_overhead": admin / all_tok if all_tok else 0.0,
-        "admin_solving_ratio": admin / solving if solving else 0.0,
         "rounds_used": summary["rounds_used"],
         "n_messages": n_messages,
         "messages_per_answer": n_messages / n_answered if n_answered else 0.0,
         "specialization": spec,
         "mean_specialization": (sum(spec.values()) / len(spec)) if spec else 0.0,
-        # memory reuse: how often a claim came back with knowledge attached, and
-        # how often a second attempt at a known question actually beat it
-        "n_claims": n_claims,
-        "memory_hit_rate": n_memory_hits / n_claims if n_claims else 0.0,
-        "improvement_rate": n_improved / n_repeats if n_repeats else 0.0,
-        "answers_in_memory_total": sum(v.get("answers", 0) for v in mem.values()),
     }

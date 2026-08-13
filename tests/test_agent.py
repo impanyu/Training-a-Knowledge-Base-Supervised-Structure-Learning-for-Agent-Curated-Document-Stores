@@ -1,20 +1,24 @@
 import ca.agent as agent_mod
-from fixtures import demo_infra
+from fixtures import arrive, demo_infra
 
 from ca.agent import Agent, Decision, LLMPolicy, ScriptedPolicy
+from ca.context import ROOT_GOAL
 
 
-def make(level="C0"):
-    infra = demo_infra(level)
+def make(level="P0", **kw):
+    infra = demo_infra(level, **kw)
+    infra.round = 1
     return infra.cfg, infra
 
 
 def test_turn_executes_and_logs():
     cfg, infra = make()
-    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("claim_question", {"qid": "q0001"})]))
+    arrive(infra, "q0005", 1)
+    ag = Agent("agent_1", cfg, infra,
+               ScriptedPolicy([("deliver_work", {"target_id": "q0005", "content": "4"})]))
     ev = ag.take_turn()
-    assert ev["action"] == "claim_question" and ev["category"] == "admin"
-    assert "claimed" in ev["result"]
+    assert ev["action"] == "deliver_work" and ev["category"] == "solving"
+    assert ev["result"] == "delivered q0005: F1 1.00"
     assert len(ag.fifo.items) == 1
 
 
@@ -29,15 +33,23 @@ def test_tokens_are_measured_not_charged():
     assert "balance_after" not in ev      # nothing is debited any more
 
 
-def test_permission_denied_turn_still_reports_its_tokens():
-    cfg, infra = make("C1")
+def test_record_qa_turn_is_solving_work():
+    cfg, infra = make()
     ag = Agent("agent_1", cfg, infra,
-               ScriptedPolicy([("claim_question", {"qid": "q0001"})],
-                              in_tokens=10, out_tokens=5))
+               ScriptedPolicy([("record_qa", {"question": "q?", "answer": "a"})]))
     ev = ag.take_turn()
-    assert ev["result"].startswith("ERROR")
-    assert ev["category"] == "admin"  # claim_question is admin even when denied
-    assert ev["tokens_in"] == 10 and ev["tokens_out"] == 5
+    assert ev["category"] == "solving"
+    assert ev["result"] == "recorded to the shared knowledge base"
+
+
+def test_b0_agents_are_not_offered_record_qa():
+    cfg, infra = make("B0")
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([]))
+    assert "record_qa" not in {t["name"] for t in ag._tools}
+    assert "record_qa" not in ag._system
+    cfg, infra = make("P0")
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([]))
+    assert "record_qa" in {t["name"] for t in ag._tools}
 
 
 def test_noop_turn_is_an_error_result():
@@ -56,23 +68,18 @@ def test_noop_turn_is_an_error_result():
 def test_goal_actions_update_local_stack():
     cfg, infra = make()
     ag = Agent("agent_1", cfg, infra, ScriptedPolicy([
-        ("push_goal", {"note": "solve q0001"}), ("pop_goal", {})]))
+        ("push_goal", {"note": "solve q0005"}), ("pop_goal", {})]))
     ag.take_turn()
-    assert "solve q0001" in ag.goals.render()
+    assert "solve q0005" in ag.goals.render()
     ag.take_turn()
-    assert "solve q0001" not in ag.goals.render()
+    assert "solve q0005" not in ag.goals.render()
 
 
-def test_root_goal_is_cooperative_and_solo_at_c7():
-    cfg, infra = make()
-    root = Agent("agent_1", cfg, infra, ScriptedPolicy([])).goals.render()
-    assert ("[0] Cooperate with the other agents to answer as many questions "
-            "correctly as possible. (root, permanent)") in root
-
-    cfg7, infra7 = make("C7")
-    root7 = Agent("agent_1", cfg7, infra7, ScriptedPolicy([])).goals.render()
-    assert "[0] Answer as many questions correctly as possible. (root, permanent)" in root7
-    assert "Cooperate" not in root7
+def test_every_agent_shares_the_one_root_goal():
+    for arm in ("P0", "B0"):
+        cfg, infra = make(arm)
+        root = Agent("agent_2", cfg, infra, ScriptedPolicy([])).goals.render()
+        assert f"[0] {ROOT_GOAL} (root, permanent)" in root
 
 
 def test_the_root_goal_cannot_be_popped():
@@ -80,7 +87,24 @@ def test_the_root_goal_cannot_be_popped():
     ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("pop_goal", {})]))
     ev = ag.take_turn()
     assert ev["result"].startswith("ERROR")
-    assert "Cooperate" in ag.goals.render()
+    assert ROOT_GOAL in ag.goals.render()
+
+
+def test_a_turn_does_not_clear_unread_notifications():
+    """Only read_chat(page=0) clears unread -- taking a turn must not."""
+    cfg, infra = make()
+    arrive(infra, "q0005", 1)
+    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("list_agents", {})]))
+    ag.take_turn()
+    assert infra.chat.unread_partners("agent_1") == [("external", 1)]
+
+
+def test_the_domain_exemplars_reach_the_system_prompt():
+    cfg, infra = make()
+    ag2 = Agent("agent_2", cfg, infra, ScriptedPolicy([]))
+    assert "capital of France?" in ag2._system            # France expert
+    ag1 = Agent("agent_1", cfg, infra, ScriptedPolicy([]))
+    assert "sum of 2 and 2?" in ag1._system               # arithmetic expert
 
 
 def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):
@@ -101,11 +125,3 @@ def test_llm_policy_retries_and_survives_sdk_errors(monkeypatch):
     d = policy.decide("sys", "ctx", [])          # a hard failure must not kill the run
     assert d.name == "__noop__"
     assert d.in_tokens == 0 and d.out_tokens == 0
-
-
-def test_turn_marks_chat_read():
-    cfg, infra = make()
-    infra.chat.send("agent_2", "agent_1", "ping", 0)
-    ag = Agent("agent_1", cfg, infra, ScriptedPolicy([("list_agents", {})]))
-    ag.take_turn()
-    assert infra.chat.unread("agent_1") == []

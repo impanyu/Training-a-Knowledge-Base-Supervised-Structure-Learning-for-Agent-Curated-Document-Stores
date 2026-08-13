@@ -1,8 +1,9 @@
-"""Synchronous round-robin scheduler with seeded per-round shuffling."""
+"""Synchronous round scheduler: arrivals first, then seeded-shuffled turns."""
 import random
 
 from ca import checkpoint
 from ca.agent import Agent
+from ca.chat import EXTERNAL
 from ca.config import ExperimentConfig
 from ca.infra import Infra
 from ca.recorder import Recorder
@@ -15,7 +16,7 @@ class Scheduler:
         self.agents = agents
         self.cfg = cfg
         self.recorder = recorder
-        self.rng = rng
+        self.rng = rng   # per-round turn shuffle only; the stream owns its own
 
     def run(self, start_round: int = 1) -> dict:
         rounds_used = start_round - 1
@@ -23,14 +24,12 @@ class Scheduler:
             for r in range(start_round, self.cfg.max_rounds + 1):
                 self.infra.round = r
                 rounds_used = r
-                if self.cfg.claim_ttl is not None:
-                    self.infra.board.expire_claims(r, self.cfg.claim_ttl)
+                # arrivals land as external-thread messages BEFORE any turn,
+                # so the assignee's notification line shows them this round
+                for qid, agent in self.infra.stream.tick(r):
+                    q = self.infra.bank.questions[qid]
+                    self.infra.chat.send(EXTERNAL, agent, f"[{qid}] {q.text}", r)
                 order = list(self.agents)
-                if self.cfg.level.has_hub and self.cfg.hub_turns_per_round > 1:
-                    iface = next(a for a in self.agents if a.id == "hub")
-                    order += [iface] * (self.cfg.hub_turns_per_round - 1)
-                if len(self.agents) == 1 and self.cfg.solo_turns_per_round > 1:
-                    order += [self.agents[0]] * (self.cfg.solo_turns_per_round - 1)
                 self.rng.shuffle(order)
                 for agent in order:
                     event = agent.take_turn()
@@ -43,7 +42,7 @@ class Scheduler:
                 # line included) -- every N rounds, at max_rounds, and whenever
                 # the run is about to stop, so the last completed round of ANY
                 # finished run is always resumable.
-                done = self.infra.board.all_done()
+                done = self.infra.stream.all_done()
                 if (r % self.cfg.checkpoint_every == 0 or r == self.cfg.max_rounds
                         or done):
                     checkpoint.save(

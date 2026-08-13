@@ -5,33 +5,23 @@ after every completed round; every field is CUMULATIVE as of the end of that
 round (a crash mid-round loses only that round's line):
 
     round                          1-based round index
+    arrivals_total                 external questions arrived so far
+    pending                        arrived, not yet delivered
+    answered_total / coverage      delivered, and delivered / arrived
+    mean_latency                   mean rounds from arrival to delivery
+    total_f1 / total_em
+    agents                         {agent: {answered, f1_sum, selfqa, notes}}
+    kb_answers / kb_selfqa         KB entries by kind, whole cluster
+    n_messages                     peer-to-peer chat messages sent so far
     tokens                         {agent: {solving, admin}} measured, not charged
     solving_total / admin_total
     coordination_overhead          admin / (admin + solving), zero-guarded
-    coordination_overhead_by_agent {agent: same, per agent}
-    answered                       {agent: {n_answered, f1_sum, em_sum}}
-    n_answered / total_f1 / total_em
-    board                          {open, active_claims, closed} QUESTION counts
-    total_units / remaining_units / demand_absorbed
-    n_messages                     chat messages sent so far
-    memory                         {agent: {answers, notes, n_claims,
-                                   n_memory_hits, n_repeat_deliveries, n_improved}}
-    n_claims / n_memory_hits / memory_hit_rate / improvement_rate
-    answers_in_memory_total
 
-Formulas mirror ca.metrics on the final round (answers_in_memory_total sums
-per-agent counts, so at C2 the shared bucket is counted once per agent, exactly
-as compute_metrics does). Corpus entries never appear in any tally."""
+Formulas mirror ca.metrics on the final round. Corpus entries never appear in
+any tally."""
 import json
 from collections import defaultdict
 from pathlib import Path
-
-from ca.actions import IMPROVED_MARKER, MEMORY_HIT_MARKER, STORED_F1_MARKER
-
-
-def _mem_tally() -> dict:
-    return {"n_claims": 0, "n_memory_hits": 0,
-            "n_repeat_deliveries": 0, "n_improved": 0}
 
 
 class Recorder:
@@ -42,89 +32,65 @@ class Recorder:
         self._f = open(self.dir / "trace.jsonl", mode)  # fresh trace per run
         self._ts = open(self.dir / "timeseries.jsonl", mode)
         self._tokens = defaultdict(lambda: {"solving": 0, "admin": 0})
-        # memory tallies, counted live off the event stream so write_summary
-        # need not re-scan the trace file.
-        self._memory = defaultdict(_mem_tally)
+        # solving-turn tallies for proactive_ratio, counted live off the
+        # event stream so write_summary need not re-scan the trace file
+        self._turns = {"solving": 0, "selfqa": 0}
 
     def log(self, event: dict) -> None:
         spent = event["tokens_in"] + event["tokens_out"]
         self._tokens[event["agent"]][event["category"]] += spent
-        result = str(event["result"])
-        tally = self._memory[event["agent"]]
-        if event["action"] == "claim_question" and not result.startswith("ERROR"):
-            tally["n_claims"] += 1
-            # a "hit" is a claim whose result carried the stored answer -- the
-            # auto-recall line is the marker
-            if MEMORY_HIT_MARKER in result:
-                tally["n_memory_hits"] += 1
-        elif event["action"] == "deliver_work" and STORED_F1_MARKER in result:
-            tally["n_repeat_deliveries"] += 1
-            tally["n_improved"] += result.count(IMPROVED_MARKER)
+        if event["category"] == "solving":
+            self._turns["solving"] += 1
+            if (event["action"] == "record_qa"
+                    and not str(event["result"]).startswith("ERROR")):
+                self._turns["selfqa"] += 1
         self._f.write(json.dumps(event, ensure_ascii=False) + "\n")
         self._f.flush()
 
-    def _memory_block(self, infra) -> dict:
-        out = {}
-        for a in infra.agent_ids:
-            out[a] = {"answers": infra.memory.n_answers(a),
-                      "notes": infra.memory.n_notes(a),
-                      **self._memory[a]}
+    def _agents_block(self, infra) -> dict:
+        out = {a: {"answered": 0, "f1_sum": 0.0, "em_sum": 0.0,
+                   "selfqa": infra.memory.count("selfqa", a),
+                   "notes": infra.memory.count("note", a)}
+               for a in infra.agent_ids}
+        for r in infra.stream.results:
+            tally = out[r.agent]
+            tally["answered"] += 1
+            tally["f1_sum"] += r.f1
+            tally["em_sum"] += r.em
         return out
 
     def log_round(self, infra, round_no: int) -> dict:
         """Append one cumulative snapshot (schema in the module docstring) for
-        the just-finished round. Cheap enough to recompute from board state
-        every tick at this experiment's scale."""
-        agents = infra.agent_ids
-        tokens = {a: dict(self._tokens[a]) for a in agents}
+        the just-finished round. Cheap enough to recompute from stream state
+        every round at this experiment's scale."""
+        tokens = {a: dict(self._tokens[a]) for a in infra.agent_ids}
         solving = sum(t["solving"] for t in tokens.values())
         admin = sum(t["admin"] for t in tokens.values())
         all_tok = solving + admin
 
-        answered = {a: {"n_answered": 0, "f1_sum": 0.0, "em_sum": 0.0} for a in agents}
-        for r in infra.board.results:
-            tally = answered[r.agent]
-            tally["n_answered"] += 1
-            tally["f1_sum"] += r.f1
-            tally["em_sum"] += r.em
-        total_units = infra.bank.total_units()
-        closed = len(infra.board.closed)
-        board = {"open": len(infra.board.open_questions()),
-                 "active_claims": len(infra.board.active),
-                 "closed": closed}
-
-        memory = self._memory_block(infra)
-        n_claims = sum(v["n_claims"] for v in memory.values())
-        n_hits = sum(v["n_memory_hits"] for v in memory.values())
-        n_repeats = sum(v["n_repeat_deliveries"] for v in memory.values())
-        n_improved = sum(v["n_improved"] for v in memory.values())
+        results = infra.stream.results
+        arrived = infra.stream.pos
+        answered = len(results)
+        agents = self._agents_block(infra)
 
         snap = {
             "round": round_no,
+            "arrivals_total": arrived,
+            "pending": len(infra.stream.pending),
+            "answered_total": answered,
+            "coverage": answered / arrived if arrived else 0.0,
+            "mean_latency": (sum(r.latency for r in results) / answered
+                             if answered else 0.0),
+            "total_f1": sum(r.f1 for r in results),
+            "total_em": sum(r.em for r in results),
+            "agents": agents,
+            "kb_answers": infra.memory.count("answer"),
+            "kb_selfqa": infra.memory.count("selfqa"),
+            "n_messages": infra.chat.n_agent_messages,
             "tokens": tokens,
             "solving_total": solving,
             "admin_total": admin,
             "coordination_overhead": admin / all_tok if all_tok else 0.0,
-            "coordination_overhead_by_agent": {
-                a: (t["admin"] / (t["admin"] + t["solving"])
-                    if t["admin"] + t["solving"] else 0.0)
-                for a, t in tokens.items()
-            },
-            "answered": answered,
-            "n_answered": sum(v["n_answered"] for v in answered.values()),
-            "total_f1": sum(v["f1_sum"] for v in answered.values()),
-            "total_em": sum(v["em_sum"] for v in answered.values()),
-            "board": board,
-            "total_units": total_units,
-            "remaining_units": total_units - closed,
-            "demand_absorbed": closed / total_units if total_units else 0.0,
-            "n_messages": len(infra.chat.messages),
-            "memory": memory,
-            "n_claims": n_claims,
-            "n_memory_hits": n_hits,
-            "memory_hit_rate": n_hits / n_claims if n_claims else 0.0,
-            "improvement_rate": n_improved / n_repeats if n_repeats else 0.0,
-            "answers_in_memory_total": sum(v["answers"] for v in memory.values()),
         }
         self._ts.write(json.dumps(snap, ensure_ascii=False) + "\n")
         self._ts.flush()
@@ -136,16 +102,17 @@ class Recorder:
             "seed": infra.cfg.seed,
             "rounds_used": rounds_used,
             # one row per DELIVERED question -- the thing that is graded, and
-            # what the metrics read (topic for specialization, price/difficulty
-            # for post-hoc slicing).
-            "deliveries": infra.board.results_json(),
-            "total_units": infra.bank.total_units(),
-            "remaining_units": infra.bank.total_units() - len(infra.board.closed),
+            # what the metrics read (latency for the headline, topic for
+            # specialization, difficulty for post-hoc slicing)
+            "deliveries": infra.stream.results_json(),
+            "arrived_total": infra.stream.pos,
+            "pending": len(infra.stream.pending),
             "tokens": {a: dict(self._tokens[a]) for a in infra.agent_ids},
-            "n_messages": len(infra.chat.messages),
-            # per-agent memory footprint (what is stored, corpus excluded) plus
-            # how much it was hit and improved on this run
-            "memory": self._memory_block(infra),
+            "n_messages": infra.chat.n_agent_messages,
+            "turns": dict(self._turns),
+            "agents": self._agents_block(infra),
+            "kb_answers": infra.memory.count("answer"),
+            "kb_selfqa": infra.memory.count("selfqa"),
         }
         with open(self.dir / "summary.json", "w") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
@@ -153,13 +120,12 @@ class Recorder:
 
     def to_state(self) -> dict:
         return {"tokens": {a: dict(v) for a, v in self._tokens.items()},
-                "memory": {a: dict(v) for a, v in self._memory.items()}}
+                "turns": dict(self._turns)}
 
     def from_state(self, state: dict) -> None:
         for a, v in state["tokens"].items():
             self._tokens[a].update(v)
-        for a, v in state["memory"].items():
-            self._memory[a].update(v)
+        self._turns.update(state["turns"])
 
     def close(self):
         self._f.close()

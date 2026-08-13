@@ -1,10 +1,13 @@
-"""Per-agent short-term (FIFO, goal stack) and long-term (vector) memory.
+"""Per-agent short-term (FIFO, goal stack) memory and the cluster's ONE
+shared long-term memory (the knowledge base, KB).
 
-v5: the corpus IS long-term memory. Every bucket is seeded at birth with the
-full paragraph corpus (precomputed embeddings, so seeding never re-embeds);
-`memory_search` is the single knowledge query, over corpus + notes + answers
-alike. Corpus entries are static furniture: excluded from checkpoints and
-re-seeded deterministically on resume.
+v7: the KB is a single physical vector store for ALL agents, seeded at birth
+with the full paragraph corpus (precomputed embeddings, so seeding never
+re-embeds). `search` is the single knowledge query, over corpus + notes +
+recorded Q&As + delivered answers alike; every write carries its author in
+metadata so per-agent tallies stay possible. Corpus entries are static
+furniture: excluded from checkpoints and re-seeded deterministically on
+resume.
 """
 import json
 import re
@@ -12,8 +15,6 @@ import uuid
 from collections import deque
 
 import chromadb
-
-SHARED_BUCKET = "shared"
 
 
 def load_corpus(corpus_path, emb_path):
@@ -81,63 +82,50 @@ class GoalStack:
 
 
 class AgentMemory:
-    """One local Chroma collection per bucket (bucket = agent, or a single
-    shared one at C2). Append-only: an answer is an ordinary entry that merely
-    carries extra metadata, so it is found both by meaning (`search`) and by id
-    (`answer`), and answering a question twice leaves both attempts on record.
+    """The cluster's shared KB: one Chroma collection for everyone.
+    Append-only; every non-corpus entry carries {kind, agent, seq} metadata
+    (kind = note | selfqa | answer), so it is found by meaning (`search`) and
+    counted per author (`count`).
 
-    `embedding_function` defaults to chroma's local ONNX model; unit tests pass
-    a cheap deterministic stub instead.
+    `embedding_function` defaults to chroma's local ONNX model; unit tests
+    pass a cheap deterministic stub instead.
     """
 
-    def __init__(self, shared: bool = False, persist_dir: str | None = None,
-                 embedding_function=None):
-        self.shared = shared
+    def __init__(self, persist_dir: str | None = None, embedding_function=None):
         self._client = (chromadb.PersistentClient(path=persist_dir)
                         if persist_dir else chromadb.EphemeralClient())
         self._ef = embedding_function
         # chroma hands every in-process EphemeralClient the SAME in-memory db,
         # so an instance-unique prefix is what actually isolates two memories.
-        self._prefix = "mem" if persist_dir else f"mem{uuid.uuid4().hex[:8]}"
-        self._cols: dict[str, object] = {}
+        self._prefix = "kb" if persist_dir else f"kb{uuid.uuid4().hex[:8]}"
+        self._collection = None
         self._seq = 0
         self._n_corpus = 0
 
-    # ---------- buckets ----------
-
-    def _bucket(self, agent: str) -> str:
-        return SHARED_BUCKET if self.shared else str(agent)
-
-    def _col(self, agent: str):
-        return self._bucket_col(self._bucket(agent))
-
-    def _bucket_col(self, bucket: str):
-        if bucket not in self._cols:
-            name = f"{self._prefix}-" + re.sub(r"[^a-zA-Z0-9_-]", "-", bucket) + "-0"
+    def _col(self):
+        if self._collection is None:
             kw = {"embedding_function": self._ef} if self._ef is not None else {}
-            self._cols[bucket] = self._client.get_or_create_collection(name, **kw)
-        return self._cols[bucket]
+            self._collection = self._client.get_or_create_collection(
+                f"{self._prefix}-shared-0", **kw)
+        return self._collection
 
-    # ---------- seeding (v5: the corpus is memory) ----------
+    # ---------- seeding (the corpus is memory) ----------
 
-    def seed_corpus(self, paras: list[dict], embeddings, agents: list[str]) -> None:
-        """Add every paragraph as a `{kind: corpus, title}` entry to each listed
-        agent's bucket (one physical seeding when shared=True), using the
+    def seed_corpus(self, paras: list[dict], embeddings) -> None:
+        """Add every paragraph as a `{kind: corpus, title}` entry, using the
         PRECOMPUTED embeddings so nothing is ever re-embedded. Corpus entries
-        consume seq 1..N first -- identically in every bucket and on every
-        (re-)seed -- so note/answer ids stay deterministic across save/restore."""
+        consume seq 1..N first -- identically on every (re-)seed -- so
+        note/answer ids stay deterministic across save/restore."""
+        col = self._col()
         n = len(paras)
-        for bucket in sorted({self._bucket(a) for a in agents}):
-            col = self._bucket_col(bucket)
-            for i in range(0, n, 1000):     # stay under chroma batch limits
-                batch = paras[i:i + 1000]
-                col.add(
-                    ids=[f"m{i + j + 1}" for j in range(len(batch))],
-                    documents=[p["text"] for p in batch],
-                    embeddings=embeddings[i:i + len(batch)],
-                    metadatas=[{"kind": "corpus", "title": p["title"],
-                                "seq": i + j + 1}
-                               for j, p in enumerate(batch)])
+        for i in range(0, n, 1000):     # stay under chroma batch limits
+            batch = paras[i:i + 1000]
+            col.add(
+                ids=[f"m{i + j + 1}" for j in range(len(batch))],
+                documents=[p["text"] for p in batch],
+                embeddings=embeddings[i:i + len(batch)],
+                metadatas=[{"kind": "corpus", "title": p["title"], "seq": i + j + 1}
+                           for j, p in enumerate(batch)])
         self._n_corpus = n
         self._seq = max(self._seq, n)
 
@@ -146,18 +134,18 @@ class AgentMemory:
     def write(self, agent: str, text: str, *, kind: str = "note",
               qid: str | None = None, f1: float | None = None) -> None:
         self._seq += 1
-        meta: dict = {"kind": str(kind), "seq": self._seq}
+        meta: dict = {"kind": str(kind), "agent": str(agent), "seq": self._seq}
         if qid is not None:
             meta["qid"] = str(qid)
         if f1 is not None:
             meta["f1"] = float(f1)
-        self._col(agent).add(ids=[f"m{self._seq}"], documents=[str(text)],
-                             metadatas=[meta])
+        self._col().add(ids=[f"m{self._seq}"], documents=[str(text)],
+                        metadatas=[meta])
 
     # ---------- reading ----------
 
-    def search(self, agent: str, query: str, k: int = 5) -> list[dict]:
-        col = self._col(agent)
+    def search(self, query: str, k: int = 5) -> list[dict]:
+        col = self._col()
         n = min(k, col.count())
         if n <= 0:
             return []
@@ -165,59 +153,41 @@ class AgentMemory:
         return [_row(doc, meta)
                 for doc, meta in zip(res["documents"][0], res["metadatas"][0])]
 
-    def answer(self, agent: str, qid: str) -> dict | None:
-        """The best answer stored for `qid`: highest F1, ties broken by
-        recency. Corpus entries are never answers."""
-        got = self._col(agent).get(where={"$and": [{"kind": "answer"},
-                                                   {"qid": str(qid)}]})
-        if not got["ids"]:
-            return None
-        best = max(zip(got["documents"], got["metadatas"]),
-                   key=lambda dm: (dm[1].get("f1", -1.0), dm[1]["seq"]))
-        return _row(*best)
+    def count(self, kind: str, agent: str | None = None) -> int:
+        where = ({"kind": kind} if agent is None
+                 else {"$and": [{"kind": kind}, {"agent": str(agent)}]})
+        return len(self._col().get(where=where)["ids"])
 
-    def n_answers(self, agent: str) -> int:
-        return len(self._col(agent).get(where={"kind": "answer"})["ids"])
-
-    def n_notes(self, agent: str) -> int:
-        return len(self._col(agent).get(where={"kind": "note"})["ids"])
-
-    def n_entries(self, agent: str) -> int:
-        return self._col(agent).count()
+    def n_entries(self) -> int:
+        return self._col().count()
 
     # ---------- checkpoint (T29) ----------
 
-    def to_state(self) -> dict:
-        """(id, text, metadata) triples per bucket, notes and answers ONLY --
-        the corpus is static furniture, re-seeded on restore rather than
+    def to_state(self) -> list:
+        """(id, text, metadata) triples, notes/selfqa/answers ONLY -- the
+        corpus is static furniture, re-seeded on restore rather than
         serialized 12k-fold."""
-        state = {}
-        for bucket in sorted(self._cols):
-            got = self._cols[bucket].get(where={"kind": {"$ne": "corpus"}})
-            rows = sorted(zip(got["ids"], got["documents"], got["metadatas"]),
-                          key=lambda r: r[2]["seq"])
-            state[bucket] = [[i, doc, dict(meta)] for i, doc, meta in rows]
-        return state
+        got = self._col().get(where={"kind": {"$ne": "corpus"}})
+        rows = sorted(zip(got["ids"], got["documents"], got["metadatas"]),
+                      key=lambda r: r[2]["seq"])
+        return [[i, doc, dict(meta)] for i, doc, meta in rows]
 
-    def from_state(self, state: dict) -> None:
+    def from_state(self, state: list) -> None:
         """Assumes a freshly re-seeded store: wipes notes/answers (never the
         corpus) and re-adds the dumped rows on top. Embeddings are recomputed;
         the corpus keeps its precomputed ones."""
-        for col in self._cols.values():
-            got = col.get(where={"kind": {"$ne": "corpus"}})
-            if got["ids"]:
-                col.delete(ids=got["ids"])
+        col = self._col()
+        got = col.get(where={"kind": {"$ne": "corpus"}})
+        if got["ids"]:
+            col.delete(ids=got["ids"])
         self._seq = self._n_corpus
-        for bucket, rows in state.items():
-            if not rows:
-                continue
-            self._bucket_col(bucket).add(
-                ids=[r[0] for r in rows], documents=[r[1] for r in rows],
-                metadatas=[dict(r[2]) for r in rows])
-            self._seq = max(self._seq, max(r[2]["seq"] for r in rows))
+        if state:
+            col.add(ids=[r[0] for r in state], documents=[r[1] for r in state],
+                    metadatas=[dict(r[2]) for r in state])
+            self._seq = max(self._seq, max(r[2]["seq"] for r in state))
 
 
 def _row(doc: str, meta: dict) -> dict:
-    return {"text": doc, "kind": meta.get("kind"),
+    return {"text": doc, "kind": meta.get("kind"), "agent": meta.get("agent"),
             "qid": meta.get("qid"), "f1": meta.get("f1"),
             "title": meta.get("title")}

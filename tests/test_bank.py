@@ -1,4 +1,4 @@
-"""v5 question bank: flat questions, id-only addressing, no job layer."""
+"""The question bank: flat questions, id-only addressing."""
 import json
 from pathlib import Path
 
@@ -36,20 +36,9 @@ def test_unknown_qid_names_a_few_valid_ids():
     with pytest.raises(BankError) as e:
         bank.get("q9999")
     msg = str(e.value)
-    assert "q9999" in msg and "list_questions" in msg
+    assert "q9999" in msg
     assert sum(qid in msg for qid in ("q0001", "q0002", "q0003")) >= 2
-
-
-def test_the_job_layer_is_gone():
-    import ca.bank as bank_mod
-    assert not hasattr(bank_mod, "Job")
-    bank = demo_bank()
-    for dead in ("jobs", "get_job", "job_price"):
-        assert not hasattr(bank, dead), dead
-
-
-def test_total_units_is_the_question_count():
-    assert demo_bank().total_units() == 3
+    assert "list_questions" not in msg         # the board is gone
 
 
 def test_from_json_reads_questions_and_ignores_extra_fields(tmp_path):
@@ -66,7 +55,7 @@ def test_from_json_reads_questions_and_ignores_extra_fields(tmp_path):
     q = bank.get("q0001")
     assert q.topic == "k20" and q.answers == ["Paris"]
     assert not hasattr(q, "source") and not hasattr(q, "quota")
-    assert bank.total_units() == 2
+    assert len(bank.questions) == 2
 
 
 def test_duplicate_qids_are_a_build_error():
@@ -81,7 +70,6 @@ def test_duplicate_qids_are_a_build_error():
 def test_real_v5_bank_loads():
     bank = QuestionBank.from_json(str(REAL_BANK))
     assert len(bank.questions) == 1000
-    assert bank.total_units() == 1000
     assert all(q.topic for q in bank.questions.values())
     assert {q.price for q in bank.questions.values()} <= {18000, 30000, 45000}
     assert {q.difficulty for q in bank.questions.values()} <= {"2hop", "3hop", "4hop"}

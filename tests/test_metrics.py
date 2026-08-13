@@ -2,45 +2,62 @@ import pytest
 
 from ca.metrics import compute_metrics, specialization
 
-ECONOMY_FIELDS = ["gini_final", "bankrupt_rate", "n_contracts",
-                  "mean_contract_price", "n_loans", "loan_principal_outstanding",
-                  "interest_paid_total", "bad_debt", "coverage"]
+DEAD_FIELDS = ["demand_absorbed", "memory_hit_rate", "improvement_rate",
+               "n_claims", "answers_in_memory_total", "admin_solving_ratio",
+               "accuracy_per_ktok_solving", "accuracy_per_ktok_all",
+               "gini_final", "bankrupt_rate", "n_contracts", "n_loans"]
 
 
-def delivery(agent, qid, f1=1.0, em=1.0, topic="k01"):
+def delivery(agent, qid, f1=1.0, em=1.0, topic="k01", latency=0):
     return {"qid": qid, "agent": agent, "submitted": "x", "f1": f1,
-            "em": em, "round": 1, "price": 100,
-            "difficulty": "2hop", "topic": topic}
+            "em": em, "round_in": 1, "round_out": 1 + latency,
+            "latency": latency, "difficulty": "2hop", "topic": topic}
 
 
 def base_summary():
     return {
         "deliveries": [
-            delivery("a", "q0001", f1=1.0, em=1.0),
-            delivery("a", "q0002", f1=0.5, em=0.0),
+            delivery("a", "q0001", f1=1.0, em=1.0, latency=2),
+            delivery("a", "q0002", f1=0.5, em=0.0, latency=7),
         ],
-        "total_units": 4,
+        "arrived_total": 4,
+        "pending": 2,
         "tokens": {"a": {"solving": 1000, "admin": 500}, "b": {"solving": 0, "admin": 500}},
         "n_messages": 6,
+        "turns": {"solving": 10, "selfqa": 4},
+        "agents": {"a": {"answered": 2, "f1_sum": 1.5, "em_sum": 1.0,
+                         "selfqa": 3, "notes": 1},
+                   "b": {"answered": 0, "f1_sum": 0.0, "em_sum": 0.0,
+                         "selfqa": 1, "notes": 0}},
+        "kb_answers": 2,
+        "kb_selfqa": 4,
         "rounds_used": 9,
     }
 
 
-def test_compute_metrics():
+def test_compute_metrics_headlines():
     m = compute_metrics(base_summary())
     assert m["total_f1"] == 1.5 and m["total_em"] == 1.0 and m["n_answered"] == 2
     assert m["mean_f1"] == pytest.approx(0.75) and m["mean_em"] == pytest.approx(0.5)
-    assert m["accuracy_per_ktok_solving"] == pytest.approx(1.5 / 1.0)      # per 1000 solving
-    assert m["accuracy_per_ktok_all"] == pytest.approx(1.5 / 2.0)          # per 1000 all
-    assert m["coordination_overhead"] == pytest.approx(1000 / 2000)        # admin / (solving+admin)
-    assert m["admin_solving_ratio"] == pytest.approx(1000 / 1000)
+    assert m["coverage"] == pytest.approx(2 / 4)
+    assert m["mean_latency"] == pytest.approx(4.5)
+    assert m["median_latency"] == pytest.approx(4.5)
+    assert m["tokens_per_answer"] == pytest.approx(2000 / 2)
+    assert m["coordination_overhead"] == pytest.approx(1000 / 2000)
     assert m["rounds_used"] == 9
 
 
-def test_the_economy_metrics_are_gone():
+def test_the_dead_metrics_are_gone():
     m = compute_metrics(base_summary())
-    for field in ECONOMY_FIELDS:
-        assert field not in m
+    for field in DEAD_FIELDS:
+        assert field not in m, field
+
+
+def test_proactive_metrics():
+    m = compute_metrics(base_summary())
+    assert m["selfqa_total"] == 4
+    assert m["selfqa_per_agent"] == {"a": 3, "b": 1}
+    assert m["proactive_ratio"] == pytest.approx(4 / 10)
 
 
 def test_message_metrics():
@@ -49,35 +66,24 @@ def test_message_metrics():
     assert m["messages_per_answer"] == pytest.approx(3.0)
 
 
+def test_median_latency_is_the_middle_delivery():
+    summary = base_summary()
+    summary["deliveries"].append(delivery("b", "q0003", latency=100))
+    m = compute_metrics(summary)
+    assert m["median_latency"] == 7
+    assert m["mean_latency"] == pytest.approx(109 / 3)
+
+
 def test_compute_metrics_empty_summary_is_zero_guarded():
     summary = {"tokens": {}, "rounds_used": 0}
     m = compute_metrics(summary)
     assert m["total_f1"] == 0.0 and m["mean_f1"] == 0.0 and m["mean_em"] == 0.0
-    assert m["demand_absorbed"] == 0.0 and m["n_answered"] == 0
-    assert m["admin_solving_ratio"] == 0.0
+    assert m["coverage"] == 0.0 and m["n_answered"] == 0
+    assert m["mean_latency"] == 0.0 and m["median_latency"] == 0.0
+    assert m["selfqa_total"] == 0 and m["selfqa_per_agent"] == {}
+    assert m["proactive_ratio"] == 0.0 and m["tokens_per_answer"] == 0.0
     assert m["n_messages"] == 0 and m["messages_per_answer"] == 0.0
     assert m["specialization"] == {} and m["mean_specialization"] == 0.0
-    assert m["memory_hit_rate"] == 0.0 and m["improvement_rate"] == 0.0
-
-
-# ---------------- demand absorbed ----------------
-
-def test_demand_absorbed_is_closed_questions_over_total():
-    m = compute_metrics(base_summary())
-    assert m["demand_absorbed"] == pytest.approx(2 / 4)
-
-
-def test_demand_absorbed_zero_guarded_without_a_bank():
-    summary = base_summary()
-    summary["total_units"] = 0
-    assert compute_metrics(summary)["demand_absorbed"] == 0.0
-
-
-def test_the_job_metrics_are_gone():
-    m = compute_metrics(base_summary())
-    assert "job_completion_rate" not in m
-    assert "delegation_rate" not in m
-    assert "task_completion_rate" not in m
 
 
 # ---------------- specialization over topics ----------------
@@ -119,7 +125,7 @@ def test_specialization_empty_deliveries_yields_empty_dict():
 
 def test_compute_metrics_includes_specialization_without_any_extra_argument():
     """Every delivery row carries its topic, so specialization needs no
-    library / bank handed in alongside the summary."""
+    bank handed in alongside the summary."""
     summary = base_summary()
     summary["deliveries"] = [delivery("A", "q0001", topic="k01"),
                              delivery("A", "q0002", topic="k01"),
@@ -128,49 +134,3 @@ def test_compute_metrics_includes_specialization_without_any_extra_argument():
     m = compute_metrics(summary)
     assert m["specialization"] == {"A": pytest.approx(1.0), "B": pytest.approx(0.5)}
     assert m["mean_specialization"] == pytest.approx(0.75)
-
-
-# ---------------- memory metrics ----------------
-
-def test_memory_metrics_zero_guarded_without_a_memory_block():
-    m = compute_metrics(base_summary())      # base_summary carries no "memory" key
-    assert m["n_claims"] == 0
-    assert m["memory_hit_rate"] == 0.0
-    assert m["improvement_rate"] == 0.0
-    assert m["answers_in_memory_total"] == 0
-
-
-def test_memory_hit_rate_is_claims_carrying_a_stored_answer():
-    summary = base_summary()
-    summary["memory"] = {
-        "a": {"answers": 3, "notes": 1, "n_claims": 4, "n_memory_hits": 3,
-              "n_repeat_deliveries": 0, "n_improved": 0},
-        "b": {"answers": 2, "notes": 0, "n_claims": 1, "n_memory_hits": 0,
-              "n_repeat_deliveries": 0, "n_improved": 0},
-    }
-    m = compute_metrics(summary)
-    assert m["n_claims"] == 5
-    assert m["memory_hit_rate"] == pytest.approx(3 / 5)
-    assert m["answers_in_memory_total"] == 5
-
-
-def test_improvement_rate_is_over_repeat_deliveries_that_had_a_stored_f1():
-    summary = base_summary()
-    summary["memory"] = {
-        "a": {"answers": 4, "notes": 0, "n_claims": 6, "n_memory_hits": 4,
-              "n_repeat_deliveries": 3, "n_improved": 2},
-        "b": {"answers": 0, "notes": 0, "n_claims": 1, "n_memory_hits": 0,
-              "n_repeat_deliveries": 1, "n_improved": 0},
-    }
-    m = compute_metrics(summary)
-    assert m["improvement_rate"] == pytest.approx(2 / 4)
-
-
-def test_memory_rates_zero_guarded_when_nothing_happened():
-    summary = base_summary()
-    summary["memory"] = {"a": {"answers": 3, "notes": 0, "n_claims": 0,
-                               "n_memory_hits": 0, "n_repeat_deliveries": 0,
-                               "n_improved": 0}}
-    m = compute_metrics(summary)
-    assert m["memory_hit_rate"] == 0.0 and m["improvement_rate"] == 0.0
-    assert m["answers_in_memory_total"] == 3   # answers can be stored with zero claims

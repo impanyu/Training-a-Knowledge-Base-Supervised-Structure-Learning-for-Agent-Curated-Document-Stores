@@ -6,9 +6,9 @@ from typing import Protocol
 
 import anthropic
 
-from ca.actions import classify, dispatch, permission_error, visible_tools
+from ca.actions import classify, dispatch, visible_tools
 from ca.config import ExperimentConfig
-from ca.context import ROOT_GOAL, ROOT_GOAL_SOLO, render_turn, system_prompt
+from ca.context import ROOT_GOAL, render_turn, system_prompt
 from ca.infra import Infra
 from ca.memory import FifoMemory, GoalStack
 
@@ -77,8 +77,9 @@ class Agent:
         self.infra = infra
         self.policy = policy
         self.fifo = FifoMemory(cfg.fifo_k)
-        self.goals = GoalStack(ROOT_GOAL_SOLO if cfg.level.n_agents == 1 else ROOT_GOAL)
-        self._system = system_prompt(cfg.level, agent_id, infra.agent_ids)
+        self.goals = GoalStack(ROOT_GOAL)
+        self._system = system_prompt(cfg.level, agent_id, infra.agent_ids,
+                                     infra.exemplars.get(agent_id, []))
         self._tools = visible_tools(cfg.level, agent_id)
 
     def take_turn(self) -> dict:
@@ -96,12 +97,7 @@ class Agent:
             except IndexError as e:
                 result = f"ERROR: {e}"
         else:
-            err = permission_error(self.infra, self.id, d.name, d.inp)
-            if err:
-                result = f"ERROR: {err}"
-            else:
-                result = dispatch(self.infra, self.id, d.name, d.inp)
-        self.infra.chat.mark_read(self.id)  # rendered messages are now "seen"
+            result = dispatch(self.infra, self.id, d.name, d.inp)
         # store the FULL action and result
         self.fifo.add(f"{d.name}({json.dumps(d.inp, ensure_ascii=False)})", result)
         return {
