@@ -15,16 +15,16 @@ def test_the_catalog_is_exactly_the_nine():
 
 def test_mode_subsets_per_spec():
     assert set(MODE_TOOLS["train_forward"]) == {"search", "read", "answer"}
-    assert set(MODE_TOOLS["train_backprop"]) == {"search", "read", "done"} | set(EDIT_ACTIONS)
+    assert set(MODE_TOOLS["train_backward"]) == {"search", "read", "done"} | set(EDIT_ACTIONS)
     assert set(MODE_TOOLS["test"]) == {"search", "read", "answer"}
-    assert "answer" not in MODE_TOOLS["train_backprop"]
+    assert "answer" not in MODE_TOOLS["train_backward"]
     for mode in ("train_forward", "test"):     # edits are train Phase 2 ONLY
         assert not any(a in MODE_TOOLS[mode] for a in EDIT_ACTIONS)
 
 
 def test_tools_for_emits_static_schemas():
-    tools = tools_for("train_backprop")
-    assert [t["name"] for t in tools] == list(MODE_TOOLS["train_backprop"])
+    tools = tools_for("train_backward")
+    assert [t["name"] for t in tools] == list(MODE_TOOLS["train_backward"])
     for t in tools:
         assert t["description"] and t["input_schema"]["type"] == "object"
     # gating is by schema subset: same spec objects, no per-node variation

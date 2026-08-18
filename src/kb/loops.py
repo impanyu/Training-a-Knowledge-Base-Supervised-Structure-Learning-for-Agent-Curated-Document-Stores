@@ -1,4 +1,4 @@
-"""Train iteration (Phase 1 forward / Phase 2 backprop), test iteration, and
+"""Train iteration (Phase 1 forward / Phase 2 backward), test iteration, and
 the multi-epoch driver (spec §4/§5).
 
 Train Phase 1 (budget N1): search/read then ONE answer(); its RESULT reveals
@@ -100,7 +100,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     mine = (f'your answer: "{answer}"' if answer is not None
             else "your answer: (none - budget exhausted, scored F1 0.00)")
     mem.set_task(
-        f"TRAIN QUESTION {q.qid} [phase 2: consolidate]\n{q.text}\n"
+        f"TRAIN QUESTION {q.qid} [phase 2: backward]\n{q.text}\n"
         f'{mine}\ngold answer: "{q.golds[0]}" | F1 {f1v:.2f}\n'
         "Consolidate what you verified into the store's structure so this "
         "class of question gets easier; done() when finished.")
@@ -108,10 +108,10 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     p2_steps = 0
     for step in range(1, n2 + 1):
         p2_steps = step
-        d = _turn(policy, TRAIN_SYSTEM, mem, n2 - step + 1, "train_backprop")
+        d = _turn(policy, TRAIN_SYSTEM, mem, n2 - step + 1, "train_backward")
         if d.name == "done":
             result = "phase complete"
-        elif d.name in MODE_TOOLS["train_backprop"]:
+        elif d.name in MODE_TOOLS["train_backward"]:
             result = dispatch(store, d.name, d.inp)
             if d.name in edits and not result.startswith("ERROR"):
                 edits[d.name] += 1

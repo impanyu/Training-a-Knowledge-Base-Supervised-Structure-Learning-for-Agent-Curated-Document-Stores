@@ -229,7 +229,7 @@ def test_cost_fields_on_rows_and_kb_stats(tmp_path):
     run_training(store, pol, U, log, tmp_path, epochs=1, seed=0,
                  train_size=2, eval_each_epoch=True)
     for r in log.rows["train"]:
-        # DrivePolicy: 2 forward turns + 2 backprop turns = 4 decisions
+        # DrivePolicy: 2 forward turns + 2 backward turns = 4 decisions
         assert r["tokens_in"] == 28 and r["tokens_out"] == 12
         assert r["seconds"] > 0
     for r in log.rows["test"]:

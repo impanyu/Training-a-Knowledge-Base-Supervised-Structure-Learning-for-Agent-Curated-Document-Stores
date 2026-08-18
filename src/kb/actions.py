@@ -78,7 +78,7 @@ EDIT_ACTIONS = ("add", "edit", "delete", "link", "unlink")
 # tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
-    "train_backprop": ("search", "read") + EDIT_ACTIONS + ("done",),
+    "train_backward": ("search", "read") + EDIT_ACTIONS + ("done",),
     "test": ("search", "read", "answer"),
 }
 
