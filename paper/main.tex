@@ -366,38 +366,114 @@ Section~\ref{sec:prelim}. Credit assignment needs no oracle: a wrong answer plus
 revealed gold lets the agent re-search \emph{with the answer in hand}, and the repair
 is determined by the trajectory difference.
 
-\section{Evaluation Design}
-Four headline outcomes per condition: \textbf{accuracy} (F1 on \texttt{test\_in} /
-\texttt{test\_out}, frozen store, tested once); \textbf{store size} (nodes, links,
-store tokens, authored/edited/duplicated counts); \textbf{training cost} (total
-tokens); \textbf{answering cost} (mean steps per question; tokens as secondary).
-Efficiency is additionally read from an \emph{accuracy--budget curve}: readers run at
-$M \in \{8, 15\}$; an organized store should dominate at tight budgets. The
-\emph{break-even point} divides total training cost by per-question savings.
+\section{Experimental Design}
+\subsection{Benchmarks}
+Three arms share one protocol and differ in document granularity and realism
+(Table~\ref{tab:arms}).
 
-Baselines differ only in how the store is prepared, under an identical reader, test
-sets, and budgets: \textbf{B1} flat store (= epoch~0); \textbf{B3} GraphRAG-style
-offline structuring~\cite{graphrag}; \textbf{B5} HippoRAG-2-style KG
-layer~\cite{hipporag2}. Both offline baselines are adapted to \emph{our store format}
-(their structure lands as authored nodes and links the common reader can traverse),
-which tests their \emph{structure} under a common reader rather than their retrieval
-algorithms---a documented adaptation; one-time build cost is reported alongside.
+\begin{table}[t]
+\caption{Benchmark arms. All use the same splits scheme, reader, and budgets.}
+\label{tab:arms}
+\centering
+\scriptsize
+\begin{tabular}{p{1.55cm}p{1.85cm}p{1.7cm}p{1.9cm}}
+\toprule
+ & \kbgym{} (main) & PhantomWiki (official) & MuSiQue (real text) \\
+\midrule
+documents & 5{,}864 single-sentence & 3{,}403 sentences / 405 articles & $\sim$11k paragraphs \\
+source & our generator & their generator & Wikipedia \\
+categories & 10 (26 templates) & 4 composition shapes & official 2--4-hop shapes \\
+questions & 330 (150/100/50/30) & 330 (same scheme) & same scheme \\
+supports & exact, per question & unavailable & official annotations \\
+contamination & none & none & corrected by no-store baseline \\
+status & built, main runs & data built & planned \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-The experiment suite maps one-to-one onto figures:
-\textbf{E1} (headline): per-question steps and F1, trained vs.\ untrained, at
-$M \in \{8, 15\}$---the accuracy--budget curve whose leftward shift is the efficiency
-claim---plus the eval-split learning curve across epochs.
-\textbf{E2}: the baseline table (F1, steps, one-time build tokens, per-question
-tokens).
-\textbf{E3} (log slicing, no extra compute): the three-layer generalization
-decomposition and the per-class profile---training gains are predicted to concentrate
-in aggregation, join, and intersection classes, where answers live in relations
-between documents.
-\textbf{E5} (trace mining): edit-type mix per epoch, store-size trajectory from
-replay, emergent navigation nodes, and \emph{mechanism attribution}: the correlation
-between a reader's step savings and its hits on authored navigation nodes and trained
-links---evidence that the savings travel through the built structure rather than
-coincide with it. Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
+\textbf{\kbgym{} (main).} 500 fictional people (10\% name distractors; family
+trees, spouses, friendships; job/hobby/city attributes; globally distinct
+birthdates) render into 5{,}864 atomic documents. Ten question categories over
+26 templates: forward chains QC1--QC3; aggregation counts QC4/QC8 (children,
+friends, grandchildren, attribute-filtered counts); abstention QC5;
+multi-constraint joins QC6 (no name anchor; unique answer enforced against
+distractors); set intersection QC7 (common friends); comparison/superlatives
+QC9 (birthdates; ties excluded by construction); reverse lookup QC10 (exactly
+one qualifier). Golds are graph-derived with accepted variants; every question
+carries its support set. Splits are instance-disjoint: \texttt{train} 150
+(i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} 100 (unseen
+instances of trained templates), \texttt{test\_out} 50 (one reserved template
+per category), \texttt{eval} 30 (stratified; drives the learning curve so the
+final test is touched exactly once).
+
+\textbf{Official PhantomWiki (external validity).} A generator we do not
+control (phantom-wiki 1.0.3, SWI-Prolog 10.0.2): 16 family trees, 405 person
+articles, 480 generated QA over 8 templates grouped into four composition
+shapes, with per-question hop depth 1--5; two reserved templates (relational
+and aggregative) form \texttt{test\_out}. Their Prolog-derived relations have
+no per-fact supports, so repair diagnostics are unavailable on this arm; the
+train/test protocol itself does not need them. Documents at sentence or
+article granularity (the latter tests the method at paragraph scale with zero
+contamination).
+
+\textbf{MuSiQue (real-text arm).} Paragraphs are the documents; the official
+composition shapes are the categories, a held-out shape is
+\texttt{test\_out}, and the annotated supporting paragraphs restore support
+diagnostics. Real corpora are parametrically contaminated (we measured
+near-ceiling no-retrieval scores for related datasets), so all scores on this
+arm are reported as deltas over a mandatory no-store reader baseline.
+
+\subsection{Baselines}
+All baselines differ \emph{only} in how the store is prepared; reader, test
+sets, and budgets are identical, and each reports its one-time build cost.
+\textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B3,
+GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
+extraction, justified by template-shaped text), co-occurrence communities,
+one LLM-written community summary document per community linked to its
+members. \textbf{B4, RAPTOR-style}~\cite{raptor} (extended version):
+recursive embedding clustering with LLM summary documents per cluster,
+hierarchically linked. \textbf{B5, HippoRAG-2-style}~\cite{hipporag2}:
+(subject, relation, object) triples per document, entity-sharing links
+between documents, per-entity hub documents. B3--B5 structure lands as
+authored documents and links \emph{in our store format}, so the common
+budgeted reader can traverse it: we test their \emph{structure} under a fixed
+reader rather than their retrieval algorithms (a documented adaptation; e.g.\
+B5 forgoes Personalized PageRank).
+
+\subsection{Implementation}
+Trainer and reader are gpt-5-mini (temperature 0.3, 4{,}096 tokens/turn),
+tool-forced decisions, static schemas. Budgets $N_1{=}N_2{=}M{=}15$; FIFO
+$K{=}30$; \texttt{search} returns top-5. Embeddings: chroma default ONNX
+MiniLM family, environment-maintained. Measured training cost:
+$\approx$23k tokens and 83\,s per iteration on the 120-person universe,
+$\approx$161\,s on the 500-person main configuration ($\approx$\$6 per
+300-iteration run at current pricing). Per-epoch snapshots plus byte-exact
+trace replay reconstruct every intermediate store state for analysis. Basic
+version: single seed (seed~0); seed replication planned.
+
+\subsection{Experiment Suite and Predictions}
+\textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
+epoch (epoch~0 = B1); final \texttt{test\_in}/\texttt{test\_out} pass on the
+last snapshot, at $M \in \{8, 15\}$. Prediction: non-inferior accuracy with
+fewer steps, and a leftward shift of the accuracy--budget curve (the trained
+store dominates at tight budgets). \textbf{E2.} The baseline table: F1,
+steps/question, build tokens, per-question tokens, for B1/B3/B4/B5/ours on
+both test splits. \textbf{E3} (log slicing). Three-layer generalization
+(train-forward from epoch~2 / \texttt{test\_in} / \texttt{test\_out}) and the
+per-category profile. Prediction: forward classes QC1--QC3 are saturated near
+1.0 at $M{=}15$ (they are the non-inferiority floor, not the headroom);
+gains concentrate in aggregation (QC4/QC8), joins (QC6), intersection (QC7)
+and reverse lookup (QC10), whose answers live in relations between documents;
+QC5 abstention is expected unchanged. \textbf{E5} (trace mining). (i)
+edit-type mix per epoch; (ii) store-size trajectory from replay (the
+parsimony objective predicts sublinear growth, unlike the 5$\times$ blowup of
+Sec.~\ref{sec:pollution}); (iii) morphology of authored navigation documents
+(out-degree distribution, what they gather); (iv) structure--semantics
+alignment: the share of built links connecting documents that co-occur in
+some support set (supports are invisible to the agent, making the measure
+honest); (v) mechanism attribution: correlation between a reader's step
+savings and its hits on authored navigation documents and trained links.
+Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Preliminary Results}\label{sec:prelim}
 \emph{Obtained on an earlier document-store variant of the environment (coarse multi-sentence
