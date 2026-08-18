@@ -146,6 +146,39 @@ def test_kb_test_cli_records_budget_m(tmp_path, monkeypatch):
     assert all(r["steps"] == 4 and r["status"] == "unanswered" for r in rows)
 
 
+def test_kb_test_cli_takes_comma_lists_and_eval(tmp_path, monkeypatch):
+    u = mini_universe()
+    store = mini_store(u)
+    monkeypatch.setattr(kbtest_mod, "load_kb",
+                        lambda kb, universe=None: (store, u))
+    monkeypatch.setattr(kbtest_mod, "make_policy",
+                        lambda model: DrivePolicy())
+    out = tmp_path / "t"
+    kbtest_mod.main(["--kb", "snap.json", "--split", "test_out,eval",
+                     "--out", str(out)])
+    rows = [json.loads(l)
+            for l in (out / "test_log.jsonl").read_text().splitlines()]
+    assert {r["split"] for r in rows} == {"test_out", "eval"}
+    ev = [r for r in rows if r["split"] == "eval"]
+    assert len(ev) == len(u.splits["eval"])
+    assert {r["flavor"] for r in ev} == {"in", "out"}      # flavors recorded
+    meta = json.loads((out / "test_meta.json").read_text())
+    assert meta["split"] == "test_out,eval"
+
+
+def test_kb_test_cli_rejects_unknown_split(tmp_path, monkeypatch):
+    u = mini_universe()
+    store = mini_store(u)
+    monkeypatch.setattr(kbtest_mod, "load_kb",
+                        lambda kb, universe=None: (store, u))
+    monkeypatch.setattr(kbtest_mod, "make_policy",
+                        lambda model: DrivePolicy())
+    import pytest
+    with pytest.raises(SystemExit, match="unknown split"):
+        kbtest_mod.main(["--kb", "snap.json", "--split", "test_nope",
+                         "--out", str(tmp_path / "x")])
+
+
 def test_report_cli_writes_report_json(tmp_path, capsys):
     _, _, run_dir = _run(tmp_path)
     report_mod.main([str(run_dir)])

@@ -37,7 +37,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--kb", required=True,
                     help="kb_epoch_N.json snapshot or universe.json")
     ap.add_argument("--split", required=True,
-                    choices=["test_in", "test_out", "both"])
+                    help='test_in | test_out | eval | both, or a comma list '
+                         'like "test_in,test_out" (budget sweeps / headroom '
+                         'probes); eval rows carry their in/out flavor')
     ap.add_argument("--out", required=True)
     ap.add_argument("--m", type=int, default=M)
     ap.add_argument("--limit", type=int, default=None)
@@ -51,7 +53,12 @@ def main(argv: list[str] | None = None) -> None:
     store, universe = load_kb(args.kb, args.universe)
     policy = make_policy(args.model)
     log = RunLog(args.out, append=True)
-    splits = ["test_in", "test_out"] if args.split == "both" else [args.split]
+    splits = (["test_in", "test_out"] if args.split == "both"
+              else [s.strip() for s in args.split.split(",") if s.strip()])
+    for split in splits:
+        if split not in universe.splits:
+            raise SystemExit(f"unknown split {split}; available: "
+                             f"{', '.join(universe.splits)}")
     rows = []
     for split in splits:
         rows += run_test(store, policy, universe, split, log,

@@ -273,30 +273,36 @@ def _arrange_entity(groups: list, summarizer) -> list[dict]:
 
 
 LOCALITY = 0.30                # P(next scattered statement shares its person)
+DOC_SIZE = (4, 8)              # min,max statements per scattered notebook doc
 
 
-def _arrange_scattered(groups: list, seed: int, summarizer=None) -> list[dict]:
-    """The SAME statements in mixed notebook docs of 4-8, ~n_statements/6
-    docs. Uses its own derived rng so the main stream (and therefore the
-    questions/golds/splits) is identical to the entity init. Summaries stay
-    generic — naming the people inside would gift retrieval the organization
-    training is supposed to earn — unless an explicit (LLM) summarizer was
-    passed."""
+def _arrange_scattered(groups: list, seed: int, summarizer=None,
+                       locality: float = LOCALITY,
+                       doc_size: tuple[int, int] = DOC_SIZE) -> list[dict]:
+    """The SAME statements in mixed notebook docs of doc_size[0]..[1]
+    statements, ~n_statements/mean docs. Uses its own derived rng so the
+    main stream (and therefore the questions/golds/splits) is identical to
+    the entity init. Summaries stay generic — naming the people inside
+    would gift retrieval the organization training is supposed to earn —
+    unless an explicit (LLM) summarizer was passed."""
+    mn, mx = doc_size
+    if not 1 <= mn <= mx:
+        raise ValueError(f"bad doc_size {doc_size}")
     arr = random.Random(seed * 7919 + 13)
     remaining = {p.pid: list(stmts) for p, stmts in groups if stmts}
     order, cur = [], None
     while remaining:
-        if not (cur in remaining and arr.random() < LOCALITY):
+        if not (cur in remaining and arr.random() < locality):
             cur = arr.choice(sorted(remaining))
         order.append(remaining[cur].pop(0))
         if not remaining[cur]:
             del remaining[cur]
     chunks, i = [], 0
     while i < len(order):
-        size = arr.randint(4, 8)
+        size = arr.randint(mn, mx)
         chunks.append(order[i:i + size])
         i += size
-    if len(chunks) > 1 and len(chunks[-1]) < 4:      # fold a tiny tail in
+    if len(chunks) > 1 and len(chunks[-1]) < mn:     # fold a tiny tail in
         tail = chunks.pop()
         chunks[-1].extend(tail)
     docs = []
@@ -485,7 +491,8 @@ def build_universe(seed: int = 0, n_people: int = 120,
                    sizes: tuple[int, int, int] = (150, 100, 50),
                    eval_sizes: tuple[int, int] = (20, 10),
                    summarizer=None, init: str = "entity",
-                   distractors: float = 0.15) -> Universe:
+                   distractors: float = 0.15, locality: float = LOCALITY,
+                   doc_size: tuple[int, int] = DOC_SIZE) -> Universe:
     if init not in ("entity", "scattered"):
         raise ValueError(f"unknown init {init}")
     rng = random.Random(seed)
@@ -498,7 +505,8 @@ def build_universe(seed: int = 0, n_people: int = 120,
     # arrangement never touches `rng`, so questions/golds/splits below are
     # identical across inits at the same seed
     if init == "scattered":
-        docs = _arrange_scattered(groups, seed, custom_summarizer)
+        docs = _arrange_scattered(groups, seed, custom_summarizer,
+                                  locality, doc_size)
     else:
         docs = _arrange_entity(groups, summarizer)
 
@@ -537,6 +545,7 @@ def build_universe(seed: int = 0, n_people: int = 120,
     meta = {"seed": seed, "n_people": n_people, "sizes": list(sizes),
             "eval_sizes": list(eval_sizes), "init": init,
             "distractors": distractors, "n_distractors": len(extras),
+            "locality": locality, "doc_size": list(doc_size),
             "build_tokens": {"in": summarizer.tokens_in,
                              "out": summarizer.tokens_out}}
     vocab = {"jobs": JOBS, "hobbies": HOBBIES, "cities": CITIES,
@@ -562,6 +571,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--distractors", type=float, default=0.15,
                     help="fraction of extra first-name-colliding people whose "
                          "statements pad the store but are never asked about")
+    ap.add_argument("--locality", type=float, default=LOCALITY,
+                    help="scattered init: P(consecutive statements share a "
+                         "person)")
+    ap.add_argument("--doc-size", default=f"{DOC_SIZE[0]},{DOC_SIZE[1]}",
+                    help="scattered init: MIN,MAX statements per notebook doc")
     ap.add_argument("--out", required=True)
     ap.add_argument("--summarize", action="store_true",
                     help="generate build-time summaries with the LLM summarizer "
@@ -573,10 +587,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.summarize:
         from kb.store import LLMSummarizer
         summarizer = LLMSummarizer(args.model)
+    try:
+        mn, mx = (int(x) for x in args.doc_size.split(","))
+    except ValueError:
+        raise SystemExit(f"--doc-size must be MIN,MAX, got {args.doc_size!r}")
     u = build_universe(args.seed, args.people,
                        (args.train, args.test_in, args.test_out),
                        (args.eval_in, args.eval_out), summarizer,
-                       args.init, args.distractors)
+                       args.init, args.distractors, args.locality, (mn, mx))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     u.save(out / "universe.json")

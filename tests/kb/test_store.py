@@ -137,7 +137,7 @@ def test_delete_doc_cascade():
     assert s.deleted_docs == 1
     with pytest.raises(StoreError):
         s.delete_statement("s0003")            # instances died with the doc
-    assert all(d != "d002" for d, _ in s.search("Epsilon zeta.", 5))
+    assert all(d != "d002" for d, _, _ in s.search("Epsilon zeta.", 5))
 
 
 def test_doc_ids_never_reused_after_delete():
@@ -166,8 +166,36 @@ def test_refresh_updates_embedding_and_search_sees_live_summary():
     s = two_docs()
     s.move_statement("s0003", "d001")
     s.refresh()
-    hits = dict(s.search("Epsilon zeta.", 5))
+    hits = {d: summ for d, summ, _ in s.search("Epsilon zeta.", 5)}
     assert hits["d001"].startswith("[v")             # live summary returned
+
+
+def test_search_snippet_is_the_best_lexical_match():
+    s = two_docs()
+    s.move_statement("s0003", "d001")                # d001: Alpha/Gamma/Epsilon
+    s.refresh()
+    hits = {d: snip for d, _, snip in s.search("Epsilon zeta.", 5)}
+    # doc ranking is whole-doc; the snippet is the statement matching the query
+    assert hits["d001"] == "Epsilon zeta."
+    hits = {d: snip for d, _, snip in s.search("Gamma delta.", 5)}
+    assert hits["d001"] == "Gamma delta."
+
+
+def test_search_snippet_truncates_to_120_chars():
+    docs = [{"id": "d001", "summary": "x",
+             "statements": [{"sid": "s0001", "origin": "s0001",
+                             "text": "Alpha " + "beta " * 40}], "links": []}]
+    s = Store.from_docs(docs, CountingSummarizer(), HashEmbedding())
+    _, _, snip = s.search("Alpha", 1)[0]
+    assert len(snip) == 120 and snip.endswith("...")
+
+
+def test_search_snippet_empty_for_empty_doc():
+    s = two_docs()
+    s.create_doc()
+    s.refresh()
+    snips = {d: snip for d, _, snip in s.search("Alpha beta.", 5)}
+    assert snips.get("d003", "") == ""
 
 
 def test_summary_is_never_agent_settable():
@@ -180,10 +208,10 @@ def test_summary_is_never_agent_settable():
     assert s.docs["d001"].summary == before
 
 
-def test_search_top_k_pairs():
+def test_search_top_k_triples():
     s = two_docs()
     hits = s.search("Alpha beta.", 1)
-    assert hits == [("d001", "about alpha")]
+    assert hits == [("d001", "about alpha", "Alpha beta.")]
 
 
 # ---------------- snapshot roundtrip ----------------
@@ -201,7 +229,7 @@ def test_json_roundtrip_preserves_everything_and_rebuilds_embeddings():
     assert s2.stats() == s.stats()
     assert s2.copy_statement("s0001", "d003") == "s0006"   # counters restored
     assert s2.create_doc() == "d004"
-    assert dict(s2.search("Alpha beta.", 5))               # embeddings rebuilt
+    assert s2.search("Alpha beta.", 5)                     # embeddings rebuilt
 
 
 def test_template_summarizer_names_the_subject():

@@ -198,6 +198,35 @@ def test_distractors_collide_on_first_name_only_and_are_never_asked():
     assert len(z.docs) == 120 and z.meta["n_distractors"] == 0
 
 
+def test_locality_knob_moves_the_measured_share():
+    def share(u):
+        pairs = same = 0
+        for d in u.docs:
+            ts = [st["text"] for st in d["statements"]]
+            for a, b in zip(ts, ts[1:]):
+                pairs += 1
+                same += _subject(a) == _subject(b)
+        return same / pairs
+    lo = share(build_universe(0, 60, init="scattered", locality=0.0))
+    hi = share(build_universe(0, 60, init="scattered", locality=0.9))
+    assert lo < 0.15 < 0.5 < hi
+    # the knob never touches questions/golds
+    assert build_universe(0, 60, init="scattered", locality=0.9).to_json()["questions"] \
+        == build_universe(0, 60).to_json()["questions"]
+
+
+def test_doc_size_knob_bounds_the_chunks():
+    u = build_universe(0, 60, init="scattered", doc_size=(10, 12))
+    sizes = [len(d["statements"]) for d in u.docs]
+    assert all(10 <= n <= 12 + 9 for n in sizes)  # max + folded tail (< min)
+    assert u.meta["doc_size"] == [10, 12]
+    small = build_universe(0, 60, init="scattered", doc_size=(2, 3))
+    assert max(len(d["statements"]) for d in small.docs) <= 3 + 1
+    import pytest
+    with pytest.raises(ValueError):
+        build_universe(0, 12, init="scattered", doc_size=(5, 2))
+
+
 def test_universe_json_roundtrip(tmp_path):
     u = mini_universe()
     u.save(tmp_path / "universe.json")

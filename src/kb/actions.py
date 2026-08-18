@@ -38,7 +38,8 @@ ACTION_SPECS: dict[str, dict] = {
     # -------- sense --------
     "search": {
         "description": ("Search the knowledge base by meaning; returns the "
-                        f"top-{SEARCH_K} (doc_id, summary) pairs."),
+                        f"top-{SEARCH_K} docs as (doc_id, summary) plus the "
+                        "best-matching statement in each."),
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "read": {
@@ -115,7 +116,9 @@ def dispatch(store: Store, name: str, inp: dict) -> str:
 
 def _h_search(store, inp):
     hits = store.search(str(inp["query"]), k=SEARCH_K)
-    return "\n".join(f"- {d}: {s}" for d, s in hits) or "(no results)"
+    lines = [f"- {d}: {s}" + (f' | match: "{snip}"' if snip else "")
+             for d, s, snip in hits]
+    return "\n".join(lines) or "(no results)"
 
 
 def _h_read(store, inp):

@@ -34,10 +34,10 @@ def test_no_schema_ever_takes_a_summary():
         assert "summary" not in spec["input_schema"]["properties"]
 
 
-def test_search_result_lines():
+def test_search_result_lines_carry_the_matched_snippet():
     s = two_docs()
     out = dispatch(s, "search", {"query": "Alpha beta."})
-    assert out.splitlines()[0] == "- d001: about alpha"
+    assert out.splitlines()[0] == '- d001: about alpha | match: "Alpha beta."'
 
 
 def test_read_shows_statements_and_live_link_summaries():

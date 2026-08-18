@@ -19,6 +19,10 @@ from dataclasses import dataclass, field
 
 import chromadb
 
+from kb.grader import normalize
+
+SNIPPET_CHARS = 120
+
 
 class StoreError(Exception):
     pass
@@ -282,13 +286,33 @@ class Store:
 
     # ---------- sense ----------
 
-    def search(self, query: str, k: int = 5) -> list[tuple[str, str]]:
+    def _snippet(self, doc: Doc, query: str) -> str:
+        """Best-matching single statement for the query — the 'matched chunk'
+        a real vector DB would return. Scored by LEXICAL token overlap
+        (normalized-token set intersection, first statement wins ties), not
+        embeddings: doc-level ranking already lives in the embedding space,
+        and a statement-level embedding index would have to track every
+        copy/move/delete live, while this picks among the dozen statements
+        of an already-retrieved doc. Truncated to ~120 chars."""
+        q = set(normalize(query).split())
+        best, best_score = "", -1
+        for st in doc.statements:
+            score = len(q & set(normalize(st.text).split()))
+            if score > best_score:
+                best, best_score = st.text, score
+        if len(best) > SNIPPET_CHARS:
+            best = best[:SNIPPET_CHARS - 3] + "..."
+        return best
+
+    def search(self, query: str, k: int = 5) -> list[tuple[str, str, str]]:
+        """Top-k (doc_id, summary, snippet); ranking stays whole-doc."""
         col = self._col()
         n = min(k, col.count())
         if n <= 0:
             return []
         res = col.query(query_texts=[str(query)], n_results=n)
-        return [(doc_id, self.docs[doc_id].summary)
+        return [(doc_id, self.docs[doc_id].summary,
+                 self._snippet(self.docs[doc_id], query))
                 for doc_id in res["ids"][0] if doc_id in self.docs]
 
     def read(self, doc_id: str) -> Doc:
