@@ -81,21 +81,31 @@ one-time cost of curation is repaid by per-question savings.
 
 \textbf{Contributions.}
 \begin{enumerate}
-\item A \textbf{train/test protocol for knowledge bases}: two-phase training
-iterations (forward answer, backward consolidation), single-shot gold reveal,
-frozen-store examination under action budgets, and a three-layer generalization
-decomposition (re-encountered instances / unseen instances / unseen templates).
+\item \textbf{Agent-trained knowledge bases.} We propose letting an LLM agent
+\emph{train} a document store: for each supervised question it first answers
+from the current store, then---with the revealed gold in hand---\emph{edits
+the store itself} (adding, rewriting, deleting, and linking documents;
+building index and navigation documents) so that the question's class becomes
+easier for a future reader. The knowledge base, not the model, is the learned
+object; its structure is carved incrementally by the questions actually
+asked, unlike offline graph construction that is built blind to the query
+distribution.
+\item \textbf{A train/test protocol for knowledge bases}: two-phase
+(forward/backward) training iterations, single-shot gold reveal,
+frozen-store examination under action budgets, learning curves, and a
+three-layer generalization decomposition (re-encountered instances / unseen
+instances / unseen templates).
 \item \textbf{\kbgym}, a contamination-free environment in the PhantomWiki
-style~\cite{phantomwiki}: a fictional-person universe rendered as a graph of atomic
-single-sentence documents; ten diagnostic question classes (forward chains, aggregation,
-multi-constraint joins, set intersection, comparison, reverse lookup, unanswerable)
-with exact answers and support sets; deterministic, integer-exact store metrics; no
-LLM judge anywhere.
-\item A \textbf{controlled negative result}: on a pre-organized store, additive
-curation monotonically pollutes---duplicated facts compete in retrieval and bury each
-other---establishing that curation requires an explicit \emph{parsimony} objective.
-\item \textbf{Cost as a first-class outcome}: accuracy, store size, training cost, and
-per-question answering cost (steps) reported together, with a break-even analysis.
+style~\cite{phantomwiki}: a fictional-person universe rendered as a graph of
+atomic single-sentence documents; ten diagnostic question classes with exact
+answers and support sets; deterministic, integer-exact store metrics; no LLM
+judge anywhere.
+\item \textbf{Findings with practical teeth}: a controlled negative
+result---on a pre-organized store, agent curation without a parsimony
+objective monotonically pollutes (duplicated facts bury each other in
+retrieval)---and cost as a first-class outcome: accuracy, store size,
+training cost, and per-question answering cost reported together with a
+break-even analysis of when training a store pays for itself.
 \end{enumerate}
 
 \section{Related Work}
