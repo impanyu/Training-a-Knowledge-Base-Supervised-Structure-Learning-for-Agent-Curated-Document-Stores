@@ -1,7 +1,7 @@
 """Policies: one tool call per turn. The LLM policy targets any
 OpenAI-compatible chat API (spec default gpt-5-mini); ScriptedPolicy is the
 deterministic test double. Adapted from ca.providers for kb's static
-11-action schema; kept import-independent of ca."""
+9-action schema; kept import-independent of ca."""
 import json
 import sys
 from dataclasses import dataclass

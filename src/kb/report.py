@@ -9,8 +9,8 @@ valid from epoch 2 (epoch 1 trains on a store nothing has consolidated
 yet). Cost metrics are headline (T39.1): training cost and per-question
 answering cost in both tokens and wall-clock seconds, and KB size incl.
 approximate statement tokens (chars // 4). Link-vs-support alignment =
-share of built links connecting docs that co-occur in some question's
-support set."""
+share of built links connecting nodes that co-occur in some question's
+support set (support ids ARE initial node ids in the v9.6 node graph)."""
 import argparse
 import json
 import re
@@ -56,11 +56,10 @@ def _link_alignment(run_dir: Path, universe: Universe | None) -> dict | None:
     if snap is None or universe is None:
         return None
     with open(snap) as f:
-        docs = json.load(f)["store"]["docs"]
-    links = [(d["id"], lid) for d in docs for lid in d["links"]]
-    origin_home = {st["origin"]: d["id"]
-                   for d in universe.docs for st in d["statements"]}
-    support_sets = [frozenset(origin_home[o] for o in q.support if o in origin_home)
+        nodes = json.load(f)["store"]["nodes"]
+    links = [(n["id"], lid) for n in nodes for lid in n["links"]]
+    # support ids ARE the initial node ids (origin = own id at build time)
+    support_sets = [frozenset(q.support)
                     for q in universe.questions.values() if q.support]
     aligned = sum(1 for a, b in links
                   if any(a in s and b in s for s in support_sets))
@@ -117,14 +116,13 @@ def build_report(run_dir) -> dict:
         for a, n in r["edits"].items():
             edit_mix[r["epoch"]][a] += n
 
-    # E2 token tallies: build / train / test separated
+    # E2 token tallies: train / test separated (the node-graph build makes
+    # no API calls at all, so there is no build-token column anymore)
     tok = defaultdict(lambda: {"in": 0, "out": 0})
     for r in trace:
         tok[r["kind"]]["in"] += r.get("tokens_in", 0)
         tok[r["kind"]]["out"] += r.get("tokens_out", 0)
-    tokens = {"build": meta.get("build_tokens"),
-              "train": dict(tok["train"]), "test": dict(tok["test"]),
-              "train_summarizer": meta.get("summarizer_tokens")}
+    tokens = {"train": dict(tok["train"]), "test": dict(tok["test"])}
 
     # T39.1 headline cost metrics: tokens AND wall-clock, train + per split
     costs = {"train": _train_cost(train_rows)}
@@ -135,7 +133,7 @@ def build_report(run_dir) -> dict:
     kb_size = None
     if kb_stats:
         last = kb_stats[-1]
-        kb_size = {k: last[k] for k in ("docs", "statements", "links",
+        kb_size = {k: last[k] for k in ("n_nodes", "n_links",
                                         "statement_tokens") if k in last}
 
     return {"learning_curve": {e: dict(s) for e, s in sorted(curve.items())},
@@ -216,9 +214,9 @@ def render(report: dict) -> str:
                      f"{c['mean_steps']:.1f} steps")
     if report["kb_size"]:
         ks = report["kb_size"]
-        lines.append(f"  kb size: {ks['docs']} docs, {ks['statements']} "
-                     f"statements (~{ks['statement_tokens']} tok), "
-                     f"{ks['links']} links")
+        lines.append(f"  kb size: {ks['n_nodes']} nodes "
+                     f"(~{ks['statement_tokens']} tok), "
+                     f"{ks['n_links']} links")
     fwd = report["train_forward"]["by_epoch"]
     lines.append("\n== E3 train-forward F1 (valid from epoch 2) ==")
     for epoch, b in fwd.items():
@@ -235,17 +233,14 @@ def render(report: dict) -> str:
     for s in report["kb_stats"]:
         cost = (f" | train {s['train_tokens_in'] + s['train_tokens_out']} tok "
                 f"{s['train_seconds']:.1f}s" if s.get("train_iterations") else "")
-        lines.append(f"  epoch {s['epoch']}: docs {s['docs']} stmts "
-                     f"{s['statements']} (~{s.get('statement_tokens', 0)} tok) "
-                     f"coverage {s['coverage']:.2f} dup "
-                     f"{s['dup_origins']} links {s['links']} orphans "
-                     f"{s['orphan_docs']} (+{s['created_docs']}/"
-                     f"-{s['deleted_docs']} docs) authored "
-                     f"{s.get('authored_statements', 0)} edited "
+        lines.append(f"  epoch {s['epoch']}: nodes {s['n_nodes']} "
+                     f"(~{s.get('statement_tokens', 0)} tok) "
+                     f"coverage {s['coverage']:.2f} dup {s['dup_origins']} "
+                     f"links {s['n_links']} orphans {s['orphan_nodes']} "
+                     f"authored {s.get('authored_statements', 0)} edited "
                      f"{s.get('edited_statements', 0)}{cost}")
     t = report["tokens"]
-    lines.append(f"\n== E2 tokens == build {t['build']} | train {t['train']} "
-                 f"| test {t['test']} | train summarizer {t['train_summarizer']}")
+    lines.append(f"\n== E2 tokens == train {t['train']} | test {t['test']}")
     return "\n".join(lines)
 
 

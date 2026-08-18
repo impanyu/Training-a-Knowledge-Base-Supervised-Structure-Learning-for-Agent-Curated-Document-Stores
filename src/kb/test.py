@@ -18,14 +18,14 @@ from kb.store import Store, load_snapshot
 
 
 def load_kb(kb_path: str, universe_path: str | None = None,
-            summarizer=None, embedding_function=None):
+            embedding_function=None):
     """(store, universe) from a snapshot or a universe file."""
     with open(kb_path) as f:
         data = json.load(f)
     if "questions" in data:                     # a universe: untrained store
         u = Universe.from_json(data)
-        return Store.from_docs(u.docs, summarizer, embedding_function), u
-    store, upath = load_snapshot(kb_path, summarizer, embedding_function)
+        return Store.from_nodes(u.nodes, embedding_function), u
+    store, upath = load_snapshot(kb_path, embedding_function)
     upath = universe_path or upath
     if not upath:
         raise SystemExit("snapshot carries no universe path; pass --universe")

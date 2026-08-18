@@ -1,17 +1,15 @@
-"""The 13 actions (spec §2 + T39.5 authoring): ONE static tool schema, no
-per-doc variation, no dynamic schema. Phase gating is by schema subset per
-mode (MODE_TOOLS), never by runtime rejection; the loop keeps a runtime
-error string only as a safety net for scripted policies that go off-mode.
+"""The 9 actions (v9.6 node graph): ONE static tool schema, no per-node
+variation, no dynamic schema. Phase gating is by schema subset per mode
+(MODE_TOOLS), never by runtime rejection; the loop keeps a runtime error
+string only as a safety net for scripted policies that go off-mode.
 
 flow:  answer(text) . done()            -- handled by the loop, not dispatch
-sense: search(query) -> top-k (doc_id, summary)   [k=5]
-       read(doc_id)  -> statements (sid: text) + links (doc_id, live summary)
-edit:  copy_statement / move_statement / delete_statement / link / unlink /
-       create_doc / delete_doc / add_statement / edit_statement
-       (the two authoring edits are train Phase 2 ONLY, like every edit;
-       Phase 1 and test keep search/read/answer)
+sense: search(query) -> top-k (id, full text)     [k=5]
+       read(id)      -> text + links (target id, target full text)
+edit:  add(text) / edit(id, text) / delete(id) / link(a, b) / unlink(a, b)
+       (train Phase 2 ONLY; Phase 1 and test keep search/read/answer)
 
-Invalid ids / dead sids -> "ERROR: ..." result, recorded like any result."""
+Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
 
 SEARCH_K = 5
@@ -22,14 +20,13 @@ def _schema(props: dict, required: list[str]) -> dict:
 
 
 _S = {"type": "string"}
-_SL = {"type": "array", "items": {"type": "string"}}
 
 ACTION_SPECS: dict[str, dict] = {
     # -------- flow --------
     "answer": {
         "description": ("Submit your ONE final answer to the question: a short "
                         "answer (a name / phrase / number), never a sentence. "
-                        'Say "unknown" if the documents cannot determine it. '
+                        'Say "unknown" if the notes cannot determine it. '
                         "Submitting ends this phase immediately."),
         "input_schema": _schema({"text": _S}, ["text"]),
     },
@@ -40,69 +37,45 @@ ACTION_SPECS: dict[str, dict] = {
     # -------- sense --------
     "search": {
         "description": ("Search the knowledge base by meaning; returns the "
-                        f"top-{SEARCH_K} docs as (doc_id, summary) plus the "
-                        "best-matching statement in each."),
+                        f"top-{SEARCH_K} notes as (id, text)."),
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "read": {
-        "description": ("Read one doc in full: its statements (sid: text) and "
-                        "its links (doc_id, current summary)."),
-        "input_schema": _schema({"doc_id": _S}, ["doc_id"]),
+        "description": ("Read one note: its text and its links, each rendered "
+                        "as (target id, target text)."),
+        "input_schema": _schema({"id": _S}, ["id"]),
     },
     # -------- edit --------
-    "copy_statement": {
-        "description": ("Copy a statement instance into another doc (new sid, "
-                        "same origin; the source doc keeps its copy)."),
-        "input_schema": _schema({"sid": _S, "to_doc": _S}, ["sid", "to_doc"]),
+    "add": {
+        "description": ("Author a NEW note: one short self-contained sentence "
+                        "(full names, no pronouns). It gets a new id and is "
+                        "flagged as authored."),
+        "input_schema": _schema({"text": _S}, ["text"]),
     },
-    "move_statement": {
-        "description": ("Move a statement instance to another doc (atomic "
-                        "copy+delete; it keeps its sid)."),
-        "input_schema": _schema({"sid": _S, "to_doc": _S}, ["sid", "to_doc"]),
+    "edit": {
+        "description": ("Rewrite an existing note's text in place (it keeps "
+                        "its id and is flagged as edited)."),
+        "input_schema": _schema({"id": _S, "text": _S}, ["id", "text"]),
     },
-    "delete_statement": {
-        "description": ("Delete this statement instance (copies of it in other "
-                        "docs survive)."),
-        "input_schema": _schema({"sid": _S}, ["sid"]),
+    "delete": {
+        "description": ("Delete a note; links to it are removed from all "
+                        "other notes."),
+        "input_schema": _schema({"id": _S}, ["id"]),
     },
     "link": {
-        "description": "Add a directed link from doc a to doc b (ids only).",
+        "description": "Add a directed link from note a to note b (ids only).",
         "input_schema": _schema({"a": _S, "b": _S}, ["a", "b"]),
     },
     "unlink": {
-        "description": "Remove the link from doc a to doc b.",
+        "description": "Remove the link from note a to note b.",
         "input_schema": _schema({"a": _S, "b": _S}, ["a", "b"]),
-    },
-    "create_doc": {
-        "description": ("Create a new doc; optionally bulk-copy statements into "
-                        "it (sids) and link it to docs (link_ids). Its summary "
-                        "and embedding are generated automatically."),
-        "input_schema": _schema({"sids": _SL, "link_ids": _SL}, []),
-    },
-    "delete_doc": {
-        "description": ("Delete a doc: its statement instances die with it and "
-                        "inbound links to it are removed from all other docs."),
-        "input_schema": _schema({"doc_id": _S}, ["doc_id"]),
-    },
-    "add_statement": {
-        "description": ("Author a NEW statement into a doc: one short "
-                        "self-contained sentence (full names, no pronouns). "
-                        "It gets a new sid and is flagged as authored."),
-        "input_schema": _schema({"doc_id": _S, "text": _S}, ["doc_id", "text"]),
-    },
-    "edit_statement": {
-        "description": ("Rewrite an existing statement instance's text in "
-                        "place (it keeps its sid and is flagged as edited)."),
-        "input_schema": _schema({"sid": _S, "text": _S}, ["sid", "text"]),
     },
 }
 
-EDIT_ACTIONS = ("copy_statement", "move_statement", "delete_statement",
-                "link", "unlink", "create_doc", "delete_doc",
-                "add_statement", "edit_statement")
+EDIT_ACTIONS = ("add", "edit", "delete", "link", "unlink")
 
-# Phase/tool gating by schema subset (spec §4): the model never sees an
-# out-of-phase tool, so gating needs no runtime rejection.
+# Phase/tool gating by schema subset: the model never sees an out-of-phase
+# tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
     "train_backprop": ("search", "read") + EDIT_ACTIONS + ("done",),
@@ -130,36 +103,32 @@ def dispatch(store: Store, name: str, inp: dict) -> str:
 
 def _h_search(store, inp):
     hits = store.search(str(inp["query"]), k=SEARCH_K)
-    lines = [f"- {d}: {s}" + (f' | match: "{snip}"' if snip else "")
-             for d, s, snip in hits]
-    return "\n".join(lines) or "(no results)"
+    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no results)"
 
 
 def _h_read(store, inp):
-    doc = store.read(str(inp["doc_id"]).strip())
-    lines = [f"{doc.doc_id} | summary: {doc.summary}", "statements:"]
-    lines += [f"- {st.sid}: {st.text}" for st in doc.statements] or ["(none)"]
-    lines.append("links:")
-    lines += [f"- {lid}: {store.docs[lid].summary}" for lid in doc.links] or ["(none)"]
+    node = store.read(str(inp["id"]).strip())
+    lines = [f"{node.nid}: {node.text}", "links:"]
+    lines += [f"- {lid}: {store.nodes[lid].text}"
+              for lid in node.links] or ["(none)"]
     return "\n".join(lines)
 
 
-def _h_copy(store, inp):
-    sid, to_doc = str(inp["sid"]).strip(), str(inp["to_doc"]).strip()
-    new = store.copy_statement(sid, to_doc)
-    return f"copied {sid} -> {new} in {to_doc}"
+def _h_add(store, inp):
+    nid = store.add(str(inp["text"]))
+    return f"added {nid}"
 
 
-def _h_move(store, inp):
-    sid, to_doc = str(inp["sid"]).strip(), str(inp["to_doc"]).strip()
-    store.move_statement(sid, to_doc)
-    return f"moved {sid} to {to_doc}"
+def _h_edit(store, inp):
+    nid = str(inp["id"]).strip()
+    store.edit(nid, str(inp["text"]))
+    return f"edited {nid}"
 
 
-def _h_delete_statement(store, inp):
-    sid = str(inp["sid"]).strip()
-    store.delete_statement(sid)
-    return f"deleted {sid}"
+def _h_delete(store, inp):
+    nid = str(inp["id"]).strip()
+    store.delete(nid)
+    return f"deleted {nid}"
 
 
 def _h_link(store, inp):
@@ -174,37 +143,8 @@ def _h_unlink(store, inp):
     return f"unlinked {a} -> {b}"
 
 
-def _h_create_doc(store, inp):
-    sids = [str(s).strip() for s in (inp.get("sids") or [])]
-    link_ids = [str(x).strip() for x in (inp.get("link_ids") or [])]
-    doc_id = store.create_doc(sids, link_ids)
-    doc = store.docs[doc_id]
-    return f"created {doc_id} ({len(doc.statements)} statements, {len(doc.links)} links)"
-
-
-def _h_delete_doc(store, inp):
-    doc_id = str(inp["doc_id"]).strip()
-    n = store.delete_doc(doc_id)
-    return f"deleted {doc_id} ({n} statement instances died)"
-
-
-def _h_add_statement(store, inp):
-    doc_id = str(inp["doc_id"]).strip()
-    sid = store.add_statement(doc_id, str(inp["text"]))
-    return f"added {sid} to {doc_id}"
-
-
-def _h_edit_statement(store, inp):
-    sid = str(inp["sid"]).strip()
-    store.edit_statement(sid, str(inp["text"]))
-    return f"edited {sid}"
-
-
 _HANDLERS = {
     "search": _h_search, "read": _h_read,
-    "copy_statement": _h_copy, "move_statement": _h_move,
-    "delete_statement": _h_delete_statement,
+    "add": _h_add, "edit": _h_edit, "delete": _h_delete,
     "link": _h_link, "unlink": _h_unlink,
-    "create_doc": _h_create_doc, "delete_doc": _h_delete_doc,
-    "add_statement": _h_add_statement, "edit_statement": _h_edit_statement,
 }

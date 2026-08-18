@@ -1,6 +1,6 @@
 """Offline fixtures for kb tests: a deterministic bag-of-words embedding stub
-(no ONNX model ever loads), a call-counting summarizer, a mini universe, and
-a tool-aware driving policy for scripted end-to-end runs."""
+(no ONNX model ever loads), a mini universe, and a tool-aware driving policy
+for scripted end-to-end runs."""
 import math
 import re
 import zlib
@@ -39,29 +39,14 @@ class HashEmbedding(EmbeddingFunction):
         return out
 
 
-class CountingSummarizer:
-    """Deterministic summarizer whose output encodes how often it ran, so
-    tests can assert WHEN regeneration happened, not just that it did."""
-
-    def __init__(self):
-        self.calls = 0
-        self.tokens_in = 0
-        self.tokens_out = 0
-
-    def summarize(self, texts: list[str]) -> str:
-        self.calls += 1
-        return f"[v{self.calls}] {len(texts)} statements: {texts[0][:40]}"
-
-
 def mini_universe(seed: int = 0, n_people: int = 12,
                   sizes=(8, 6, 5), eval_sizes=(3, 2), **kw) -> Universe:
     return build_universe(seed, n_people, sizes, eval_sizes, **kw)
 
 
-def mini_store(universe: Universe | None = None, summarizer=None) -> Store:
+def mini_store(universe: Universe | None = None) -> Store:
     u = universe or mini_universe()
-    return Store.from_docs(u.docs, summarizer=summarizer or CountingSummarizer(),
-                           embedding_function=HashEmbedding())
+    return Store.from_nodes(u.nodes, embedding_function=HashEmbedding())
 
 
 class ListLog:
@@ -93,8 +78,8 @@ class ListLog:
 class DrivePolicy:
     """Tool-aware deterministic driver for e2e runs. Answer phases (train
     Phase 1 and test): search once, then answer (from `answers` by qid, else
-    "unknown"). Backprop: one create_doc, then done. Detects the phase from
-    the schema subset + task block, so one instance can drive a whole run."""
+    "unknown"). Backprop: one add, then done. Detects the phase from the
+    schema subset + task block, so one instance can drive a whole run."""
 
     def __init__(self, answers: dict[str, str] | None = None,
                  in_tokens: int = 7, out_tokens: int = 3):
@@ -117,5 +102,5 @@ class DrivePolicy:
                 return Decision("search", {"query": context.splitlines()[1]}, *tk)
             return Decision("answer", {"text": self.answers.get(qid, "unknown")}, *tk)
         if self._n == 1:
-            return Decision("create_doc", {}, *tk)
+            return Decision("add", {"text": f"Navigation note for {qid}."}, *tk)
         return Decision("done", {}, *tk)

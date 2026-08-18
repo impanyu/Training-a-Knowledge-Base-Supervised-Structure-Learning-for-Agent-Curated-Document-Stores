@@ -4,8 +4,8 @@ the multi-epoch driver (spec §4/§5).
 Train Phase 1 (budget N1): search/read then ONE answer(); its RESULT reveals
 gold + F1 and the phase ends immediately (leftover budget forfeited). Budget
 exhausted without answer -> auto F1=0, gold still revealed at Phase 2 start.
-Train Phase 2 (budget N2): search/read + 9 edits until done() or exhaustion;
-dirty summaries/embeddings regenerate now (store.refresh at iteration end).
+Train Phase 2 (budget N2): search/read + 5 edits until done() or exhaustion;
+dirty nodes re-embed now (store.refresh at iteration end).
 
 Test iteration (budget M, frozen KB): answer() ends it, its result is empty
 ("submitted"), gold never appears; exhaustion -> scored 0 and counted as
@@ -22,41 +22,40 @@ from kb.store import save_snapshot
 N1, N2, M, K = 15, 15, 15, 30
 
 TRAIN_SYSTEM = (
-    "You are training a document knowledge base on supervised question "
-    "answering. Your objectives, in order:\n"
+    "You are training a knowledge base on supervised question answering. "
+    "The store is a graph of single-sentence notes: each note is one "
+    "self-contained statement, found by semantic search over its text and "
+    "linked to other notes by id. Your objectives, in order:\n"
     "1. Answer the question correctly.\n"
-    "2. Consolidate the verified reasoning into the store's structure, so the "
-    "facts this question needed are easier to find next time.\n"
+    "2. Consolidate the verified reasoning into the graph, so the facts "
+    "this question needed are easier to find next time.\n"
     "3. Organize for this question's CLASS of questions, not just this "
-    "instance: build or extend INDEX or NAVIGATION docs that gather "
-    "same-class material - a per-family overview doc, an attribute index, a "
-    "people directory - and link them to the detail docs they point at, so "
-    "a future same-class question resolves in fewer steps.\n"
-    "4. Keep the store PARSIMONIOUS. Duplicated facts compete in search and "
-    "bury each other: prefer move_statement (which removes the source) over "
-    "copy_statement; when you gather statements into a better doc, delete the "
-    "scattered originals you drew from; if the store already serves this "
-    "question's class well, change NOTHING - a clean miss of the edit budget "
-    "is better than a redundant doc. Organize and navigate; don't duplicate.\n"
-    "HOW you consolidate is your choice - links, index docs, moves, authored "
-    "statements, cleanup; "
-    "you are judged only by whether a non-reasoning future reader could "
-    "answer this class of question more easily.\n"
-    "Existing statements are moved, copied or deleted by reference; when "
-    "consolidating you may also author a NEW statement (add_statement) or "
-    "rewrite one in place (edit_statement) - keep any text you write a "
-    "single short self-contained sentence with full names, no pronouns. "
-    "Summaries and embeddings are maintained for you automatically.\n"
+    "instance: add NAVIGATION notes that gather same-class material - a "
+    "per-family overview note, an attribute index note, a people directory "
+    "- and link them to the detail notes they point at, so a future "
+    "same-class question resolves in fewer steps.\n"
+    "4. Keep the graph PARSIMONIOUS. Redundant notes compete in search and "
+    "bury each other: don't add a note whose content the graph already "
+    "carries; edit an existing note rather than duplicating it; delete any "
+    "redundancy you create; if the graph already serves this question's "
+    "class well, change NOTHING - a clean miss of the edit budget is better "
+    "than a redundant note. Organize and navigate; don't duplicate.\n"
+    "HOW you consolidate is your choice - links, navigation notes, edits, "
+    "cleanup; you are judged only by whether a non-reasoning future reader "
+    "could answer this class of question more easily.\n"
+    "Any note text you write must be a single short self-contained sentence "
+    "with full names, no pronouns. Embeddings are maintained for you "
+    "automatically.\n"
     "When answering, submit exactly one short answer (a name / phrase / "
     'number, or "unknown" if this universe cannot determine it); the result '
     "reveals the gold answer and your F1."
 )
 
 READER_SYSTEM = (
-    "Answer the question using search and read over a document knowledge "
-    "base. Keep the answer short: a name, phrase or number. If the answer "
-    'cannot be determined from the documents, answer "unknown". Submit it '
-    "with answer()."
+    "Answer the question using search and read over a knowledge base of "
+    "single-sentence notes. Keep the answer short: a name, phrase or "
+    'number. If the answer cannot be determined from the notes, answer '
+    '"unknown". Submit it with answer().'
 )
 
 
@@ -185,11 +184,9 @@ def run_test(store, policy, universe, split, log, epoch=0, m=M, k=K,
 
 
 def _log_stats(log, store, epoch, train_rows=()):
-    """kb_stats row: store shape (incl. approximate statement_tokens) plus
+    """kb_stats row: graph shape (incl. approximate statement_tokens) plus
     this epoch's training cost — tokens and wall-clock seconds."""
     log.stats({"epoch": epoch, **store.stats(),
-               "summarizer_tokens_in": store.summarizer.tokens_in,
-               "summarizer_tokens_out": store.summarizer.tokens_out,
                "train_iterations": len(train_rows),
                "train_tokens_in": sum(r["tokens_in"] for r in train_rows),
                "train_tokens_out": sum(r["tokens_out"] for r in train_rows),

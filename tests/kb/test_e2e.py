@@ -1,7 +1,6 @@
 """Scripted end-to-end: mini universe -> one train epoch (eval split after
 every snapshot) -> the single final test pass -> report over the run
-artifacts. Everything offline (DrivePolicy, counting summarizer, hash
-embeddings)."""
+artifacts. Everything offline (DrivePolicy, hash embeddings)."""
 import json
 
 import kb.report as report_mod
@@ -33,10 +32,7 @@ def _run(tmp_path, epochs=1):
     for split in ("test_in", "test_out"):
         run_test(store, pol, u, split, log, epoch=epochs)
     with open(run_dir / "meta.json", "w") as f:
-        json.dump({"universe": str(upath),
-                   "build_tokens": u.meta["build_tokens"],
-                   "summarizer_tokens": {"in": store.summarizer.tokens_in,
-                                         "out": store.summarizer.tokens_out}}, f)
+        json.dump({"universe": str(upath)}, f)
     log.close()
     return u, store, run_dir
 
@@ -48,7 +44,7 @@ def test_full_flow_files_and_report(tmp_path):
     with open(run_dir / "train_log.jsonl") as f:
         train_rows = [json.loads(l) for l in f]
     assert len(train_rows) == len(u.splits["train"])
-    assert all(r["edits"]["create_doc"] == 1 for r in train_rows)
+    assert all(r["edits"]["add"] == 1 for r in train_rows)
 
     rep = build_report(run_dir)
     curve = rep["learning_curve"]
@@ -60,13 +56,16 @@ def test_full_flow_files_and_report(tmp_path):
     assert list(final["test_in"]) == [1]
     assert final["test_in"][1]["n"] == len(u.splits["test_in"])
     assert rep["train_forward"]["by_epoch"][1]["n"] == len(u.splits["train"])
-    assert rep["edit_mix"][1]["create_doc"] == len(u.splits["train"])
+    assert rep["edit_mix"][1]["add"] == len(u.splits["train"])
     assert [r["epoch"] for r in rep["kb_stats"]] == [0, 1]
-    assert rep["kb_stats"][1]["created_docs"] == len(u.splits["train"])
-    # E2: token tallies separated, all nonzero, build from the universe meta
+    assert rep["kb_stats"][1]["authored_statements"] == len(u.splits["train"])
+    assert rep["kb_stats"][1]["n_nodes"] == \
+        rep["kb_stats"][0]["n_nodes"] + len(u.splits["train"])
+    # E2: train/test token tallies separated, nonzero (no build column: the
+    # node-graph build makes no API calls)
     assert rep["tokens"]["train"]["in"] > 0
     assert rep["tokens"]["test"]["in"] > 0
-    assert rep["tokens"]["build"] == {"in": 0, "out": 0}
+    assert set(rep["tokens"]) == {"train", "test"}
     assert rep["link_alignment"] is not None               # universe resolvable
 
 
@@ -84,7 +83,7 @@ def test_report_headline_costs_and_kb_size(tmp_path):
         assert c["mean_tokens"] > 0 and c["mean_seconds"] > 0
         assert c["mean_steps"] == 2.0                      # DrivePolicy: search+answer
     ks = rep["kb_size"]
-    assert set(ks) == {"docs", "statements", "links", "statement_tokens"}
+    assert set(ks) == {"n_nodes", "n_links", "statement_tokens"}
     assert ks["statement_tokens"] > 0                      # ~chars // 4
 
 
@@ -115,17 +114,8 @@ def test_snapshots_are_loadable_and_frozen_kb_examinable(tmp_path):
     # a universe file loads as the untrained store (epoch-0 RAG baseline)
     s4, _ = load_kb(tmp_path / "universe.json",
                     embedding_function=HashEmbedding())
-    assert s4.stats()["created_docs"] == 0
-
-
-def test_scattered_universe_drives_the_same_pipeline(tmp_path):
-    u = mini_universe(init="scattered")
-    store = mini_store(u)
-    assert all(d.summary.startswith("Mixed notes (") for d in store.docs.values())
-    log = RunLog(tmp_path)
-    rows = run_test(store, DrivePolicy(), u, "test_out", log, epoch=0, limit=2)
-    assert len(rows) == 2
-    log.close()
+    assert s4.stats()["authored_statements"] == 0
+    assert s4.stats()["n_links"] == 0
 
 
 def test_kb_test_cli_records_budget_m(tmp_path, monkeypatch):

@@ -12,7 +12,7 @@ from kb.build import Universe
 from kb.loops import K, M, N1, N2, run_training
 from kb.policy import make_policy
 from kb.recorder import RunLog
-from kb.store import LLMSummarizer, Store
+from kb.store import Store
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -28,12 +28,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--m", type=int, default=M)
     ap.add_argument("--eval-each-epoch", action="store_true",
                     help="run the eval split after every snapshot")
-    ap.add_argument("--summarizer-model", default="gpt-5-mini")
     args = ap.parse_args(argv)
 
     universe = Universe.load(args.universe)
-    store = Store.from_docs(universe.docs,
-                            summarizer=LLMSummarizer(args.summarizer_model))
+    store = Store.from_nodes(universe.nodes)
     policy = make_policy(args.model)
     log = RunLog(args.out)
     run_training(store, policy, universe, log, args.out, epochs=args.epochs,
@@ -45,10 +43,7 @@ def main(argv: list[str] | None = None) -> None:
             "seed": args.seed, "model": args.model,
             "n1": args.n1, "n2": args.n2, "m": args.m,
             "train_size": args.train_size,
-            "build_tokens": universe.meta.get("build_tokens"),
-            "tokens": {kind: dict(t) for kind, t in log.tokens.items()},
-            "summarizer_tokens": {"in": store.summarizer.tokens_in,
-                                  "out": store.summarizer.tokens_out}}
+            "tokens": {kind: dict(t) for kind, t in log.tokens.items()}}
     with open(Path(args.out) / "meta.json", "w") as f:
         json.dump(meta, f, indent=2)
     log.close()
