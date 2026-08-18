@@ -4,6 +4,8 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{url}
@@ -145,13 +147,35 @@ axes:
 \mathrm{cost}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{steps}\big(\mathrm{reader}(K,q)\big)\right].
 \end{align*}
 \emph{Training} is any procedure that consumes supervised pairs $(q, a^{*})$ and edits
-$K$. Our central hypothesis: training reduces $\mathrm{cost}$ while keeping
-$\mathrm{acc}$ non-inferior. The correspondence to supervised learning is exact: the
-store configuration is the parameter vector, one training iteration is one
-optimization step, the training agent is the optimizer, and held-out reader
-performance is the loss. Because training-agent forward passes and test readers use
-identical tools, budgets, and the single-shot answer rule, the train/test
-generalization gap is well defined.
+$K$, producing $K_T$ from the initial store $K_0$. Our central hypothesis is a joint
+condition on the two axes:
+\begin{equation}
+\mathrm{acc}(K_T) \;\ge\; \mathrm{acc}(K_0) - \delta
+\quad\text{and}\quad
+\rho \;=\; \frac{\mathrm{cost}(K_T)}{\mathrm{cost}(K_0)} \;<\; 1,
+\label{eq:hypothesis}
+\end{equation}
+with non-inferiority margin $\delta = 0.03$. Training cost amortizes: if training
+spent $C_{\mathrm{train}}$ tokens and the per-question saving is
+$c_0 - c_T$ tokens, the \emph{break-even point}
+\begin{equation}
+N^{*} \;=\; \frac{C_{\mathrm{train}}}{c_0 - c_T}
+\label{eq:breakeven}
+\end{equation}
+is the query volume after which curation has paid for itself---the single number
+that tells a practitioner whether training a store is worth it for their workload.
+
+The correspondence to supervised learning is exact: the store configuration is the
+parameter vector, one training iteration is one optimization step, the training agent
+is the optimizer, and held-out reader performance is the loss. Formally, the
+environment with a \emph{fixed} reader policy induces a Markov process over store
+configurations; training is a guided walk through configuration space, and the
+questions are its supervision signal. Because training-agent forward passes and test
+readers use identical tools, budgets, and the single-shot answer rule, the train/test
+generalization gap is well defined: the three-layer decomposition compares accuracy on
+re-encountered train instances (retention carried \emph{only} by the store---the
+agent's memory resets every question), unseen instances of trained templates
+(class-level generalization), and reserved templates (within-category transfer).
 
 \section{The \kbgym{} Environment}
 \subsection{Universe and Store}
@@ -187,15 +211,76 @@ trained templates), \texttt{test\_out} (50; one reserved template per category),
 \texttt{eval} (30; stratified, drives the per-epoch learning curve so the final test
 is touched exactly once). Grading is SQuAD-normalized F1/EM.
 
+\subsection{Design Rationale}
+Four decisions carry the methodology. \emph{(i) No LLM judge anywhere}: golds are
+exact, grading is SQuAD normalization, store metrics are integer counts over
+provenance---every number in this paper is reproducible to the digit.
+\emph{(ii) Realistic retrieval}: \texttt{search} returns matched statement text, as
+production vector stores do; an early variant returning only titles collapsed the
+reader to F1 $0.0$ and would have credited the trained store for fixing an
+artificially crippled interface. \emph{(iii) Statement-level nodes}: the store is its
+own chunking, so organization is expressible \emph{only} through links and navigation
+nodes---any efficiency gain is attributable to structure, and any authored content is
+provenance-flagged. \emph{(iv) Contamination control}: we measured gpt-5-mini
+answering HotpotQA-style questions at F1 $\approx 1.0$ with \emph{no retrieval at
+all}; on public corpora, a reader's score conflates the store with the weights, and
+``store value'' loses meaning. A fictional universe makes the no-store score
+$\approx 0$, so every point of reader performance is earned through the store.
+
 \section{Training Protocol}
-Per question, per epoch:
-\textbf{Phase 1 (forward, budget $N_1{=}15$)}: search/read, then \emph{one}
-\texttt{answer}; its result reveals gold and F1; the phase ends immediately.
-\textbf{Phase 2 (consolidate, budget $N_2{=}15$)}: with gold, verdict, and the full
-Phase-1 trajectory in short-term memory, the agent repairs and reorganizes; ends on
-\texttt{done()} or budget exhaustion. Embeddings refresh at iteration end; the store
-snapshots per epoch, and every intermediate state is reconstructible by replaying the
-edit trace.
+\begin{algorithm}[t]
+\caption{One training epoch}
+\label{alg:train}
+\begin{algorithmic}[1]
+\For{each $(q, a^{*})$ in shuffled train split}
+  \State reset short-term memory; task $\gets q$
+  \For{step $= 1 \dots N_1$}  \Comment{Phase 1: forward}
+    \State $d \gets$ policy(search/read/answer)
+    \If{$d = \texttt{answer}(\hat a)$}
+      \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
+    \EndIf
+  \EndFor
+  \For{step $= 1 \dots N_2$}  \Comment{Phase 2: consolidate}
+    \State $d \gets$ policy(search/read/add/edit/delete/link/unlink/done)
+    \If{$d = \texttt{done}$} \textbf{break} \EndIf
+  \EndFor
+  \State refresh embeddings of dirty nodes; log iteration
+\EndFor
+\State snapshot store; run eval split (learning-curve point)
+\end{algorithmic}
+\end{algorithm}
+
+Phase 1 uses exactly the reader's toolset and budget, so train-forward accuracy is
+directly comparable to test accuracy. The single-shot \texttt{answer} reveals the gold
+in its result---standard supervised learning: predict, then see the label, then
+update. Leftover Phase-1 budget is forfeited (no smuggling forward steps into
+consolidation); a budget-exhausted forward scores $0$ but still receives the gold, so
+failed questions---where repair matters most---get targeted consolidation.
+Every intermediate store state is reconstructible by replaying the edit trace
+(validated byte-exact against epoch snapshots), giving per-iteration store
+trajectories for analysis at no storage cost.
+
+\begin{table}[t]
+\caption{Credit assignment: Phase-2 diagnosis and repair, determined by the Phase-1
+trajectory plus the revealed gold. No oracle localization is provided.}
+\label{tab:credit}
+\centering
+\small
+\begin{tabular}{p{2.6cm}p{5.2cm}}
+\toprule
+Trajectory diagnosis & Repair \\
+\midrule
+Needed fact never surfaced & directed re-search \emph{with the answer in hand}; link
+from where the blind search wandered to where the fact lives \\
+Fact read but chain unassembled & materialize the chain as links; optionally author a
+navigation node for the class \\
+Conflicting statements found & resolve using the gold as arbiter (delete or edit the
+loser) \\
+Class-level gap (same failure would recur on siblings) & build/extend an index node
+gathering same-class material \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 The training agent's objectives, stated as goals (mechanisms are its choice):
 (1)~answer correctly; (2)~consolidate verified reasoning into structure; (3)~organize
@@ -220,8 +305,26 @@ $M \in \{8, 15\}$; an organized store should dominate at tight budgets. The
 Baselines differ only in how the store is prepared, under an identical reader, test
 sets, and budgets: \textbf{B1} flat store (= epoch~0); \textbf{B3} GraphRAG-style
 offline structuring~\cite{graphrag}; \textbf{B5} HippoRAG-2-style KG
-layer~\cite{hipporag2} (structure adapted to our store format; one-time build cost
-reported alongside).
+layer~\cite{hipporag2}. Both offline baselines are adapted to \emph{our store format}
+(their structure lands as authored nodes and links the common reader can traverse),
+which tests their \emph{structure} under a common reader rather than their retrieval
+algorithms---a documented adaptation; one-time build cost is reported alongside.
+
+The experiment suite maps one-to-one onto figures:
+\textbf{E1} (headline): per-question steps and F1, trained vs.\ untrained, at
+$M \in \{8, 15\}$---the accuracy--budget curve whose leftward shift is the efficiency
+claim---plus the eval-split learning curve across epochs.
+\textbf{E2}: the baseline table (F1, steps, one-time build tokens, per-question
+tokens).
+\textbf{E3} (log slicing, no extra compute): the three-layer generalization
+decomposition and the per-class profile---training gains are predicted to concentrate
+in aggregation, join, and intersection classes, where answers live in relations
+between statements.
+\textbf{E5} (trace mining): edit-type mix per epoch, store-size trajectory from
+replay, emergent navigation nodes, and \emph{mechanism attribution}: the correlation
+between a reader's step savings and its hits on authored navigation nodes and trained
+links---evidence that the savings travel through the built structure rather than
+coincide with it. Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Preliminary Results}\label{sec:prelim}
 \emph{Obtained on an earlier document-store variant of the environment (multi-statement
@@ -265,22 +368,51 @@ $M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
 \end{tabular}
 \end{table}
 
+\subsection{Calibration and Cost Profile}
+Reader difficulty was calibrated by probes on untrained stores: forward named-entity
+chains are natively easy for statement-level retrieval at any tested scale (F1
+$1.0$); headroom concentrates in the relation-level classes and grows with universe
+size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
+$9.2$)---motivating the 500-person main configuration, where the cost axis has
+roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
+$\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
+$\approx \$6$ at current pricing.
+
 \subsection{Main-Condition Results}
 \todo{fill from the v10L (500-person, statement-graph, parsimony protocol) run:
 learning curve; final test\_in/test\_out accuracy and steps, trained vs.\ untrained,
 at $M{=}15$ and $M{=}8$; per-class breakdown; store trajectory; break-even point;
-baseline table.}
+baseline table. Infrastructure for the official-PhantomWiki external arm is built
+(405 articles $\to$ 3{,}403 nodes, 330 questions in our splits) and awaits its
+training run.}
 
 \section{Discussion and Limitations}
-Finding~\ref{sec:pollution} suggests the thesis is a boundary, not a slogan: curation
-creates value where organization is lacking and pollution where it is not, and the
-difference is carried by whether the optimizer knows when \emph{not} to edit. The
-train/test protocol makes this boundary measurable; downstream-only evaluation cannot
-see a store being slowly ruined while individual answers still look fine.
-Limitations: single training agent (concurrent maintenance is the natural sequel);
-one universe family at full diagnostic depth (external validity delegated to a
-planned official-PhantomWiki arm); a single model family; single seed in the basic
-version.
+\textbf{Curation is a boundary, not a slogan.} Section~\ref{sec:pollution} suggests
+curation creates value where organization is lacking and pollution where it is not,
+and the difference is carried by whether the optimizer knows when \emph{not} to edit.
+The train/test protocol makes this boundary measurable; downstream-only evaluation
+cannot see a store being slowly ruined while individual answers still look fine.
+
+\textbf{Deployment reading.} The abstraction targets a real configuration: agent
+fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
+ledger maps directly onto production incidents---duplicated near-copies burying each
+other is the lost-update problem; authored-without-provenance content is the
+hallucinated fix; a deleted last instance is knowledge loss during refactoring. The
+break-even point $N^{*}$ answers the deployment question in units operators use:
+after how many queries does curation pay for itself. The negative result doubles as a
+default-behavior audit: an agent given a maintenance objective but no parsimony
+objective degraded the asset it was tending while every individual action looked
+constructive---a caution for unsupervised agent operation on shared state.
+
+\textbf{Threats to validity.} Template-rendered language is simpler than natural
+prose; phrasing regularity may flatter lexical matching (mitigated by embedding
+retrieval and by the planned official-PhantomWiki arm, whose generator we do not
+control). The reader and trainer share a model family, so structure tuned by the
+trainer may suit that family's search habits. Single seed in the basic version;
+single-agent by design (concurrent maintenance, with its conflict taxonomy, is the
+natural sequel); support-set diagnostics are unavailable on the external arm.
+Grading is token-F1 against short golds---adequate for entity answers, blunt for
+free-form ones; the environment avoids the latter by construction.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
