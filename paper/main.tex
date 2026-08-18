@@ -1,0 +1,317 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\kbgym}{KBGym}
+
+\begin{document}
+
+\title{Training a Knowledge Base:\\Supervised Structure Learning for Agent-Curated Document Stores\\
+\thanks{Draft v0.2 --- August 2026. Results marked preliminary are being re-established on the final environment.}}
+
+\author{\IEEEauthorblockN{Yu Pan}
+\IEEEauthorblockA{\textit{(affiliation)} \\
+impanyu@gmail.com}}
+
+\maketitle
+
+\begin{abstract}
+Retrieval-augmented generation treats the document store as a frozen input. A recent
+wave of systems instead lets an LLM agent continuously curate a persistent knowledge
+base, yet none of this work measures what curation does to the store itself. We invert
+the usual framing: \emph{the knowledge base is the model}. A training agent consumes
+supervised QA pairs one at a time---attempting each question against the current store,
+receiving the gold answer, then consolidating verified reasoning into the store's
+structure---and an independent frozen-store reader is examined on held-out questions
+under a fixed action budget. Our central hypothesis is an \emph{efficiency} claim:
+by materializing reasoning paths into index and shortcut structure, a trained store
+lets an unchanged reader answer at \emph{non-inferior accuracy in fewer steps},
+amortizing one-time training cost across all future queries. The protocol yields the
+full apparatus of machine learning for knowledge bases: learning curves, a train/test
+generalization gap, per-class transfer, and a break-even analysis of training cost
+against per-question savings. On a contamination-free synthetic universe with
+statement-level ground truth, our first controlled result is cautionary: on an
+already-organized store, additive curation without a parsimony objective is net
+harmful---the agent quintupled the store and \emph{regressed} reader accuracy by 17
+F1 points---motivating the explicit parsimony objective in our final protocol.
+\end{abstract}
+
+\begin{IEEEkeywords}
+knowledge bases, LLM agents, retrieval-augmented generation, agentic RAG, memory, benchmarks
+\end{IEEEkeywords}
+
+\section{Introduction}
+The dominant way to give language models durable knowledge is retrieval-augmented
+generation (RAG): embed a corpus once, retrieve at query time, never write back. A
+rapidly growing line of work breaks this asymmetry. Agent-maintained wikis compile
+sources into evolving page networks~\cite{llmwiki-rar,llmwiki-stream,karpathy-llmwiki};
+agentic memory systems accumulate and link notes across sessions~\cite{amem}; and
+``sleep-time'' agents reorganize memory between conversations~\cite{letta-sleep}. The
+pattern has reached practice ahead of measurement: the community's own description of
+the wiki pattern lists a \emph{lint} step---checking contradictions, stale claims,
+orphan pages, missing cross-links---as an engineering habit with no formal evaluation
+attached~\cite{karpathy-llmwiki}, and the closest published systems evaluate only
+downstream answer accuracy, never the store~\cite{llmwiki-rar,llmwiki-stream}.
+
+We study the store directly, under the oldest framing machine learning has:
+\emph{train/test}. The knowledge base is the model. Supervised questions arrive one at
+a time; a training agent answers each from the current store, is graded, and then, in
+an explicit consolidation phase, edits the store's structure so that the question's
+\emph{class} becomes easier for a future reader. Evaluation freezes the store and
+examines an independent reader with no gold access and a fixed action budget on
+held-out questions.
+
+The value produced by such training is best understood as \emph{index construction}:
+a database does not change its data when an index is built, yet queries get cheaper.
+Each training question's verified reasoning path is materialized into structure---a
+multi-hop chain becomes a traversable link path, a scattered family of facts becomes a
+navigation node---so future readers pay a lookup price instead of a re-derivation
+price. Training cost is thereby amortized: after a computable number of questions, the
+one-time cost of curation is repaid by per-question savings.
+
+\textbf{Contributions.}
+\begin{enumerate}
+\item A \textbf{train/test protocol for knowledge bases}: two-phase training
+iterations (forward answer, backward consolidation), single-shot gold reveal,
+frozen-store examination under action budgets, and a three-layer generalization
+decomposition (re-encountered instances / unseen instances / unseen templates).
+\item \textbf{\kbgym}, a contamination-free environment in the PhantomWiki
+style~\cite{phantomwiki}: a fictional-person universe rendered as a graph of atomic
+statement nodes; ten diagnostic question classes (forward chains, aggregation,
+multi-constraint joins, set intersection, comparison, reverse lookup, unanswerable)
+with exact answers and support sets; deterministic, integer-exact store metrics; no
+LLM judge anywhere.
+\item A \textbf{controlled negative result}: on a pre-organized store, additive
+curation monotonically pollutes---duplicated facts compete in retrieval and bury each
+other---establishing that curation requires an explicit \emph{parsimony} objective.
+\item \textbf{Cost as a first-class outcome}: accuracy, store size, training cost, and
+per-question answering cost (steps) reported together, with a break-even analysis.
+\end{enumerate}
+
+\section{Related Work}
+\subsection{Agent-Maintained Knowledge Bases}
+Self-evolving LLM-wiki retrieval~\cite{llmwiki-rar} has a single agent write and
+update wiki pages during question answering, outperforming static RAG on multi-hop
+benchmarks; streaming knowledge compilation~\cite{llmwiki-stream} maintains a
+time-evolving wiki under a document stream. Both evaluate downstream task scores only:
+the wiki itself is never measured, there is no train/test split, and the evaluation
+corpora (HotpotQA, MuSiQue) are parametrically contaminated. Our protocol adds the
+missing measurement layer.
+
+\subsection{Agentic Retrieval}
+Agentic RAG moves retrieval into the reasoning loop: IRCoT interleaves
+chain-of-thought with retrieval~\cite{ircot}, Self-RAG learns when to retrieve and how
+to judge what returns~\cite{selfrag}, and recent systems frame the retrieve-or-reason
+decision as an MDP or train the search policy with RL (surveyed
+in~\cite{agentic-rag-survey}). Our reader \emph{is} an agentic-RAG loop---budgeted
+iterative search-and-read. The distinction is which side of the loop learns: that line
+improves the \emph{query-side policy} against a fixed corpus; we hold the policy fixed
+and train the \emph{store}. The axes are orthogonal and composable; our budget sweep
+measures exactly what a better store buys an unchanged agentic reader.
+
+\subsection{Offline Structure Construction}
+GraphRAG~\cite{graphrag}, RAPTOR~\cite{raptor}, and HippoRAG~2~\cite{hipporag2} build
+entity graphs, summary hierarchies, or PageRank-linked knowledge graphs over a corpus
+\emph{before} any question arrives. These are our strongest baselines and the natural
+contrast: their structure is unsupervised and built blind to the query distribution;
+ours is carved incrementally by the questions actually asked.
+
+\subsection{Experience Accumulation and Memory Evaluation}
+ACE~\cite{ace} evolves a strategy playbook from task feedback; agentic-memory systems
+accumulate linked notes~\cite{amem}. The artifact there is a prompt or private memory;
+ours is a shared, inspectable store with ground-truth-checkable content. On the
+evaluation side, LongMemEval and successors probe assistant memory with QA, typically
+via LLM judges~\cite{longmemeval}; MemDelta documents hidden confounds and argues for
+controlled baselines~\cite{memdelta}, supporting our no-store baseline discipline.
+PhantomWiki~\cite{phantomwiki} generates contamination-free fictional universes with
+programmatically exact answers; our generator follows its recipe.
+
+\section{Problem Formulation}
+A knowledge base $K$ is a directed graph of \emph{statement nodes}: each node holds
+one self-contained sentence and a set of outgoing links. The \emph{reader} is a fixed
+LLM policy with three tools---vector \texttt{search}, node \texttt{read} (text plus
+linked nodes), and \texttt{answer}---a fixed action budget $M$, and a short-term
+memory holding only the current question and the last $k$ action--result pairs.
+Reader performance on a question distribution $Q$ defines store quality along two
+axes:
+\begin{align*}
+\mathrm{acc}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{F1}\big(\mathrm{reader}(K,q)\big)\right],\\
+\mathrm{cost}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{steps}\big(\mathrm{reader}(K,q)\big)\right].
+\end{align*}
+\emph{Training} is any procedure that consumes supervised pairs $(q, a^{*})$ and edits
+$K$. Our central hypothesis: training reduces $\mathrm{cost}$ while keeping
+$\mathrm{acc}$ non-inferior. The correspondence to supervised learning is exact: the
+store configuration is the parameter vector, one training iteration is one
+optimization step, the training agent is the optimizer, and held-out reader
+performance is the loss. Because training-agent forward passes and test readers use
+identical tools, budgets, and the single-shot answer rule, the train/test
+generalization gap is well defined.
+
+\section{The \kbgym{} Environment}
+\subsection{Universe and Store}
+A generator in the PhantomWiki style samples a fictional population (500 people in
+the main configuration): family trees, spouses, friendships, per-person attributes
+(job, hobby, city), globally distinct birthdates, and \emph{name distractors}---extra
+people sharing first names with questioned subjects. Facts render through fixed
+templates into $\sim$5{,}900 atomic statements (``Alice Johnson's job is
+arborist.''). The initial store is one node per statement with \emph{zero links}: a
+bag of atomic facts. Node embeddings back \texttt{search} and are maintained
+automatically as nodes are added, edited, or deleted.
+
+\subsection{Actions}
+Reader and training-forward mode: \texttt{search(query)} (top-$k$ node ids with full
+text), \texttt{read(id)} (text plus links, each with target text),
+\texttt{answer(text)}. Training consolidation adds: \texttt{add(text)},
+\texttt{edit(id,text)}, \texttt{delete(id)}, \texttt{link(a,b)},
+\texttt{unlink(a,b)}, \texttt{done()}. Provenance is tracked throughout: initial
+nodes carry an origin; edited nodes are flagged; authored nodes have no origin.
+Coverage and duplication are integer-exact; any authored content is attributable.
+
+\subsection{Question Classes and Splits}
+Ten categories over $\sim$26 templates. \emph{Forward} classes QC1--QC3 (1--3-hop
+named-entity chains) are natively easy for statement-level retrieval and serve as the
+non-inferiority floor. \emph{Hard} classes target relations \emph{between}
+statements: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint joins
+without a name anchor (QC6), set intersection (QC7), comparison/superlatives over
+birthdates (QC9), and reverse lookup with a uniqueness guarantee (QC10). Golds are
+computed by graph traversal over the fact layer; every question carries template id,
+gold variants, and its support set. Splits (instance-disjoint): \texttt{train} (150;
+i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} (100; unseen instances of
+trained templates), \texttt{test\_out} (50; one reserved template per category),
+\texttt{eval} (30; stratified, drives the per-epoch learning curve so the final test
+is touched exactly once). Grading is SQuAD-normalized F1/EM.
+
+\section{Training Protocol}
+Per question, per epoch:
+\textbf{Phase 1 (forward, budget $N_1{=}15$)}: search/read, then \emph{one}
+\texttt{answer}; its result reveals gold and F1; the phase ends immediately.
+\textbf{Phase 2 (consolidate, budget $N_2{=}15$)}: with gold, verdict, and the full
+Phase-1 trajectory in short-term memory, the agent repairs and reorganizes; ends on
+\texttt{done()} or budget exhaustion. Embeddings refresh at iteration end; the store
+snapshots per epoch, and every intermediate state is reconstructible by replaying the
+edit trace.
+
+The training agent's objectives, stated as goals (mechanisms are its choice):
+(1)~answer correctly; (2)~consolidate verified reasoning into structure; (3)~organize
+for the question's \emph{class}---build or extend index/navigation nodes so unseen
+instances of the class resolve in fewer steps; (4)~keep the store
+\emph{parsimonious}: duplicated facts compete in search and bury each other; delete
+redundancy you create; if the store already serves the class, change nothing.
+Objective~(4) was added after the negative result of
+Section~\ref{sec:prelim}. Credit assignment needs no oracle: a wrong answer plus the
+revealed gold lets the agent re-search \emph{with the answer in hand}, and the repair
+is determined by the trajectory difference.
+
+\section{Evaluation Design}
+Four headline outcomes per condition: \textbf{accuracy} (F1 on \texttt{test\_in} /
+\texttt{test\_out}, frozen store, tested once); \textbf{store size} (nodes, links,
+statement tokens, authored/edited/duplicated counts); \textbf{training cost} (total
+tokens); \textbf{answering cost} (mean steps per question; tokens as secondary).
+Efficiency is additionally read from an \emph{accuracy--budget curve}: readers run at
+$M \in \{8, 15\}$; an organized store should dominate at tight budgets. The
+\emph{break-even point} divides total training cost by per-question savings.
+
+Baselines differ only in how the store is prepared, under an identical reader, test
+sets, and budgets: \textbf{B1} flat store (= epoch~0); \textbf{B3} GraphRAG-style
+offline structuring~\cite{graphrag}; \textbf{B5} HippoRAG-2-style KG
+layer~\cite{hipporag2} (structure adapted to our store format; one-time build cost
+reported alongside).
+
+\section{Preliminary Results}\label{sec:prelim}
+\emph{Obtained on an earlier document-store variant of the environment (multi-statement
+documents, copy/move actions) with gpt-5-mini, 120-person universe, 150 train
+questions $\times$ 2 epochs; to be re-established on the final statement-graph
+environment.}
+
+\subsection{A Pre-Organized Store Leaves No Headroom}
+With one clean document per person, the untrained reader already scores 0.82
+(\texttt{test\_in}) / 0.96 (\texttt{test\_out}): per-entity documents plus vector
+search \emph{are} the optimal organization for entity-centric questions. Headroom for
+accuracy requires genuine disorganization---our final design initializes at the
+atomic-statement level---while \emph{cost} headroom persists even at accuracy
+ceilings, which is one reason efficiency is our primary endpoint.
+
+\subsection{Additive Curation Pollutes}\label{sec:pollution}
+Table~\ref{tab:pollution} shows the entity-initialized condition. Training an
+already-organized store \emph{regressed} the reader at both budgets. The mechanism is
+integer-exact in the provenance ledger: over 300 iterations the agent grew the store
+from 120 to 593 documents, duplicated 381 of 1{,}184 facts, added 1{,}430 links---and
+never invoked \texttt{move} or \texttt{delete}. Near-duplicate pages competed in
+retrieval and buried each other; readers exhausted budgets wandering (27 question-level
+regressions vs.\ 3 improvements). Curation with a consolidation objective but no
+parsimony objective is monotone pollution.
+
+\begin{table}[t]
+\caption{Entity-initialized condition (preliminary): additive curation regresses the
+reader. 100/50 questions per split.}
+\label{tab:pollution}
+\centering
+\begin{tabular}{llccc}
+\toprule
+Budget & Store & test\_in F1 & test\_out F1 & steps/q \\
+\midrule
+$M{=}15$ & untrained (120 docs) & 0.820 & 0.960 & 7.6 \\
+         & trained (593 docs)   & \textbf{0.650} & \textbf{0.820} & 8.9 \\
+\midrule
+$M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
+         & trained              & \textbf{0.320} & \textbf{0.460} & 4.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Main-Condition Results}
+\todo{fill from the v10L (500-person, statement-graph, parsimony protocol) run:
+learning curve; final test\_in/test\_out accuracy and steps, trained vs.\ untrained,
+at $M{=}15$ and $M{=}8$; per-class breakdown; store trajectory; break-even point;
+baseline table.}
+
+\section{Discussion and Limitations}
+Finding~\ref{sec:pollution} suggests the thesis is a boundary, not a slogan: curation
+creates value where organization is lacking and pollution where it is not, and the
+difference is carried by whether the optimizer knows when \emph{not} to edit. The
+train/test protocol makes this boundary measurable; downstream-only evaluation cannot
+see a store being slowly ruined while individual answers still look fine.
+Limitations: single training agent (concurrent maintenance is the natural sequel);
+one universe family at full diagnostic depth (external validity delegated to a
+planned official-PhantomWiki arm); a single model family; single seed in the basic
+version.
+
+\begin{thebibliography}{00}
+\bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
+via LLM-wiki, arXiv:2605.25480, 2026.
+\bibitem{llmwiki-stream} Streaming knowledge compilation: proactive
+materiality-scored pinning for time-evolving LLM wikis, arXiv:2606.09877, 2026.
+\bibitem{karpathy-llmwiki} A.~Karpathy, ``llm-wiki,'' public note, Apr.\ 2026.
+\bibitem{graphrag} D.~Edge \emph{et al.}, ``From local to global: a GraphRAG approach
+to query-focused summarization,'' arXiv:2404.16130, 2024.
+\bibitem{raptor} P.~Sarthi \emph{et al.}, ``RAPTOR: recursive abstractive processing
+for tree-organized retrieval,'' ICLR, 2024.
+\bibitem{hipporag2} B.~Guti\'errez \emph{et al.}, ``From RAG to memory:
+non-parametric continual learning for LLMs,'' ICML, 2025.
+\bibitem{ace} ``Agentic context engineering: evolving contexts for self-improving
+language models,'' ICLR, 2026.
+\bibitem{phantomwiki} A.~Gong \emph{et al.}, ``PhantomWiki: on-demand datasets for
+reasoning and retrieval evaluation,'' ICML, 2025.
+\bibitem{ircot} H.~Trivedi \emph{et al.}, ``Interleaving retrieval with
+chain-of-thought reasoning for knowledge-intensive multi-step questions,'' ACL, 2023.
+\bibitem{selfrag} A.~Asai \emph{et al.}, ``Self-RAG: learning to retrieve, generate,
+and critique through self-reflection,'' ICLR, 2024.
+\bibitem{agentic-rag-survey} ``Reasoning RAG via system 1 or system 2: a survey on
+reasoning agentic retrieval-augmented generation,'' arXiv:2506.10408, 2025.
+\bibitem{amem} W.~Xu \emph{et al.}, ``A-MEM: agentic memory for LLM agents,''
+arXiv:2502.12110, 2025.
+\bibitem{longmemeval} D.~Wu \emph{et al.}, ``LongMemEval: benchmarking chat
+assistants on long-term interactive memory,'' ICLR, 2025; and LongMemEval-V2,
+arXiv:2605.12493, 2026.
+\bibitem{memdelta} ``MemDelta: controlled baselines and hidden confounds in agent
+memory evaluation,'' arXiv:2606.29914, 2026.
+\bibitem{letta-sleep} Letta, ``Sleep-time compute,'' 2025.
+\end{thebibliography}
+
+\end{document}
