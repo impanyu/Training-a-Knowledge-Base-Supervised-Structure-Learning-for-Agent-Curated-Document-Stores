@@ -5,7 +5,9 @@ embeddings)."""
 import json
 
 import kb.report as report_mod
+import kb.test as kbtest_mod
 from kb.loops import run_test, run_training
+from kb.policy import ScriptedPolicy
 from kb.recorder import RunLog
 from kb.report import build_report
 from kb.store import Store
@@ -114,6 +116,34 @@ def test_snapshots_are_loadable_and_frozen_kb_examinable(tmp_path):
     s4, _ = load_kb(tmp_path / "universe.json",
                     embedding_function=HashEmbedding())
     assert s4.stats()["created_docs"] == 0
+
+
+def test_scattered_universe_drives_the_same_pipeline(tmp_path):
+    u = mini_universe(init="scattered")
+    store = mini_store(u)
+    assert all(d.summary.startswith("Mixed notes (") for d in store.docs.values())
+    log = RunLog(tmp_path)
+    rows = run_test(store, DrivePolicy(), u, "test_out", log, epoch=0, limit=2)
+    assert len(rows) == 2
+    log.close()
+
+
+def test_kb_test_cli_records_budget_m(tmp_path, monkeypatch):
+    u = mini_universe()
+    store = mini_store(u)
+    monkeypatch.setattr(kbtest_mod, "load_kb",
+                        lambda kb, universe=None: (store, u))
+    monkeypatch.setattr(kbtest_mod, "make_policy",
+                        lambda model: ScriptedPolicy([]))   # never answers
+    out = tmp_path / "t"
+    kbtest_mod.main(["--kb", "snap.json", "--split", "test_out",
+                     "--m", "4", "--out", str(out)])
+    meta = json.loads((out / "test_meta.json").read_text())
+    assert meta["m"] == 4 and meta["split"] == "test_out"   # budget recorded
+    rows = [json.loads(l)
+            for l in (out / "test_log.jsonl").read_text().splitlines()]
+    assert len(rows) == len(u.splits["test_out"])
+    assert all(r["steps"] == 4 and r["status"] == "unanswered" for r in rows)
 
 
 def test_report_cli_writes_report_json(tmp_path, capsys):

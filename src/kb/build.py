@@ -5,8 +5,24 @@ Entities: n_people fictional persons in small family trees (2-3 generations,
 spouse links, <=3 children per couple) plus Erdos-Renyi friendships; job /
 hobby / city attributes from fixed vocabularies. Facts render into
 self-contained, pronoun-free statements; relations render one statement per
-endpoint doc (two distinct origins, intentionally). Initial store: one doc
-per person, zero links.
+endpoint doc (two distinct origins, intentionally). Zero links either way.
+
+Two initializations (T39.2 — the entity init is already near-optimal
+organization, leaving training no headroom):
+- `entity` (default): one doc per person.
+- `scattered`: the SAME statements distributed into mixed "notebook" docs of
+  4-8 statements from different people (locality knob: 30% chance
+  consecutive statements share a person), doc count ~ n_statements/6,
+  generic summaries ("Mixed notes (7 statements).") that never enumerate
+  the people inside. Arrangement uses its own derived rng, so questions,
+  golds, splits and statements are IDENTICAL to the entity init at the
+  same seed — only the doc arrangement differs.
+
+Name distractors (T39.2): a fraction `distractors` of extra people whose
+FIRST names collide with real subjects but whose full names never equal a
+questioned person's; they get attribute statements in the store and are
+never asked about — naive retrieval precision degrades, gold validity
+doesn't.
 
 Two-level split scheme: 5 CATEGORIES (QC1-5), 15 concrete TEMPLATES.
 train = i.i.d. over the 10 trained templates (all categories represented);
@@ -186,42 +202,111 @@ def _families(rng: random.Random, people: list[Person]) -> None:
                 people[j].friends.append(i)
 
 
-def _docs_and_index(people: list[Person], summarizer) -> tuple[list[dict], dict]:
-    """One doc per person, zero links. Returns (docs, sid index) where the
-    index maps fact keys to origin sids for support-set bookkeeping."""
+def _distractors(rng: random.Random, people: list[Person], frac: float) -> list[Person]:
+    """Extra people whose FIRST names collide with real subjects; their full
+    names never equal a real person's, so full-name questions stay unique."""
+    n = round(len(people) * frac)
+    if n <= 0:
+        return []
+    firsts = sorted({p.name.split()[0] for p in people})
+    taken = {p.name for p in people}
+    extras, pid = [], len(people)
+    while len(extras) < n:
+        f = rng.choice(firsts)
+        name = f"{f} {rng.choice(LAST)}"
+        if name in taken:
+            continue
+        taken.add(name)
+        extras.append(Person(pid, name, "m" if f in FIRST_M else "f",
+                             rng.choice(JOBS), rng.choice(HOBBIES),
+                             rng.choice(CITIES)))
+        pid += 1
+    return extras
+
+
+def _statement_groups(people: list[Person],
+                      extras: list[Person]) -> tuple[list, dict]:
+    """Per-person statement groups (real people first, then distractors, sid
+    order fixed) + the fact-key -> origin-sid index for support bookkeeping.
+    Arrangement into docs is a separate, init-dependent step."""
     by = {p.pid: p for p in people}
-    docs, index = [], {}
+    groups, index = [], {}
     sid_n = 0
 
-    def _sid():
+    def _add(stmts, key, text):
         nonlocal sid_n
         sid_n += 1
-        return f"s{sid_n:04d}"
+        sid = f"s{sid_n:04d}"
+        stmts.append({"sid": sid, "text": text, "origin": sid})
+        index[key] = sid
 
     for p in people:
         stmts = []
-
-        def _add(key, text):
-            sid = _sid()
-            stmts.append({"sid": sid, "text": text, "origin": sid})
-            index[key] = sid
-
-        _add(("attr", p.pid, "job"), f"{p.name}'s job is {p.job}.")
-        _add(("attr", p.pid, "hobby"), f"{p.name}'s hobby is {p.hobby}.")
-        _add(("attr", p.pid, "city"), f"{p.name} lives in the city of {p.city}.")
+        _add(stmts, ("attr", p.pid, "job"), f"{p.name}'s job is {p.job}.")
+        _add(stmts, ("attr", p.pid, "hobby"), f"{p.name}'s hobby is {p.hobby}.")
+        _add(stmts, ("attr", p.pid, "city"), f"{p.name} lives in the city of {p.city}.")
         if p.spouse is not None:
-            _add(("married", p.pid), f"{p.name} is married to {by[p.spouse].name}.")
+            _add(stmts, ("married", p.pid), f"{p.name} is married to {by[p.spouse].name}.")
         for par in sorted(p.parents):
-            _add(("childof", p.pid, par), f"{p.name} is a child of {by[par].name}.")
+            _add(stmts, ("childof", p.pid, par), f"{p.name} is a child of {by[par].name}.")
         for c in p.children:
             role = "father" if p.gender == "m" else "mother"
-            _add(("parentof", p.pid, c), f"{p.name} is the {role} of {by[c].name}.")
+            _add(stmts, ("parentof", p.pid, c), f"{p.name} is the {role} of {by[c].name}.")
         for fr in sorted(p.friends):
-            _add(("friend", p.pid, fr), f"{p.name} is a friend of {by[fr].name}.")
-        docs.append({"id": f"d{p.pid + 1:03d}",
-                     "summary": summarizer.summarize([s["text"] for s in stmts]),
-                     "statements": stmts, "links": []})
-    return docs, index
+            _add(stmts, ("friend", p.pid, fr), f"{p.name} is a friend of {by[fr].name}.")
+        groups.append((p, stmts))
+    for p in extras:
+        stmts = []
+        _add(stmts, ("attr", p.pid, "job"), f"{p.name}'s job is {p.job}.")
+        _add(stmts, ("attr", p.pid, "hobby"), f"{p.name}'s hobby is {p.hobby}.")
+        _add(stmts, ("attr", p.pid, "city"), f"{p.name} lives in the city of {p.city}.")
+        groups.append((p, stmts))
+    return groups, index
+
+
+def _arrange_entity(groups: list, summarizer) -> list[dict]:
+    """One doc per person, zero links — the near-optimal organization."""
+    return [{"id": f"d{i + 1:03d}",
+             "summary": summarizer.summarize([s["text"] for s in stmts]),
+             "statements": stmts, "links": []}
+            for i, (_, stmts) in enumerate(groups)]
+
+
+LOCALITY = 0.30                # P(next scattered statement shares its person)
+
+
+def _arrange_scattered(groups: list, seed: int, summarizer=None) -> list[dict]:
+    """The SAME statements in mixed notebook docs of 4-8, ~n_statements/6
+    docs. Uses its own derived rng so the main stream (and therefore the
+    questions/golds/splits) is identical to the entity init. Summaries stay
+    generic — naming the people inside would gift retrieval the organization
+    training is supposed to earn — unless an explicit (LLM) summarizer was
+    passed."""
+    arr = random.Random(seed * 7919 + 13)
+    remaining = {p.pid: list(stmts) for p, stmts in groups if stmts}
+    order, cur = [], None
+    while remaining:
+        if not (cur in remaining and arr.random() < LOCALITY):
+            cur = arr.choice(sorted(remaining))
+        order.append(remaining[cur].pop(0))
+        if not remaining[cur]:
+            del remaining[cur]
+    chunks, i = [], 0
+    while i < len(order):
+        size = arr.randint(4, 8)
+        chunks.append(order[i:i + size])
+        i += size
+    if len(chunks) > 1 and len(chunks[-1]) < 4:      # fold a tiny tail in
+        tail = chunks.pop()
+        chunks[-1].extend(tail)
+    docs = []
+    for j, chunk in enumerate(chunks):
+        texts = [s["text"] for s in chunk]
+        summary = (summarizer.summarize(texts) if summarizer is not None
+                   else f"Mixed notes ({len(chunk)} statements).")
+        docs.append({"id": f"d{j + 1:03d}", "summary": summary,
+                     "statements": chunk, "links": []})
+    return docs
 
 
 # ---------------- question templates ----------------
@@ -399,12 +484,23 @@ def _take(pools: dict[str, list], templates: list[str], n: int) -> list[tuple[st
 def build_universe(seed: int = 0, n_people: int = 120,
                    sizes: tuple[int, int, int] = (150, 100, 50),
                    eval_sizes: tuple[int, int] = (20, 10),
-                   summarizer=None) -> Universe:
+                   summarizer=None, init: str = "entity",
+                   distractors: float = 0.15) -> Universe:
+    if init not in ("entity", "scattered"):
+        raise ValueError(f"unknown init {init}")
     rng = random.Random(seed)
+    custom_summarizer = summarizer
     summarizer = summarizer or TemplateSummarizer()
     people = _people(rng, n_people)
     _families(rng, people)
-    docs, idx = _docs_and_index(people, summarizer)
+    extras = _distractors(rng, people, distractors)
+    groups, idx = _statement_groups(people, extras)
+    # arrangement never touches `rng`, so questions/golds/splits below are
+    # identical across inits at the same seed
+    if init == "scattered":
+        docs = _arrange_scattered(groups, seed, custom_summarizer)
+    else:
+        docs = _arrange_entity(groups, summarizer)
 
     pools = {t: _instances(t, people, idx) for t in TEMPLATES}
     for t in TEMPLATES:
@@ -439,7 +535,8 @@ def build_universe(seed: int = 0, n_people: int = 120,
         splits["eval"].append(qid)
 
     meta = {"seed": seed, "n_people": n_people, "sizes": list(sizes),
-            "eval_sizes": list(eval_sizes),
+            "eval_sizes": list(eval_sizes), "init": init,
+            "distractors": distractors, "n_distractors": len(extras),
             "build_tokens": {"in": summarizer.tokens_in,
                              "out": summarizer.tokens_out}}
     vocab = {"jobs": JOBS, "hobbies": HOBBIES, "cities": CITIES,
@@ -459,6 +556,12 @@ def main(argv: list[str] | None = None) -> None:
                     help="eval-split questions from trained templates")
     ap.add_argument("--eval-out", type=int, default=10,
                     help="eval-split questions from reserved templates")
+    ap.add_argument("--init", choices=["entity", "scattered"], default="entity",
+                    help="doc arrangement: one doc per person, or mixed "
+                         "notebook docs of 4-8 statements")
+    ap.add_argument("--distractors", type=float, default=0.15,
+                    help="fraction of extra first-name-colliding people whose "
+                         "statements pad the store but are never asked about")
     ap.add_argument("--out", required=True)
     ap.add_argument("--summarize", action="store_true",
                     help="generate build-time summaries with the LLM summarizer "
@@ -472,11 +575,14 @@ def main(argv: list[str] | None = None) -> None:
         summarizer = LLMSummarizer(args.model)
     u = build_universe(args.seed, args.people,
                        (args.train, args.test_in, args.test_out),
-                       (args.eval_in, args.eval_out), summarizer)
+                       (args.eval_in, args.eval_out), summarizer,
+                       args.init, args.distractors)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     u.save(out / "universe.json")
     print(json.dumps({"people": args.people,
+                      "init": args.init,
+                      "distractors": u.meta["n_distractors"],
                       "docs": len(u.docs),
                       "statements": sum(len(d["statements"]) for d in u.docs),
                       "questions": len(u.questions),

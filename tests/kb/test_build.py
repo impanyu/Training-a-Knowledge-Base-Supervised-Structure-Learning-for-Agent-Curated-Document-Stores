@@ -71,7 +71,9 @@ def test_train_covers_all_categories_test_out_only_reserved():
 
 def test_initial_store_shape():
     u = mini_universe()
-    assert len(u.docs) == 12                      # one doc per person
+    # one doc per person, incl. round(0.15 * 12) = 2 default distractors
+    assert len(u.docs) == 14
+    assert u.meta["n_distractors"] == 2
     assert all(d["links"] == [] for d in u.docs)  # zero links
     assert all(d["summary"].startswith("Facts about ") for d in u.docs)
     sids = [st["sid"] for d in u.docs for st in d["statements"]]
@@ -134,6 +136,68 @@ def test_relations_render_one_statement_per_endpoint():
     assert f"{b} is married to {a}." in texts     # mirrored, distinct origin
 
 
+def _subject(text: str) -> str:
+    return " ".join(text.split()[:2]).removesuffix("'s")
+
+
+def test_scattered_same_universe_different_arrangement():
+    e = build_universe(0, 60)
+    s = build_universe(0, 60, init="scattered")
+    # ONLY the doc arrangement differs: questions, golds, splits and the
+    # statement set (sids, texts, origins) are identical at the same seed
+    assert e.to_json()["questions"] == s.to_json()["questions"]
+    assert e.splits == s.splits
+    trip = lambda u: sorted((st["sid"], st["text"], st["origin"])
+                            for d in u.docs for st in d["statements"])
+    assert trip(e) == trip(s)
+    assert [d["id"] for d in e.docs] != [d["id"] for d in s.docs] or \
+        [len(d["statements"]) for d in e.docs] != [len(d["statements"]) for d in s.docs]
+    n = len(trip(s))
+    assert n / 8 <= len(s.docs) <= n / 4          # ~ n_statements / 6 docs
+    assert s.meta["init"] == "scattered" and e.meta["init"] == "entity"
+
+
+def test_scattered_docs_are_mixed_notebooks_with_generic_summaries():
+    s = build_universe(0, 60, init="scattered")
+    names = {_subject(d["statements"][0]["text"])
+             for d in build_universe(0, 60).docs}
+    for d in s.docs:
+        assert 4 <= len(d["statements"]) <= 11    # 4-8 plus one folded tail
+        assert d["summary"] == f"Mixed notes ({len(d['statements'])} statements)."
+        for name in names:                        # never enumerates the people
+            assert name not in d["summary"]
+    mixed = sum(1 for d in s.docs
+                if len({_subject(st["text"]) for st in d["statements"]}) >= 2)
+    assert mixed / len(s.docs) > 0.9              # mixed people, not per-person
+
+
+def test_scattered_has_some_locality_but_is_not_sorted():
+    s = build_universe(0, 120, init="scattered")
+    pairs = same = 0
+    for d in s.docs:
+        ts = [st["text"] for st in d["statements"]]
+        for a, b in zip(ts, ts[1:]):
+            pairs += 1
+            same += _subject(a) == _subject(b)
+    assert 0.15 < same / pairs < 0.45             # ~LOCALITY, not 0, not sorted
+
+
+def test_distractors_collide_on_first_name_only_and_are_never_asked():
+    u = build_universe(0, 120)
+    assert u.meta["n_distractors"] == 18          # round(0.15 * 120)
+    assert len(u.docs) == 138
+    subjects = [_subject(d["statements"][0]["text"]) for d in u.docs]
+    real, extras = subjects[:120], subjects[120:]
+    real_firsts = {n.split()[0] for n in real}
+    for name in extras:
+        assert name not in real                   # full name never collides
+        assert name.split()[0] in real_firsts     # first name always does
+        for q in u.questions.values():
+            assert name not in q.text             # never asked about
+    z = build_universe(0, 120, distractors=0.0)
+    assert len(z.docs) == 120 and z.meta["n_distractors"] == 0
+
+
 def test_universe_json_roundtrip(tmp_path):
     u = mini_universe()
     u.save(tmp_path / "universe.json")
@@ -151,5 +215,6 @@ def test_build_cli_writes_universe(tmp_path, capsys):
     assert u.meta["eval_sizes"] == [3, 2]
     assert u.meta["build_tokens"] == {"in": 0, "out": 0}   # no API by default
     stats = json.loads(capsys.readouterr().out)
-    assert stats["docs"] == 12
+    assert stats["docs"] == 14                    # 12 people + 2 distractors
+    assert stats["init"] == "entity" and stats["distractors"] == 2
     assert "eval" in stats["splits"]

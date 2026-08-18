@@ -54,8 +54,8 @@ class CountingSummarizer:
 
 
 def mini_universe(seed: int = 0, n_people: int = 12,
-                  sizes=(8, 6, 5), eval_sizes=(3, 2)) -> Universe:
-    return build_universe(seed, n_people, sizes, eval_sizes)
+                  sizes=(8, 6, 5), eval_sizes=(3, 2), **kw) -> Universe:
+    return build_universe(seed, n_people, sizes, eval_sizes, **kw)
 
 
 def mini_store(universe: Universe | None = None, summarizer=None) -> Store:
