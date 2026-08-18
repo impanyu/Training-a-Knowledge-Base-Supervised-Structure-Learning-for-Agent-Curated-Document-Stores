@@ -82,14 +82,17 @@ one-time cost of curation is repaid by per-question savings.
 \textbf{Contributions.}
 \begin{enumerate}
 \item \textbf{Agent-trained knowledge bases.} We propose letting an LLM agent
-\emph{train} a document store: for each supervised question it first answers
-from the current store, then---with the revealed gold in hand---\emph{edits
-the store itself} (adding, rewriting, deleting, and linking documents;
-building index and navigation documents) so that the question's class becomes
-easier for a future reader. The knowledge base, not the model, is the learned
-object; its structure is carved incrementally by the questions actually
-asked, unlike offline graph construction that is built blind to the query
-distribution.
+\emph{train} a document store under the standard machine-learning training
+paradigm, with the knowledge base playing the role of the model: supervised
+(question, answer) pairs are consumed one at a time over multiple epochs; each
+iteration runs a forward pass (answer the question from the current store) and
+a backward pass (with the revealed gold in hand, \emph{edit the store
+itself}---adding, rewriting, deleting, and linking documents; building index
+and navigation documents---so the question's class becomes easier for a future
+reader); held-out performance is the loss. The knowledge base, not the model
+weights, is the learned object; its structure is carved incrementally by the
+questions actually asked, unlike offline graph construction built blind to
+the query distribution.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
