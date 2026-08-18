@@ -1,0 +1,38 @@
+[
+ {
+  "title": "Aida Wang",
+  "article": "# Aida Wang\n\n## Family\nThe sisters of Aida Wang are Jeannine Wexler, Vicki Hackworth.\nThe mother of Aida Wang is Shelli Beltran.\nThe husband of Aida Wang is Ryan Wang.\n\n## Friends\nThe friends of Aida Wang are Rae Mcnew, Mose Trent.\n\n## Attributes\nThe date of birth of Aida Wang is 0295-05-30.\nThe occupation of Aida Wang is personal assistant.\nThe hobby of Aida Wang is meditation.\n",
+  "facts": [
+   "sister(\"Aida Wang\", \"Jeannine Wexler\").",
+   "sister(\"Aida Wang\", \"Vicki Hackworth\").",
+   "mother(\"Aida Wang\", \"Shelli Beltran\").",
+   "husband(\"Aida Wang\", \"Ryan Wang\").",
+   "friend(\"Aida Wang\", \"Rae Mcnew\").",
+   "friend(\"Aida Wang\", \"Mose Trent\").",
+   "dob(\"Aida Wang\", \"0295-05-30\").",
+   "job(\"Aida Wang\", \"personal assistant\").",
+   "hobby(\"Aida Wang\", \"meditation\")."
+  ]
+ },
+ {
+  "title": "Ryan Wang",
+  "article": "# Ryan Wang\n\n## Family\nThe wife of Ryan Wang is Aida Wang. The daughter of Ryan Wang is Johnetta Wang.\n\n## Attributes\nThe occupation of Ryan Wang is coroner.\nHe enjoys quiet evenings.\nHis hobby is birdwatching.\nThe gender of this person is male.\n",
+  "facts": [
+   "wife(\"Ryan Wang\", \"Aida Wang\").",
+   "daughter(\"Ryan Wang\", \"Johnetta Wang\").",
+   "job(\"Ryan Wang\", \"coroner\").",
+   "hobby(\"Ryan Wang\", \"birdwatching\")."
+  ]
+ },
+ {
+  "title": "Shelli Beltran",
+  "article": "# Shelli Beltran\n\n## Family\nThe daughters of Shelli Beltran are Aida Wang, Jeannine Wexler, Vicki Hackworth.\n\n## Attributes\nThe occupation of Shelli Beltran is sports administrator.\nThe hobby of Shelli Beltran is dominoes.\n",
+  "facts": [
+   "daughter(\"Shelli Beltran\", \"Aida Wang\").",
+   "daughter(\"Shelli Beltran\", \"Jeannine Wexler\").",
+   "daughter(\"Shelli Beltran\", \"Vicki Hackworth\").",
+   "job(\"Shelli Beltran\", \"sports administrator\").",
+   "hobby(\"Shelli Beltran\", \"dominoes\")."
+  ]
+ }
+]
