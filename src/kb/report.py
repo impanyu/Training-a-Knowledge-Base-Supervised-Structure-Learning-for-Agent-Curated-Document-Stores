@@ -1,10 +1,16 @@
-"""Report over a run directory's logs (spec §8/§11: E1/E2/E3/E5).
+"""Report over a run directory's logs (spec §8/§11: E1/E2/E3/E5; T39.1).
 
 Emits report.json + a printed plain-text table. Headline F1 excludes QC5
 (unanswerable) questions, whose accuracy is reported separately, never
-blended. Train-forward F1 is valid from epoch 2 (epoch 1 trains on a store
-nothing has consolidated yet). Link-vs-support alignment = share of built
-links connecting docs that co-occur in some question's support set."""
+blended. The learning curve is the EVAL split by epoch (flavors eval_in /
+eval_out); test_in/test_out appear as single final points (plus whatever
+baseline passes were appended manually via kb.test). Train-forward F1 is
+valid from epoch 2 (epoch 1 trains on a store nothing has consolidated
+yet). Cost metrics are headline (T39.1): training cost and per-question
+answering cost in both tokens and wall-clock seconds, and KB size incl.
+approximate statement tokens (chars // 4). Link-vs-support alignment =
+share of built links connecting docs that co-occur in some question's
+support set."""
 import argparse
 import json
 import re
@@ -78,10 +84,20 @@ def build_report(run_dir) -> dict:
     if upath and Path(upath).exists():
         universe = Universe.load(upath)
 
-    # E1 learning curve: test scores by epoch x split (epoch 0 = RAG baseline)
+    # E1 learning curve: EVAL split by epoch x flavor (epoch 0 = RAG baseline)
+    eval_rows = [r for r in test_rows if r["split"] == "eval"]
     curve: dict = defaultdict(dict)
-    for (epoch, split), rows in _group(test_rows, lambda r: (r["epoch"], r["split"])).items():
-        curve[epoch][split] = _score_block(rows)
+    for (epoch, flavor), rows in _group(eval_rows,
+                                        lambda r: (r["epoch"], r["flavor"])).items():
+        curve[epoch][f"eval_{flavor}"] = _score_block(rows)
+
+    # the full test splits: single final point per split (plus any manually
+    # appended baseline pass), keyed by the epoch label kb.test recorded
+    final: dict = defaultdict(dict)
+    for (split, epoch), rows in _group(
+            [r for r in test_rows if r["split"] != "eval"],
+            lambda r: (r["split"], r["epoch"])).items():
+        final[split][epoch] = _score_block(rows)
 
     # E3 three layers: train-forward (valid from epoch 2) + per-class slices
     forward = {epoch: _score_block(rows)
@@ -110,7 +126,23 @@ def build_report(run_dir) -> dict:
               "train": dict(tok["train"]), "test": dict(tok["test"]),
               "train_summarizer": meta.get("summarizer_tokens")}
 
+    # T39.1 headline cost metrics: tokens AND wall-clock, train + per split
+    costs = {"train": _train_cost(train_rows)}
+    for split, rows in _group(test_rows, lambda r: r["split"]).items():
+        costs[split] = _question_cost(rows)
+
+    # KB size from the last kb_stats row (statement_tokens = chars // 4)
+    kb_size = None
+    if kb_stats:
+        last = kb_stats[-1]
+        kb_size = {k: last[k] for k in ("docs", "statements", "links",
+                                        "statement_tokens") if k in last}
+
     return {"learning_curve": {e: dict(s) for e, s in sorted(curve.items())},
+            "final_test": {s: dict(sorted(v.items()))
+                           for s, v in sorted(final.items())},
+            "costs": costs,
+            "kb_size": kb_size,
             "train_forward": {"valid_from_epoch": 2,
                               "by_epoch": dict(sorted(forward.items()))},
             "by_category": {s: dict(v) for s, v in by_category.items()},
@@ -128,16 +160,65 @@ def _group(rows, key):
     return out
 
 
-def render(report: dict) -> str:
-    lines = ["== E1 learning curve (headline F1; QC5 reported separately) =="]
+def _train_cost(rows: list[dict]) -> dict:
+    n = len(rows)
+    tin = sum(r.get("tokens_in", 0) for r in rows)
+    tout = sum(r.get("tokens_out", 0) for r in rows)
+    secs = sum(r.get("seconds", 0.0) for r in rows)
+    return {"iterations": n, "tokens_in": tin, "tokens_out": tout,
+            "seconds": secs,
+            "mean_tokens_per_iteration": (tin + tout) / n if n else 0.0,
+            "mean_seconds_per_iteration": secs / n if n else 0.0}
+
+
+def _question_cost(rows: list[dict]) -> dict:
+    return {"questions": len(rows),
+            "mean_tokens": _mean(r.get("tokens_in", 0) + r.get("tokens_out", 0)
+                                 for r in rows),
+            "mean_seconds": _mean(r.get("seconds", 0.0) for r in rows),
+            "mean_steps": _mean(r["steps"] for r in rows)}
+
+
+def _score_lines(lines, blocks_by_row):
     lines.append(f"{'epoch':>5} {'split':>9} {'n':>4} {'F1':>6} {'EM':>6} "
                  f"{'unansw':>7} {'wrong':>6} {'QC5acc':>7}")
-    for epoch, splits in report["learning_curve"].items():
-        for split, b in sorted(splits.items()):
-            qc5 = "-" if b["unanswerable_acc"] is None else f"{b['unanswerable_acc']:.2f}"
-            lines.append(f"{epoch:>5} {split:>9} {b['n']:>4} {b['f1']:>6.3f} "
-                         f"{b['em']:>6.3f} {b.get('unanswered_rate', 0.0):>7.2f} "
-                         f"{b.get('wrong_rate', 0.0):>6.2f} {qc5:>7}")
+    for epoch, split, b in blocks_by_row:
+        qc5 = "-" if b["unanswerable_acc"] is None else f"{b['unanswerable_acc']:.2f}"
+        lines.append(f"{epoch:>5} {split:>9} {b['n']:>4} {b['f1']:>6.3f} "
+                     f"{b['em']:>6.3f} {b.get('unanswered_rate', 0.0):>7.2f} "
+                     f"{b.get('wrong_rate', 0.0):>6.2f} {qc5:>7}")
+
+
+def render(report: dict) -> str:
+    lines = ["== E1 learning curve: eval split by epoch (headline F1; QC5 "
+             "reported separately) =="]
+    _score_lines(lines, [(e, flavor, b)
+                         for e, flavors in report["learning_curve"].items()
+                         for flavor, b in sorted(flavors.items())])
+    lines.append("\n== E1 final test (full splits, run once via kb.test) ==")
+    if report["final_test"]:
+        _score_lines(lines, [(e, split, b)
+                             for split, by_epoch in report["final_test"].items()
+                             for e, b in by_epoch.items()])
+    else:
+        lines.append("  (no test_in/test_out rows appended yet)")
+    tc = report["costs"]["train"]
+    lines.append("\n== headline costs ==")
+    lines.append(f"  train: {tc['iterations']} iterations | tokens "
+                 f"{tc['tokens_in']}+{tc['tokens_out']} | {tc['seconds']:.1f}s "
+                 f"| per-iteration {tc['mean_tokens_per_iteration']:.0f} tok / "
+                 f"{tc['mean_seconds_per_iteration']:.2f}s")
+    for split, c in sorted(report["costs"].items()):
+        if split == "train":
+            continue
+        lines.append(f"  {split}: {c['questions']} questions | per-question "
+                     f"{c['mean_tokens']:.0f} tok / {c['mean_seconds']:.2f}s / "
+                     f"{c['mean_steps']:.1f} steps")
+    if report["kb_size"]:
+        ks = report["kb_size"]
+        lines.append(f"  kb size: {ks['docs']} docs, {ks['statements']} "
+                     f"statements (~{ks['statement_tokens']} tok), "
+                     f"{ks['links']} links")
     fwd = report["train_forward"]["by_epoch"]
     lines.append("\n== E3 train-forward F1 (valid from epoch 2) ==")
     for epoch, b in fwd.items():
@@ -152,11 +233,14 @@ def render(report: dict) -> str:
                      f"{la['aligned']}/{la['links']} ({la['share']:.2f})")
     lines.append("\n== KB stats trajectory ==")
     for s in report["kb_stats"]:
+        cost = (f" | train {s['train_tokens_in'] + s['train_tokens_out']} tok "
+                f"{s['train_seconds']:.1f}s" if s.get("train_iterations") else "")
         lines.append(f"  epoch {s['epoch']}: docs {s['docs']} stmts "
-                     f"{s['statements']} coverage {s['coverage']:.2f} dup "
+                     f"{s['statements']} (~{s.get('statement_tokens', 0)} tok) "
+                     f"coverage {s['coverage']:.2f} dup "
                      f"{s['dup_origins']} links {s['links']} orphans "
                      f"{s['orphan_docs']} (+{s['created_docs']}/"
-                     f"-{s['deleted_docs']} docs)")
+                     f"-{s['deleted_docs']} docs){cost}")
     t = report["tokens"]
     lines.append(f"\n== E2 tokens == build {t['build']} | train {t['train']} "
                  f"| test {t['test']} | train summarizer {t['train_summarizer']}")

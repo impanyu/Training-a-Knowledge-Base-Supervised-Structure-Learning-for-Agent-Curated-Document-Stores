@@ -15,10 +15,10 @@ def _sid_index(u):
 
 
 def test_deterministic_per_seed():
-    a = build_universe(0, 12, (8, 6, 5)).to_json()
-    b = build_universe(0, 12, (8, 6, 5)).to_json()
+    a = build_universe(0, 12, (8, 6, 5), (3, 2)).to_json()
+    b = build_universe(0, 12, (8, 6, 5), (3, 2)).to_json()
     assert a == b
-    assert build_universe(1, 12, (8, 6, 5)).to_json() != a
+    assert build_universe(1, 12, (8, 6, 5), (3, 2)).to_json() != a
 
 
 def test_two_level_template_scheme():
@@ -33,13 +33,27 @@ def test_two_level_template_scheme():
 def test_splits_disjoint_and_sized():
     u = build_universe(0, 120)
     splits = u.splits
-    all_qids = splits["train"] + splits["test_in"] + splits["test_out"]
-    assert len(all_qids) == len(set(all_qids)) == 300
+    all_qids = (splits["train"] + splits["test_in"] + splits["test_out"]
+                + splits["eval"])
+    assert len(all_qids) == len(set(all_qids)) == 330
     assert (len(splits["train"]), len(splits["test_in"]),
-            len(splits["test_out"])) == (150, 100, 50)
+            len(splits["test_out"]), len(splits["eval"])) == (150, 100, 50, 30)
     # instance-level disjointness: no (template, text) appears twice
     keys = [(u.questions[q].template, u.questions[q].text) for q in all_qids]
     assert len(keys) == len(set(keys))
+
+
+def test_eval_split_flavors_and_template_provenance():
+    u = build_universe(0, 120)
+    ev = [u.questions[q] for q in u.splits["eval"]]
+    ins = [q for q in ev if q.eval_flavor == "in"]
+    outs = [q for q in ev if q.eval_flavor == "out"]
+    assert (len(ins), len(outs)) == (20, 10)
+    assert {q.template for q in ins} <= set(TRAINED)    # sampled like test_in
+    assert {q.template for q in outs} <= set(RESERVED)  # sampled like test_out
+    # only eval questions carry a flavor
+    for split in ("train", "test_in", "test_out"):
+        assert all(u.questions[q].eval_flavor is None for q in u.splits[split])
 
 
 def test_train_covers_all_categories_test_out_only_reserved():
@@ -130,9 +144,12 @@ def test_universe_json_roundtrip(tmp_path):
 
 def test_build_cli_writes_universe(tmp_path, capsys):
     main(["--seed", "0", "--people", "12", "--train", "8", "--test-in", "6",
-          "--test-out", "5", "--out", str(tmp_path)])
+          "--test-out", "5", "--eval-in", "3", "--eval-out", "2",
+          "--out", str(tmp_path)])
     u = Universe.load(tmp_path / "universe.json")
     assert u.meta["seed"] == 0
+    assert u.meta["eval_sizes"] == [3, 2]
     assert u.meta["build_tokens"] == {"in": 0, "out": 0}   # no API by default
     stats = json.loads(capsys.readouterr().out)
     assert stats["docs"] == 12
+    assert "eval" in stats["splits"]

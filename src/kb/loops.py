@@ -11,6 +11,7 @@ Test iteration (budget M, frozen KB): answer() ends it, its result is empty
 ("submitted"), gold never appears; exhaustion -> scored 0 and counted as
 "unanswered" (distinct from answered-wrong)."""
 import random
+import time
 from pathlib import Path
 
 from kb.actions import EDIT_ACTIONS, MODE_TOOLS, dispatch, tools_for
@@ -59,6 +60,8 @@ def _turn(policy, system, mem, remaining, mode):
 
 
 def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
+    t0 = time.perf_counter()
+    tok_in = tok_out = 0
     mem = IterationMemory(k)
     mem.reset(f"TRAIN QUESTION {q.qid} [phase 1: answer it]\n{q.text}")
     answer, answered_at, f1v, emv = None, None, 0.0, 0.0
@@ -76,6 +79,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
         else:
             result = f"ERROR: {d.name} is not available in this phase"
         mem.add(_fmt(d), result)
+        tok_in, tok_out = tok_in + d.in_tokens, tok_out + d.out_tokens
         log.trace({"kind": "train", "epoch": epoch, "qid": q.qid, "phase": 1,
                    "step": step, "action": d.name, "input": d.inp,
                    "result": result, "tokens_in": d.in_tokens,
@@ -104,6 +108,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
         else:
             result = f"ERROR: {d.name} is not available in this phase"
         mem.add(_fmt(d), result)
+        tok_in, tok_out = tok_in + d.in_tokens, tok_out + d.out_tokens
         log.trace({"kind": "train", "epoch": epoch, "qid": q.qid, "phase": 2,
                    "step": step, "action": d.name, "input": d.inp,
                    "result": result, "tokens_in": d.in_tokens,
@@ -115,12 +120,16 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     row = {"epoch": epoch, "qid": q.qid, "template": q.template,
            "category": q.category, "f1": f1v, "em": emv, "answer": answer,
            "answered_at": answered_at, "p1_steps": p1_steps,
-           "p2_steps": p2_steps, "edits": edits, "regens": regens}
+           "p2_steps": p2_steps, "edits": edits, "regens": regens,
+           "tokens_in": tok_in, "tokens_out": tok_out,
+           "seconds": time.perf_counter() - t0}
     log.train(row)
     return row
 
 
 def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
+    t0 = time.perf_counter()
+    tok_in = tok_out = 0
     mem = IterationMemory(k)                     # fresh memory each question
     mem.reset(f"QUESTION {q.qid}\n{q.text}")
     answer, steps = None, 0
@@ -135,6 +144,7 @@ def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
         else:
             result = f"ERROR: {d.name} is not available in this phase"
         mem.add(_fmt(d), result)
+        tok_in, tok_out = tok_in + d.in_tokens, tok_out + d.out_tokens
         log.trace({"kind": "test", "epoch": epoch, "qid": q.qid, "phase": 0,
                    "step": step, "action": d.name, "input": d.inp,
                    "result": result, "tokens_in": d.in_tokens,
@@ -148,8 +158,10 @@ def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
         status = "answered" if emv == 1.0 else "wrong"
 
     row = {"epoch": epoch, "split": split, "qid": q.qid, "template": q.template,
-           "category": q.category, "f1": f1v, "em": emv, "steps": steps,
-           "status": status, "answer": answer}
+           "category": q.category, "flavor": q.eval_flavor, "f1": f1v,
+           "em": emv, "steps": steps, "status": status, "answer": answer,
+           "tokens_in": tok_in, "tokens_out": tok_out,
+           "seconds": time.perf_counter() - t0}
     log.test(row)
     return row
 
@@ -161,28 +173,35 @@ def run_test(store, policy, universe, split, log, epoch=0, m=M, k=K,
                            split, epoch, m, k) for qid in qids]
 
 
-def _log_stats(log, store, epoch):
+def _log_stats(log, store, epoch, train_rows=()):
+    """kb_stats row: store shape (incl. approximate statement_tokens) plus
+    this epoch's training cost — tokens and wall-clock seconds."""
     log.stats({"epoch": epoch, **store.stats(),
                "summarizer_tokens_in": store.summarizer.tokens_in,
-               "summarizer_tokens_out": store.summarizer.tokens_out})
+               "summarizer_tokens_out": store.summarizer.tokens_out,
+               "train_iterations": len(train_rows),
+               "train_tokens_in": sum(r["tokens_in"] for r in train_rows),
+               "train_tokens_out": sum(r["tokens_out"] for r in train_rows),
+               "train_seconds": sum(r["seconds"] for r in train_rows)})
 
 
 def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
                  n1=N1, n2=N2, m=M, k=K, train_size=None,
-                 eval_each_epoch=False, eval_limit=None, test_policy=None,
+                 eval_each_epoch=False, test_policy=None,
                  universe_path=None) -> None:
     """Epoch driver: seeded per-epoch shuffle of the train split, per-epoch KB
     snapshots (epoch 0 = the untrained store = pure RAG baseline), optional
-    test-loop evaluation on both held-out splits after every snapshot."""
+    evaluation on the small EVAL split after every snapshot. Training never
+    touches test_in/test_out (T39.1): the full test runs exactly once, after
+    training, via kb.test on the snapshot of choice."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     test_policy = test_policy or policy
     train_qids = universe.splits["train"][:train_size]
 
     def _eval(epoch):
-        for split in ("test_in", "test_out"):
-            run_test(store, test_policy, universe, split, log, epoch=epoch,
-                     m=m, k=k, limit=eval_limit)
+        run_test(store, test_policy, universe, "eval", log, epoch=epoch,
+                 m=m, k=k)
 
     save_snapshot(store, out / "kb_epoch_0.json", universe_path)
     _log_stats(log, store, 0)
@@ -191,10 +210,9 @@ def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
     for epoch in range(1, epochs + 1):
         order = list(train_qids)
         random.Random(seed * 100003 + epoch).shuffle(order)
-        for qid in order:
-            train_iteration(store, policy, universe.questions[qid], log,
-                            epoch, n1, n2, k)
+        rows = [train_iteration(store, policy, universe.questions[qid], log,
+                                epoch, n1, n2, k) for qid in order]
         save_snapshot(store, out / f"kb_epoch_{epoch}.json", universe_path)
-        _log_stats(log, store, epoch)
+        _log_stats(log, store, epoch, rows)
         if eval_each_epoch:
             _eval(epoch)

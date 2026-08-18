@@ -2,7 +2,10 @@
 
 --kb accepts either a per-epoch snapshot (kb_epoch_N.json, which remembers
 its universe path) or a universe.json directly (= the untrained store, the
-pure RAG baseline)."""
+pure RAG baseline). Logs are opened in append mode, so pointing --out at a
+training run's directory adds the one final test_in/test_out pass next to
+that run's eval learning curve without clobbering it (T39.1 protocol: full
+test exactly once, after training, plus the manual epoch-0 baseline)."""
 import argparse
 import json
 from pathlib import Path
@@ -47,7 +50,7 @@ def main(argv: list[str] | None = None) -> None:
 
     store, universe = load_kb(args.kb, args.universe)
     policy = make_policy(args.model)
-    log = RunLog(args.out)
+    log = RunLog(args.out, append=True)
     splits = ["test_in", "test_out"] if args.split == "both" else [args.split]
     rows = []
     for split in splits:
@@ -57,7 +60,9 @@ def main(argv: list[str] | None = None) -> None:
             "model": args.model, "m": args.m, "limit": args.limit,
             "n_questions": len(rows),
             "tokens": {kind: dict(t) for kind, t in log.tokens.items()}}
-    with open(Path(args.out) / "meta.json", "w") as f:
+    # test_meta.json, NOT meta.json: appending into a train run's directory
+    # must not clobber the training meta the report reads
+    with open(Path(args.out) / "test_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
     log.close()
     print(json.dumps(meta, indent=2))

@@ -1,8 +1,9 @@
 """CLI: train the KB on the train split for N epochs (spec §9).
 
 Training only trains and snapshots; kb.test evaluates any snapshot. The
---eval-each-epoch convenience flag invokes the test loop on both held-out
-splits (with --limit) after the epoch-0 baseline snapshot and every epoch."""
+--eval-each-epoch convenience flag runs the small EVAL split (both flavors)
+after the epoch-0 baseline snapshot and every epoch; test_in/test_out are
+never touched during training (T39.1)."""
 import argparse
 import json
 from pathlib import Path
@@ -25,9 +26,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--n1", type=int, default=N1)
     ap.add_argument("--n2", type=int, default=N2)
     ap.add_argument("--m", type=int, default=M)
-    ap.add_argument("--eval-each-epoch", action="store_true")
-    ap.add_argument("--limit", type=int, default=None,
-                    help="questions per split for --eval-each-epoch")
+    ap.add_argument("--eval-each-epoch", action="store_true",
+                    help="run the eval split after every snapshot")
     ap.add_argument("--summarizer-model", default="gpt-5-mini")
     args = ap.parse_args(argv)
 
@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> None:
     run_training(store, policy, universe, log, args.out, epochs=args.epochs,
                  seed=args.seed, n1=args.n1, n2=args.n2, m=args.m, k=K,
                  train_size=args.train_size,
-                 eval_each_epoch=args.eval_each_epoch, eval_limit=args.limit,
+                 eval_each_epoch=args.eval_each_epoch,
                  universe_path=args.universe)
     meta = {"universe": args.universe, "epochs": args.epochs,
             "seed": args.seed, "model": args.model,

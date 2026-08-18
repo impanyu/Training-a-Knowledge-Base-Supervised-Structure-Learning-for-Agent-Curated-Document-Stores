@@ -11,8 +11,12 @@ per person, zero links.
 Two-level split scheme: 5 CATEGORIES (QC1-5), 15 concrete TEMPLATES.
 train = i.i.d. over the 10 trained templates (all categories represented);
 test_in = unseen instances of trained templates; test_out = the 5 reserved
-templates (1 per category), never used in train. Instance-level disjointness
-everywhere. Deterministic per seed."""
+templates (1 per category), never used in train. A fourth small `eval`
+split (T39.1) drives the per-epoch learning curve so the real test splits
+are touched exactly once, after training: ~20 questions drawn like test_in
+(trained templates, flavor "in") + ~10 drawn like test_out (reserved
+templates, flavor "out"), each question tagged with its flavor.
+Instance-level disjointness everywhere. Deterministic per seed."""
 import argparse
 import json
 import random
@@ -93,6 +97,7 @@ class Question:
     golds: list[str]
     support: list[str]
     unanswerable: bool = False
+    eval_flavor: str | None = None      # "in" | "out" on eval-split questions
 
 
 @dataclass
@@ -393,6 +398,7 @@ def _take(pools: dict[str, list], templates: list[str], n: int) -> list[tuple[st
 
 def build_universe(seed: int = 0, n_people: int = 120,
                    sizes: tuple[int, int, int] = (150, 100, 50),
+                   eval_sizes: tuple[int, int] = (20, 10),
                    summarizer=None) -> Universe:
     rng = random.Random(seed)
     summarizer = summarizer or TemplateSummarizer()
@@ -403,9 +409,13 @@ def build_universe(seed: int = 0, n_people: int = 120,
     pools = {t: _instances(t, people, idx) for t in TEMPLATES}
     for t in TEMPLATES:
         rng.shuffle(pools[t])
+    # eval continues consuming the SAME pools, so it is instance-disjoint
+    # from every other split by construction
     picked = {"train": _take(pools, TRAINED, sizes[0]),
               "test_in": _take(pools, TRAINED, sizes[1]),
               "test_out": _take(pools, RESERVED, sizes[2])}
+    ev = [("in", t, row) for t, row in _take(pools, TRAINED, eval_sizes[0])]
+    ev += [("out", t, row) for t, row in _take(pools, RESERVED, eval_sizes[1])]
 
     questions, splits, qn = {}, {}, 0
     for split, rows in picked.items():
@@ -418,8 +428,18 @@ def build_universe(seed: int = 0, n_people: int = 120,
                                       row["golds"], row["support"],
                                       row.get("unanswerable", False))
             splits[split].append(qid)
+    splits["eval"] = []
+    for flavor, t, row in ev:
+        qn += 1
+        qid = f"q{qn:04d}"
+        cat, hops, _ = TEMPLATES[t]
+        questions[qid] = Question(qid, t, cat, hops, row["text"],
+                                  row["golds"], row["support"],
+                                  row.get("unanswerable", False), flavor)
+        splits["eval"].append(qid)
 
     meta = {"seed": seed, "n_people": n_people, "sizes": list(sizes),
+            "eval_sizes": list(eval_sizes),
             "build_tokens": {"in": summarizer.tokens_in,
                              "out": summarizer.tokens_out}}
     vocab = {"jobs": JOBS, "hobbies": HOBBIES, "cities": CITIES,
@@ -435,6 +455,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--train", type=int, default=150)
     ap.add_argument("--test-in", type=int, default=100)
     ap.add_argument("--test-out", type=int, default=50)
+    ap.add_argument("--eval-in", type=int, default=20,
+                    help="eval-split questions from trained templates")
+    ap.add_argument("--eval-out", type=int, default=10,
+                    help="eval-split questions from reserved templates")
     ap.add_argument("--out", required=True)
     ap.add_argument("--summarize", action="store_true",
                     help="generate build-time summaries with the LLM summarizer "
@@ -447,7 +471,8 @@ def main(argv: list[str] | None = None) -> None:
         from kb.store import LLMSummarizer
         summarizer = LLMSummarizer(args.model)
     u = build_universe(args.seed, args.people,
-                       (args.train, args.test_in, args.test_out), summarizer)
+                       (args.train, args.test_in, args.test_out),
+                       (args.eval_in, args.eval_out), summarizer)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     u.save(out / "universe.json")

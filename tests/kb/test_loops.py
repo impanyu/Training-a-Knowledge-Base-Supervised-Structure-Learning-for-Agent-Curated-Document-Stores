@@ -186,6 +186,39 @@ def test_run_test_respects_limit_and_split():
 
 # ---------------- epoch driver ----------------
 
+def test_eval_each_epoch_touches_only_the_eval_split(tmp_path):
+    store, log = mini_store(U), ListLog()
+    run_training(store, DrivePolicy(), U, log, tmp_path, epochs=1, seed=0,
+                 train_size=2, eval_each_epoch=True)
+    rows = log.rows["test"]
+    assert rows
+    assert {r["split"] for r in rows} == {"eval"}          # never test_in/out
+    assert {r["epoch"] for r in rows} == {0, 1}            # baseline + epoch 1
+    assert {r["flavor"] for r in rows} == {"in", "out"}    # both flavors
+    per_epoch = [r for r in rows if r["epoch"] == 1]
+    assert len(per_epoch) == len(U.splits["eval"])         # whole split, no limit
+
+
+def test_cost_fields_on_rows_and_kb_stats(tmp_path):
+    store, log = mini_store(U), ListLog()
+    pol = DrivePolicy(in_tokens=7, out_tokens=3)
+    run_training(store, pol, U, log, tmp_path, epochs=1, seed=0,
+                 train_size=2, eval_each_epoch=True)
+    for r in log.rows["train"]:
+        # DrivePolicy: 2 forward turns + 2 backprop turns = 4 decisions
+        assert r["tokens_in"] == 28 and r["tokens_out"] == 12
+        assert r["seconds"] > 0
+    for r in log.rows["test"]:
+        assert r["tokens_in"] == 14 and r["tokens_out"] == 6   # 2 turns
+        assert r["seconds"] > 0
+    e0, e1 = log.rows["stats"]
+    assert e0["train_iterations"] == 0 and e0["train_seconds"] == 0
+    assert e1["train_iterations"] == 2
+    assert e1["train_tokens_in"] == 56 and e1["train_tokens_out"] == 24
+    assert e1["train_seconds"] > 0
+    assert e1["statement_tokens"] > 0          # approximate KB size in tokens
+
+
 def test_epoch_shuffle_is_seeded_and_snapshots_written(tmp_path):
     store, log = mini_store(U), ListLog()
     run_training(store, DrivePolicy(), U, log, tmp_path, epochs=2, seed=0,

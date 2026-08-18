@@ -16,10 +16,14 @@ _FILES = ("trace", "train_log", "test_log", "kb_stats")
 
 
 class RunLog:
-    def __init__(self, out_dir):
+    def __init__(self, out_dir, append: bool = False):
+        """append=True adds to existing logs instead of truncating them —
+        how kb.test writes the one final test_in/test_out pass into a train
+        run's directory without clobbering its eval learning curve."""
         self.dir = Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self._f = {name: open(self.dir / f"{name}.jsonl", "w") for name in _FILES}
+        mode = "a" if append else "w"
+        self._f = {name: open(self.dir / f"{name}.jsonl", mode) for name in _FILES}
         self.tokens = defaultdict(lambda: {"in": 0, "out": 0})
 
     def _write(self, name: str, row: dict) -> None:

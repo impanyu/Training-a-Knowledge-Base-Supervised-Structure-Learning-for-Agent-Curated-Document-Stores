@@ -337,6 +337,10 @@ class Store:
             "coverage": alive / len(self.origins) if self.origins else 0.0,
             "dup_origins": sum(1 for o in self.origins if counts.get(o, 0) > 1),
             "links": sum(len(d.links) for d in self.docs.values()),
+            # approximate token count of all live statement text: total
+            # chars // 4 (the usual ~4-chars-per-token heuristic; no tiktoken)
+            "statement_tokens": sum(len(st.text) for d in self.docs.values()
+                                    for st in d.statements) // 4,
             "orphan_docs": orphans,
             "created_docs": self.created_docs,
             "deleted_docs": self.deleted_docs,
