@@ -40,7 +40,7 @@ amortizing one-time training cost across all future queries. The protocol yields
 full apparatus of machine learning for knowledge bases: learning curves, a train/test
 generalization gap, per-class transfer, and a break-even analysis of training cost
 against per-question savings. On a contamination-free synthetic universe with
-statement-level ground truth, our first controlled result is cautionary: on an
+document-level ground truth, our first controlled result is cautionary: on an
 already-organized store, additive curation without a parsimony objective is net
 harmful---the agent quintupled the store and \emph{regressed} reader accuracy by 17
 F1 points---motivating the explicit parsimony objective in our final protocol.
@@ -87,7 +87,7 @@ frozen-store examination under action budgets, and a three-layer generalization
 decomposition (re-encountered instances / unseen instances / unseen templates).
 \item \textbf{\kbgym}, a contamination-free environment in the PhantomWiki
 style~\cite{phantomwiki}: a fictional-person universe rendered as a graph of atomic
-statement nodes; ten diagnostic question classes (forward chains, aggregation,
+single-sentence documents; ten diagnostic question classes (forward chains, aggregation,
 multi-constraint joins, set intersection, comparison, reverse lookup, unanswerable)
 with exact answers and support sets; deterministic, integer-exact store metrics; no
 LLM judge anywhere.
@@ -158,7 +158,7 @@ programmatically exact answers; our generator follows its recipe.
 \node[stage, draw=okblue!70, fill=okblue!5, minimum width=3.4cm,
       minimum height=2.5cm] (K0) {};
 \node[above=1mm of K0.north, anchor=south] {\textbf{initial store} $K_0$};
-\node[lbl, below=0mm of K0.south, anchor=north] {atomic statements, no links};
+\node[lbl, below=0mm of K0.south, anchor=north] {atomic documents, no links};
 \foreach \i/\x/\y in {1/-1.1/0.6, 2/-0.3/0.8, 3/0.6/0.55, 4/-1.05/-0.1,
                       5/0.1/0.05, 6/1.05/0.0, 7/-0.6/-0.7, 8/0.35/-0.75, 9/1.0/-0.65}
   \node[node] (a\i) at ([shift={(\x,\y)}]K0.center) {};
@@ -208,7 +208,7 @@ cost.}
 \end{figure*}
 
 \section{Problem Formulation}
-A knowledge base $K$ is a directed graph of \emph{statement nodes}: each node holds
+A knowledge base $K$ is a directed graph of \emph{documents}: each document holds
 one self-contained sentence and a set of outgoing links. The \emph{reader} is a fixed
 LLM policy with three tools---vector \texttt{search}, node \texttt{read} (text plus
 linked nodes), and \texttt{answer}---a fixed action budget $M$, and a short-term
@@ -256,25 +256,25 @@ A generator in the PhantomWiki style samples a fictional population (500 people 
 the main configuration): family trees, spouses, friendships, per-person attributes
 (job, hobby, city), globally distinct birthdates, and \emph{name distractors}---extra
 people sharing first names with questioned subjects. Facts render through fixed
-templates into $\sim$5{,}900 atomic statements (``Alice Johnson's job is
-arborist.''). The initial store is one node per statement with \emph{zero links}: a
-bag of atomic facts. Node embeddings back \texttt{search} and are maintained
+templates into $\sim$5{,}900 atomic single-sentence documents (``Alice Johnson's job is
+arborist.''). The initial store has \emph{zero links}: a bag of atomic facts.
+Document embeddings back \texttt{search} and are maintained
 automatically as nodes are added, edited, or deleted.
 
 \subsection{Actions}
-Reader and training-forward mode: \texttt{search(query)} (top-$k$ node ids with full
-text), \texttt{read(id)} (text plus links, each with target text),
+Reader and training-forward mode: \texttt{search(query)} (top-$k$ document ids
+with full text), \texttt{read(id)} (text plus links, each with target text),
 \texttt{answer(text)}. Training consolidation adds: \texttt{add(text)},
 \texttt{edit(id,text)}, \texttt{delete(id)}, \texttt{link(a,b)},
 \texttt{unlink(a,b)}, \texttt{done()}. Provenance is tracked throughout: initial
-nodes carry an origin; edited nodes are flagged; authored nodes have no origin.
+documents carry an origin; edited ones are flagged; authored ones have no origin.
 Coverage and duplication are integer-exact; any authored content is attributable.
 
 \subsection{Question Classes and Splits}
 Ten categories over $\sim$26 templates. \emph{Forward} classes QC1--QC3 (1--3-hop
-named-entity chains) are natively easy for statement-level retrieval and serve as the
+named-entity chains) are natively easy for document-level retrieval and serve as the
 non-inferiority floor. \emph{Hard} classes target relations \emph{between}
-statements: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint joins
+documents: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint joins
 without a name anchor (QC6), set intersection (QC7), comparison/superlatives over
 birthdates (QC9), and reverse lookup with a uniqueness guarantee (QC10). Golds are
 computed by graph traversal over the fact layer; every question carries template id,
@@ -288,10 +288,10 @@ is touched exactly once). Grading is SQuAD-normalized F1/EM.
 Four decisions carry the methodology. \emph{(i) No LLM judge anywhere}: golds are
 exact, grading is SQuAD normalization, store metrics are integer counts over
 provenance---every number in this paper is reproducible to the digit.
-\emph{(ii) Realistic retrieval}: \texttt{search} returns matched statement text, as
+\emph{(ii) Realistic retrieval}: \texttt{search} returns matched document text, as
 production vector stores do; an early variant returning only titles collapsed the
 reader to F1 $0.0$ and would have credited the trained store for fixing an
-artificially crippled interface. \emph{(iii) Statement-level nodes}: the store is its
+artificially crippled interface. \emph{(iii) Atomic documents}: the store is its
 own chunking, so organization is expressible \emph{only} through links and navigation
 nodes---any efficiency gain is attributable to structure, and any authored content is
 provenance-flagged. \emph{(iv) Contamination control}: we measured gpt-5-mini
@@ -347,7 +347,7 @@ Needed fact never surfaced & directed re-search \emph{with the answer in hand}; 
 from where the blind search wandered to where the fact lives \\
 Fact read but chain unassembled & materialize the chain as links; optionally author a
 navigation node for the class \\
-Conflicting statements found & resolve using the gold as arbiter (delete or edit the
+Conflicting documents found & resolve using the gold as arbiter (delete or edit the
 loser) \\
 Class-level gap (same failure would recur on siblings) & build/extend an index node
 gathering same-class material \\
@@ -369,7 +369,7 @@ is determined by the trajectory difference.
 \section{Evaluation Design}
 Four headline outcomes per condition: \textbf{accuracy} (F1 on \texttt{test\_in} /
 \texttt{test\_out}, frozen store, tested once); \textbf{store size} (nodes, links,
-statement tokens, authored/edited/duplicated counts); \textbf{training cost} (total
+store tokens, authored/edited/duplicated counts); \textbf{training cost} (total
 tokens); \textbf{answering cost} (mean steps per question; tokens as secondary).
 Efficiency is additionally read from an \emph{accuracy--budget curve}: readers run at
 $M \in \{8, 15\}$; an organized store should dominate at tight budgets. The
@@ -392,7 +392,7 @@ tokens).
 \textbf{E3} (log slicing, no extra compute): the three-layer generalization
 decomposition and the per-class profile---training gains are predicted to concentrate
 in aggregation, join, and intersection classes, where answers live in relations
-between statements.
+between documents.
 \textbf{E5} (trace mining): edit-type mix per epoch, store-size trajectory from
 replay, emergent navigation nodes, and \emph{mechanism attribution}: the correlation
 between a reader's step savings and its hits on authored navigation nodes and trained
@@ -400,9 +400,9 @@ links---evidence that the savings travel through the built structure rather than
 coincide with it. Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Preliminary Results}\label{sec:prelim}
-\emph{Obtained on an earlier document-store variant of the environment (multi-statement
+\emph{Obtained on an earlier document-store variant of the environment (coarse multi-sentence
 documents, copy/move actions) with gpt-5-mini, 120-person universe, 150 train
-questions $\times$ 2 epochs; to be re-established on the final statement-graph
+questions $\times$ 2 epochs; to be re-established on the final document-graph
 environment.}
 
 \subsection{A Pre-Organized Store Leaves No Headroom}
@@ -410,7 +410,7 @@ With one clean document per person, the untrained reader already scores 0.82
 (\texttt{test\_in}) / 0.96 (\texttt{test\_out}): per-entity documents plus vector
 search \emph{are} the optimal organization for entity-centric questions. Headroom for
 accuracy requires genuine disorganization---our final design initializes at the
-atomic-statement level---while \emph{cost} headroom persists even at accuracy
+atomic-document level---while \emph{cost} headroom persists even at accuracy
 ceilings, which is one reason efficiency is our primary endpoint.
 
 \subsection{Additive Curation Pollutes}\label{sec:pollution}
@@ -443,7 +443,7 @@ $M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
 
 \subsection{Calibration and Cost Profile}
 Reader difficulty was calibrated by probes on untrained stores: forward named-entity
-chains are natively easy for statement-level retrieval at any tested scale (F1
+chains are natively easy for document-level retrieval at any tested scale (F1
 $1.0$); headroom concentrates in the relation-level classes and grows with universe
 size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
 $9.2$)---motivating the 500-person main configuration, where the cost axis has
@@ -452,7 +452,7 @@ $\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
 $\approx \$6$ at current pricing.
 
 \subsection{Main-Condition Results}
-\todo{fill from the v10L (500-person, statement-graph, parsimony protocol) run:
+\todo{fill from the v10L (500-person, document-graph, parsimony protocol) run:
 learning curve; final test\_in/test\_out accuracy and steps, trained vs.\ untrained,
 at $M{=}15$ and $M{=}8$; per-class breakdown; store trajectory; break-even point;
 baseline table. Infrastructure for the official-PhantomWiki external arm is built
