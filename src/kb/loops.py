@@ -196,12 +196,15 @@ def _log_stats(log, store, epoch, train_rows=()):
 def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
                  n1=N1, n2=N2, m=M, k=K, train_size=None,
                  eval_each_epoch=False, test_policy=None,
-                 universe_path=None) -> None:
+                 universe_path=None, snapshot_every=0) -> None:
     """Epoch driver: seeded per-epoch shuffle of the train split, per-epoch KB
     snapshots (epoch 0 = the untrained store = pure RAG baseline), optional
     evaluation on the small EVAL split after every snapshot. Training never
     touches test_in/test_out (T39.1): the full test runs exactly once, after
-    training, via kb.test on the snapshot of choice."""
+    training, via kb.test on the snapshot of choice. snapshot_every=N > 0
+    (T39.8) additionally writes kb_iter_XXXX.json every N train iterations,
+    numbered across epochs — the same numbering kb.replay --at uses; the
+    default 0 keeps per-epoch snapshots only."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     test_policy = test_policy or policy
@@ -215,11 +218,18 @@ def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
     _log_stats(log, store, 0)
     if eval_each_epoch:
         _eval(0)
+    it = 0
     for epoch in range(1, epochs + 1):
         order = list(train_qids)
         random.Random(seed * 100003 + epoch).shuffle(order)
-        rows = [train_iteration(store, policy, universe.questions[qid], log,
-                                epoch, n1, n2, k) for qid in order]
+        rows = []
+        for qid in order:
+            rows.append(train_iteration(store, policy, universe.questions[qid],
+                                        log, epoch, n1, n2, k))
+            it += 1
+            if snapshot_every and it % snapshot_every == 0:
+                save_snapshot(store, out / f"kb_iter_{it:04d}.json",
+                              universe_path)
         save_snapshot(store, out / f"kb_epoch_{epoch}.json", universe_path)
         _log_stats(log, store, epoch, rows)
         if eval_each_epoch:

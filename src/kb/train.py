@@ -28,6 +28,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--m", type=int, default=M)
     ap.add_argument("--eval-each-epoch", action="store_true",
                     help="run the eval split after every snapshot")
+    ap.add_argument("--snapshot-every", type=int, default=0,
+                    help="also snapshot every N train iterations as "
+                         "kb_iter_XXXX.json (0 = per-epoch only)")
     args = ap.parse_args(argv)
 
     universe = Universe.load(args.universe)
@@ -38,11 +41,13 @@ def main(argv: list[str] | None = None) -> None:
                  seed=args.seed, n1=args.n1, n2=args.n2, m=args.m, k=K,
                  train_size=args.train_size,
                  eval_each_epoch=args.eval_each_epoch,
-                 universe_path=args.universe)
+                 universe_path=args.universe,
+                 snapshot_every=args.snapshot_every)
     meta = {"universe": args.universe, "epochs": args.epochs,
             "seed": args.seed, "model": args.model,
             "n1": args.n1, "n2": args.n2, "m": args.m,
             "train_size": args.train_size,
+            "snapshot_every": args.snapshot_every,
             "tokens": {kind: dict(t) for kind, t in log.tokens.items()}}
     with open(Path(args.out) / "meta.json", "w") as f:
         json.dump(meta, f, indent=2)
