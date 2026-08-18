@@ -344,24 +344,29 @@ $\approx 0$, so every point of reader performance is earned through the store.
 
 \section{Training Protocol}
 \begin{algorithm}[t]
-\caption{One training epoch}
+\caption{Training a knowledge base}
 \label{alg:train}
 \begin{algorithmic}[1]
-\For{each $(q, a^{*})$ in shuffled train split}
-  \State reset short-term memory; task $\gets q$
-  \For{step $= 1 \dots N_1$}  \Comment{Phase 1: forward}
-    \State $d \gets$ policy(search/read/answer)
-    \If{$d = \texttt{answer}(\hat a)$}
-      \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
-    \EndIf
+\State evaluate reader on \texttt{eval} split \Comment{epoch-0 baseline (= B1)}
+\For{epoch $= 1 \dots E$}
+  \For{each $(q, a^{*})$ in shuffled \texttt{train} split}
+    \State reset short-term memory; task $\gets q$
+    \For{step $= 1 \dots N_1$}  \Comment{Phase 1: forward}
+      \State $d \gets$ policy(search/read/answer)
+      \If{$d = \texttt{answer}(\hat a)$}
+        \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
+      \EndIf
+    \EndFor
+    \For{step $= 1 \dots N_2$}  \Comment{Phase 2: backward}
+      \State $d \gets$ policy(search/read/add/edit/delete/link/unlink/done)
+      \If{$d = \texttt{done}$} \textbf{break} \EndIf
+    \EndFor
+    \State refresh embeddings of dirty documents; log iteration
   \EndFor
-  \For{step $= 1 \dots N_2$}  \Comment{Phase 2: backward}
-    \State $d \gets$ policy(search/read/add/edit/delete/link/unlink/done)
-    \If{$d = \texttt{done}$} \textbf{break} \EndIf
-  \EndFor
-  \State refresh embeddings of dirty nodes; log iteration
+  \State snapshot store; evaluate reader on \texttt{eval} split
+  \Statex \hfill \Comment{learning-curve point}
 \EndFor
-\State snapshot store; run eval split (learning-curve point)
+\State final exam: frozen store, \texttt{test\_in}/\texttt{test\_out}, budget $M$
 \end{algorithmic}
 \end{algorithm}
 
