@@ -160,7 +160,7 @@ programmatically exact answers; our generator follows its recipe.
   \textbf{training iteration} $(q, a^{*})$\\[1pt]
   \emph{Phase 1} forward ($N_1$): search/read $\to$ \texttt{answer}\\
   \hspace{2mm}$\hookrightarrow$ result reveals $a^{*}$, F1\\[1pt]
-  \emph{Phase 2} consolidate ($N_2$): add/edit/delete/\\
+  \emph{Phase 2} backward ($N_2$): add/edit/delete/\\
   \hspace{2mm}link/unlink $\to$ \texttt{done}
 };
 \node[lbl, below=0mm of train.south, anchor=north]
@@ -305,7 +305,7 @@ $\approx 0$, so every point of reader performance is earned through the store.
       \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
     \EndIf
   \EndFor
-  \For{step $= 1 \dots N_2$}  \Comment{Phase 2: consolidate}
+  \For{step $= 1 \dots N_2$}  \Comment{Phase 2: backward}
     \State $d \gets$ policy(search/read/add/edit/delete/link/unlink/done)
     \If{$d = \texttt{done}$} \textbf{break} \EndIf
   \EndFor
