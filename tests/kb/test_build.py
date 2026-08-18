@@ -182,6 +182,51 @@ def test_scattered_has_some_locality_but_is_not_sorted():
     assert 0.15 < same / pairs < 0.45             # ~LOCALITY, not 0, not sorted
 
 
+def test_atomized_every_statement_is_its_own_doc():
+    a = build_universe(0, 60, init="atomized")
+    stmts = [st for d in a.docs for st in d["statements"]]
+    assert len(a.docs) == len(stmts)              # doc count == statement count
+    for d in a.docs:
+        assert len(d["statements"]) == 1
+        assert d["links"] == []
+        text = d["statements"][0]["text"]
+        # the doc IS the statement: summary = the text, truncated to <=80
+        assert d["summary"] == (text if len(text) <= 80 else text[:77] + "...")
+        assert len(d["summary"]) <= 80
+    assert a.meta["init"] == "atomized"
+
+
+def test_atomized_same_universe_as_other_inits_at_equal_seed():
+    e = build_universe(0, 60)
+    a = build_universe(0, 60, init="atomized")
+    # ONLY the doc arrangement differs: questions, golds, splits and the
+    # statement set (sids, texts, origins) are identical at the same seed
+    assert e.to_json()["questions"] == a.to_json()["questions"]
+    assert e.splits == a.splits
+    trip = lambda u: sorted((st["sid"], st["text"], st["origin"])
+                            for d in u.docs for st in d["statements"])
+    assert trip(e) == trip(a)
+    assert trip(a) == trip(build_universe(0, 60, init="scattered"))
+
+
+def test_atomized_summary_truncates_at_80_chars():
+    from kb.build import _arrange_atomized
+    long = {"sid": "s0001", "text": "Alpha " + "beta " * 30, "origin": "s0001"}
+    docs = _arrange_atomized([(None, [long])])
+    assert len(docs) == 1
+    assert docs[0]["summary"] == long["text"][:77] + "..."
+    assert len(docs[0]["summary"]) == 80
+
+
+def test_build_cli_accepts_atomized(tmp_path, capsys):
+    main(["--seed", "0", "--people", "12", "--train", "8", "--test-in", "6",
+          "--test-out", "5", "--eval-in", "3", "--eval-out", "2",
+          "--init", "atomized", "--out", str(tmp_path)])
+    stats = json.loads(capsys.readouterr().out)
+    assert stats["init"] == "atomized"
+    assert stats["docs"] == stats["statements"]
+
+
 def test_distractors_collide_on_first_name_only_and_are_never_asked():
     u = build_universe(0, 120)
     assert u.meta["n_distractors"] == 18          # round(0.15 * 120)

@@ -70,6 +70,81 @@ def test_sids_never_reused_after_death():
     assert s.copy_statement("s0001", "d002") == "s0004"
 
 
+# ---------------- authoring (T39.5) ----------------
+
+def test_add_statement_new_sid_no_origin_authored_flag():
+    s = two_docs()
+    sid = s.add_statement("d002", "Theta iota.")
+    assert sid == "s0004"                      # globally unique, next in line
+    st = next(x for x in s.docs["d002"].statements if x.sid == sid)
+    assert st.origin is None and st.flag == "authored"
+    assert s.dirty == {"d002"}
+    stats = s.stats()
+    assert stats["authored_statements"] == 1
+    assert stats["statements"] == 4            # live, but outside provenance:
+    assert stats["origins_total"] == 3         # no new origin minted
+    assert stats["origins_alive"] == 3 and stats["dup_origins"] == 0
+
+
+def test_edit_statement_keeps_sid_and_origin_sets_edited_flag():
+    s = two_docs()
+    s.edit_statement("s0001", "Alpha rewritten.")
+    st = next(x for x in s.docs["d001"].statements if x.sid == "s0001")
+    assert st.text == "Alpha rewritten."
+    assert st.origin == "s0001" and st.flag == "edited"
+    assert s.dirty == {"d001"}
+    stats = s.stats()
+    assert stats["edited_statements"] == 1
+    # coverage is over origin-preserving UNEDITED instances only
+    assert stats["origins_alive"] == 2
+
+
+def test_edited_instance_stops_counting_but_an_unedited_copy_still_does():
+    s = two_docs()
+    s.copy_statement("s0001", "d002")
+    s.edit_statement("s0001", "Alpha rewritten.")
+    stats = s.stats()
+    assert stats["origins_alive"] == 3         # the copy still preserves it
+    assert stats["dup_origins"] == 0           # only one unedited instance left
+
+
+def test_copies_and_moves_carry_the_flag():
+    s = two_docs()
+    sid = s.add_statement("d001", "Theta iota.")
+    cp = s.copy_statement(sid, "d002")
+    st = next(x for x in s.docs["d002"].statements if x.sid == cp)
+    assert st.flag == "authored" and st.origin is None
+    s.edit_statement("s0003", "Epsilon rewritten.")
+    s.move_statement("s0003", "d001")
+    st = next(x for x in s.docs["d001"].statements if x.sid == "s0003")
+    assert st.flag == "edited" and st.origin == "s0003"
+    stats = s.stats()
+    assert stats["authored_statements"] == 2   # original + its copy
+    assert stats["edited_statements"] == 1
+
+
+def test_empty_authored_text_is_rejected():
+    s = two_docs()
+    with pytest.raises(StoreError):
+        s.add_statement("d001", "   ")
+    with pytest.raises(StoreError):
+        s.edit_statement("s0001", "")
+    assert s.dirty == set()
+
+
+def test_flags_survive_snapshot_roundtrip():
+    s = two_docs()
+    s.add_statement("d001", "Theta iota.")
+    s.edit_statement("s0002", "Gamma rewritten.")
+    s.refresh()
+    state = s.to_json()
+    s2 = Store.from_json(state, CountingSummarizer(), HashEmbedding())
+    assert s2.to_json() == state
+    assert s2.stats() == s.stats()
+    assert s2.stats()["authored_statements"] == 1
+    assert s2.stats()["edited_statements"] == 1
+
+
 # ---------------- links ----------------
 
 def test_link_unlink_and_errors():

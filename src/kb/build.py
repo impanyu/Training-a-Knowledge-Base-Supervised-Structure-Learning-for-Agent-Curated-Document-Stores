@@ -7,7 +7,7 @@ hobby / city attributes from fixed vocabularies. Facts render into
 self-contained, pronoun-free statements; relations render one statement per
 endpoint doc (two distinct origins, intentionally). Zero links either way.
 
-Two initializations (T39.2 — the entity init is already near-optimal
+Three initializations (T39.2/T39.5 — the entity init is already near-optimal
 organization, leaving training no headroom):
 - `entity` (default): one doc per person.
 - `scattered`: the SAME statements distributed into mixed "notebook" docs of
@@ -17,6 +17,11 @@ organization, leaving training no headroom):
   the people inside. Arrangement uses its own derived rng, so questions,
   golds, splits and statements are IDENTICAL to the entity init at the
   same seed — only the doc arrangement differs.
+- `atomized` (T39.5): every statement in its OWN single-statement doc
+  (~1200 docs at --people 120), zero links. Since the doc IS the statement,
+  the template summary is the statement text itself truncated to <=80 chars
+  — no summarizer could say more about a one-sentence doc. Arrangement uses
+  no randomness at all, so the same cross-init identity guarantee holds.
 
 Name distractors (T39.2): a fraction `distractors` of extra people whose
 FIRST names collide with real subjects but whose full names never equal a
@@ -272,6 +277,30 @@ def _arrange_entity(groups: list, summarizer) -> list[dict]:
             for i, (_, stmts) in enumerate(groups)]
 
 
+SUMMARY_CHARS = 80             # atomized init: summary = statement <=80 chars
+
+
+def _arrange_atomized(groups: list, summarizer=None) -> list[dict]:
+    """Every statement gets its own single-statement doc, zero links (T39.5).
+    Summary choice: the doc IS the statement, so the template summary is the
+    truncated statement text (<=80 chars, 77 + "...") — any generated summary
+    of a one-sentence doc could only paraphrase it. An explicitly passed
+    (LLM) summarizer is still honored, like the other inits. No rng involved,
+    so questions/golds/splits/statements stay byte-identical across inits at
+    equal seed."""
+    docs, n = [], 0
+    for _, stmts in groups:
+        for st in stmts:
+            n += 1
+            text = st["text"]
+            summary = (summarizer.summarize([text]) if summarizer is not None
+                       else text if len(text) <= SUMMARY_CHARS
+                       else text[:SUMMARY_CHARS - 3] + "...")
+            docs.append({"id": f"d{n:03d}", "summary": summary,
+                         "statements": [st], "links": []})
+    return docs
+
+
 LOCALITY = 0.30                # P(next scattered statement shares its person)
 DOC_SIZE = (4, 8)              # min,max statements per scattered notebook doc
 
@@ -493,7 +522,7 @@ def build_universe(seed: int = 0, n_people: int = 120,
                    summarizer=None, init: str = "entity",
                    distractors: float = 0.15, locality: float = LOCALITY,
                    doc_size: tuple[int, int] = DOC_SIZE) -> Universe:
-    if init not in ("entity", "scattered"):
+    if init not in ("entity", "scattered", "atomized"):
         raise ValueError(f"unknown init {init}")
     rng = random.Random(seed)
     custom_summarizer = summarizer
@@ -507,6 +536,8 @@ def build_universe(seed: int = 0, n_people: int = 120,
     if init == "scattered":
         docs = _arrange_scattered(groups, seed, custom_summarizer,
                                   locality, doc_size)
+    elif init == "atomized":
+        docs = _arrange_atomized(groups, custom_summarizer)
     else:
         docs = _arrange_entity(groups, summarizer)
 
@@ -565,9 +596,10 @@ def main(argv: list[str] | None = None) -> None:
                     help="eval-split questions from trained templates")
     ap.add_argument("--eval-out", type=int, default=10,
                     help="eval-split questions from reserved templates")
-    ap.add_argument("--init", choices=["entity", "scattered"], default="entity",
-                    help="doc arrangement: one doc per person, or mixed "
-                         "notebook docs of 4-8 statements")
+    ap.add_argument("--init", choices=["entity", "scattered", "atomized"],
+                    default="entity",
+                    help="doc arrangement: one doc per person, mixed notebook "
+                         "docs of 4-8 statements, or one doc per statement")
     ap.add_argument("--distractors", type=float, default=0.15,
                     help="fraction of extra first-name-colliding people whose "
                          "statements pad the store but are never asked about")

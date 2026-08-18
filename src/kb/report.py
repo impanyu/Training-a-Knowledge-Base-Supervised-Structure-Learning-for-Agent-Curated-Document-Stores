@@ -240,7 +240,9 @@ def render(report: dict) -> str:
                      f"coverage {s['coverage']:.2f} dup "
                      f"{s['dup_origins']} links {s['links']} orphans "
                      f"{s['orphan_docs']} (+{s['created_docs']}/"
-                     f"-{s['deleted_docs']} docs){cost}")
+                     f"-{s['deleted_docs']} docs) authored "
+                     f"{s.get('authored_statements', 0)} edited "
+                     f"{s.get('edited_statements', 0)}{cost}")
     t = report["tokens"]
     lines.append(f"\n== E2 tokens == build {t['build']} | train {t['train']} "
                  f"| test {t['test']} | train summarizer {t['train_summarizer']}")

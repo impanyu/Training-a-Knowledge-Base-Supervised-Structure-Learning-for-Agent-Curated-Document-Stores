@@ -7,9 +7,10 @@ FLOW = {"answer", "done"}
 SENSE = {"search", "read"}
 
 
-def test_the_catalog_is_exactly_the_eleven():
+def test_the_catalog_is_exactly_the_thirteen():
     assert set(ACTION_SPECS) == FLOW | SENSE | set(EDIT_ACTIONS)
-    assert len(ACTION_SPECS) == 11
+    assert len(ACTION_SPECS) == 13
+    assert {"add_statement", "edit_statement"} <= set(EDIT_ACTIONS)
 
 
 def test_mode_subsets_per_spec():
@@ -18,6 +19,14 @@ def test_mode_subsets_per_spec():
     assert set(MODE_TOOLS["test"]) == {"search", "read", "answer"}
     assert "answer" not in MODE_TOOLS["train_backprop"]
     assert not any(a in MODE_TOOLS["train_forward"] for a in EDIT_ACTIONS)
+
+
+def test_authoring_actions_are_phase2_only():
+    for mode in ("train_forward", "test"):
+        assert "add_statement" not in MODE_TOOLS[mode]
+        assert "edit_statement" not in MODE_TOOLS[mode]
+        assert set(MODE_TOOLS[mode]) == {"search", "read", "answer"}  # unchanged
+    assert {"add_statement", "edit_statement"} <= set(MODE_TOOLS["train_backprop"])
 
 
 def test_tools_for_emits_static_schemas():
@@ -61,6 +70,24 @@ def test_edit_dispatch_and_result_strings():
         "created d003 (1 statements, 1 links)"
     assert dispatch(s, "delete_doc", {"doc_id": "d003"}) == \
         "deleted d003 (1 statement instances died)"
+
+
+def test_authoring_dispatch_and_result_strings():
+    s = two_docs()
+    assert dispatch(s, "add_statement",
+                    {"doc_id": "d002", "text": "Theta iota."}) == \
+        "added s0004 to d002"
+    assert dispatch(s, "edit_statement",
+                    {"sid": "s0001", "text": "Alpha rewritten."}) == \
+        "edited s0001"
+    assert dispatch(s, "add_statement", {"doc_id": "d999", "text": "x"}) == \
+        "ERROR: no such doc d999"
+    assert dispatch(s, "edit_statement", {"sid": "s9999", "text": "x"}) == \
+        "ERROR: no live statement s9999"
+    assert dispatch(s, "add_statement", {"doc_id": "d001", "text": "  "}) == \
+        "ERROR: statement text must not be empty"
+    assert dispatch(s, "edit_statement", {"sid": "s0002", "text": ""}) == \
+        "ERROR: statement text must not be empty"
 
 
 def test_invalid_ids_become_error_results_not_exceptions():

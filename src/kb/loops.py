@@ -4,7 +4,7 @@ the multi-epoch driver (spec §4/§5).
 Train Phase 1 (budget N1): search/read then ONE answer(); its RESULT reveals
 gold + F1 and the phase ends immediately (leftover budget forfeited). Budget
 exhausted without answer -> auto F1=0, gold still revealed at Phase 2 start.
-Train Phase 2 (budget N2): search/read + 7 edits until done() or exhaustion;
+Train Phase 2 (budget N2): search/read + 9 edits until done() or exhaustion;
 dirty summaries/embeddings regenerate now (store.refresh at iteration end).
 
 Test iteration (budget M, frozen KB): answer() ends it, its result is empty
@@ -27,21 +27,26 @@ TRAIN_SYSTEM = (
     "1. Answer the question correctly.\n"
     "2. Consolidate the verified reasoning into the store's structure, so the "
     "facts this question needed are easier to find next time.\n"
-    "3. Generalize the fix to this question's CLASS of questions, not just "
-    "this instance.\n"
+    "3. Organize for this question's CLASS of questions, not just this "
+    "instance: build or extend INDEX or NAVIGATION docs that gather "
+    "same-class material - a per-family overview doc, an attribute index, a "
+    "people directory - and link them to the detail docs they point at, so "
+    "a future same-class question resolves in fewer steps.\n"
     "4. Keep the store PARSIMONIOUS. Duplicated facts compete in search and "
     "bury each other: prefer move_statement (which removes the source) over "
     "copy_statement; when you gather statements into a better doc, delete the "
     "scattered originals you drew from; if the store already serves this "
     "question's class well, change NOTHING - a clean miss of the edit budget "
-    "is better than a redundant doc.\n"
-    "HOW you consolidate is your choice - links, new index docs, moves, "
-    "cleanup; "
+    "is better than a redundant doc. Organize and navigate; don't duplicate.\n"
+    "HOW you consolidate is your choice - links, index docs, moves, authored "
+    "statements, cleanup; "
     "you are judged only by whether a non-reasoning future reader could "
     "answer this class of question more easily.\n"
-    "Statements are immutable text: you never write or edit sentences, only "
-    "move, copy or delete existing statements by reference. Summaries and "
-    "embeddings are maintained for you automatically.\n"
+    "Existing statements are moved, copied or deleted by reference; when "
+    "consolidating you may also author a NEW statement (add_statement) or "
+    "rewrite one in place (edit_statement) - keep any text you write a "
+    "single short self-contained sentence with full names, no pronouns. "
+    "Summaries and embeddings are maintained for you automatically.\n"
     "When answering, submit exactly one short answer (a name / phrase / "
     'number, or "unknown" if this universe cannot determine it); the result '
     "reveals the gold answer and your F1."

@@ -86,7 +86,8 @@ def test_phase2_edits_dispatch_and_done_ends():
     assert p2[2]["action"] == "done" and p2[2]["result"] == "phase complete"
     assert pol.seen[1][2] == ("search", "read", "copy_statement",
                               "move_statement", "delete_statement", "link",
-                              "unlink", "create_doc", "delete_doc", "done")
+                              "unlink", "create_doc", "delete_doc",
+                              "add_statement", "edit_statement", "done")
 
 
 def test_phase2_budget_exhaustion_ends_without_done():
@@ -97,6 +98,55 @@ def test_phase2_budget_exhaustion_ends_without_done():
     row = train_iteration(store, pol, q, log, epoch=1, n2=3)
     assert row["p2_steps"] == 3
     assert len([r for r in log.rows["trace"] if r["phase"] == 2]) == 3
+
+
+def test_phase2_authoring_edits_count_and_regenerate():
+    store, log = mini_store(U), ListLog()
+    q = _answerable()
+    d1 = U.docs[0]["id"]
+    sid = U.docs[0]["statements"][0]["sid"]
+    pol = ScriptedPolicy([("answer", {"text": q.golds[0]}),
+                          ("add_statement", {"doc_id": d1,
+                                             "text": "A new authored fact."}),
+                          ("edit_statement", {"sid": sid,
+                                              "text": "A rewritten fact."}),
+                          ("add_statement", {"doc_id": "d999", "text": "x"}),
+                          ("done", {})])
+    row = train_iteration(store, pol, q, log, epoch=1)
+    assert row["edits"]["add_statement"] == 1   # the ERROR one doesn't count
+    assert row["edits"]["edit_statement"] == 1
+    assert row["regens"] == 1                   # both hit d1; batch at iter end
+    stats = store.stats()
+    assert stats["authored_statements"] == 1
+    assert stats["edited_statements"] == 1
+
+
+def test_authoring_not_available_outside_phase2():
+    store, log = mini_store(U), ListLog()
+    q = _answerable()
+    pol = ScriptedPolicy([("add_statement", {"doc_id": U.docs[0]["id"],
+                                             "text": "x"}),
+                          ("answer", {"text": "y"}), ("done", {})])
+    train_iteration(store, pol, q, log, epoch=1)
+    assert log.rows["trace"][0]["result"] == \
+        "ERROR: add_statement is not available in this phase"
+    assert store.stats()["authored_statements"] == 0
+    pol2 = ScriptedPolicy([("edit_statement", {"sid": "s0001", "text": "x"}),
+                           ("answer", {"text": "y"})])
+    exam_iteration(store, pol2, _answerable("test_in"), log, "test_in", epoch=0)
+    assert pol2.seen[0][2] == ("search", "read", "answer")   # schema unchanged
+    assert store.stats()["edited_statements"] == 0           # KB stays frozen
+
+
+def test_train_prompt_carries_class_indexing_and_parsimony():
+    from kb.loops import TRAIN_SYSTEM
+    assert "3. Organize for this question's CLASS" in TRAIN_SYSTEM
+    for cue in ("INDEX", "NAVIGATION", "attribute index", "people directory",
+                "fewer steps"):                 # objective 3: concrete guidance
+        assert cue in TRAIN_SYSTEM
+    assert "4. Keep the store PARSIMONIOUS" in TRAIN_SYSTEM
+    assert "Organize and navigate; don't duplicate." in TRAIN_SYSTEM
+    assert "add_statement" in TRAIN_SYSTEM and "edit_statement" in TRAIN_SYSTEM
 
 
 def test_answer_is_not_available_in_phase2():

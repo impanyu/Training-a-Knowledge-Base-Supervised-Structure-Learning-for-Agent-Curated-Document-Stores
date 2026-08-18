@@ -2,11 +2,16 @@
 origin bookkeeping, links by id, environment-maintained summaries and
 embeddings.
 
-- Statements are immutable text; agents move/copy/delete instances by
-  reference. Every instance descends from a build-time original via `origin`
-  (copies share origin), so fabrication is impossible by construction,
-  duplication = origins with >1 live instance, coverage = % of origins with
-  >=1 live instance — all integer-exact.
+- Statements are moved/copied/deleted by reference; build-time instances
+  descend from an original via `origin` (copies share origin). T39.5 adds
+  two authoring edits: `add_statement` mints a NEW statement (origin None,
+  flag "authored") and `edit_statement` rewrites an instance's text in place
+  (sid and origin kept, flag "edited"). Coverage / duplication stay defined
+  over origin-preserving UNEDITED instances only — an authored instance has
+  no origin, an edited one no longer carries its origin's text — so both
+  metrics remain integer-exact; flags survive copy/move and snapshots.
+  Live flagged instances are tallied as `authored_statements` /
+  `edited_statements` in stats().
 - Any statement-set change marks the doc dirty; `refresh()` (called at
   iteration end only) regenerates dirty docs' summaries via the injectable
   Summarizer and their embeddings via the chroma collection (default ONNX EF
@@ -32,7 +37,8 @@ class StoreError(Exception):
 class Statement:
     sid: str
     text: str
-    origin: str
+    origin: str | None                 # None = agent-authored (no provenance)
+    flag: str | None = None            # None | "authored" | "edited"
 
 
 @dataclass
@@ -134,14 +140,16 @@ class Store:
         s = cls(summarizer, embedding_function)
         for d in docs:
             doc = Doc(d["id"], d["summary"],
-                      [Statement(st["sid"], st["text"], st["origin"])
+                      [Statement(st["sid"], st["text"], st["origin"],
+                                 st.get("flag"))
                        for st in d["statements"]],
                       list(d.get("links", [])))
             s.docs[doc.doc_id] = doc
             for st in doc.statements:
                 s._home[st.sid] = doc.doc_id
         s.origins = sorted({st.origin for doc in s.docs.values()
-                            for st in doc.statements})
+                            for st in doc.statements
+                            if st.origin is not None})
         nums = [int(i[1:]) for i in s.docs]
         s._next_doc = max(nums, default=0) + 1
         sids = ([int(i[1:]) for i in s._home]
@@ -163,7 +171,8 @@ class Store:
     def to_json(self) -> dict:
         return {"docs": [{"id": d.doc_id, "summary": d.summary,
                           "statements": [{"sid": st.sid, "text": st.text,
-                                          "origin": st.origin}
+                                          "origin": st.origin,
+                                          "flag": st.flag}
                                          for st in d.statements],
                           "links": list(d.links)}
                          for d in self.docs.values()],
@@ -210,7 +219,7 @@ class Store:
         src = self.docs[self._live(sid)]
         dst = self._doc(to_doc)
         st = next(x for x in src.statements if x.sid == sid)
-        new = Statement(self._new_sid(), st.text, st.origin)
+        new = Statement(self._new_sid(), st.text, st.origin, st.flag)
         dst.statements.append(new)
         self._home[new.sid] = dst.doc_id
         self.dirty.add(dst.doc_id)
@@ -234,6 +243,34 @@ class Store:
         doc = self.docs[home]
         doc.statements = [x for x in doc.statements if x.sid != sid]
         del self._home[sid]
+        self.dirty.add(home)
+
+    def add_statement(self, doc_id: str, text: str) -> str:
+        """Author a NEW statement (T39.5): new sid, origin None (no build-time
+        provenance to descend from), flag "authored". Never counts toward
+        coverage or duplication."""
+        doc = self._doc(doc_id)
+        text = str(text).strip()
+        if not text:
+            raise StoreError("statement text must not be empty")
+        st = Statement(self._new_sid(), text, None, "authored")
+        doc.statements.append(st)
+        self._home[st.sid] = doc_id
+        self.dirty.add(doc_id)
+        return st.sid
+
+    def edit_statement(self, sid: str, text: str) -> None:
+        """Rewrite an existing instance's text in place (T39.5): sid and
+        origin are kept, flag becomes "edited" — the instance no longer
+        carries its origin's text, so it stops counting toward coverage /
+        duplication (an authored instance stays outside them either way)."""
+        home = self._live(sid)
+        text = str(text).strip()
+        if not text:
+            raise StoreError("statement text must not be empty")
+        st = next(x for x in self.docs[home].statements if x.sid == sid)
+        st.text = text
+        st.flag = "edited"
         self.dirty.add(home)
 
     def link(self, a: str, b: str) -> None:
@@ -337,10 +374,14 @@ class Store:
     # ---------- stats (kb_stats.jsonl row, spec §8) ----------
 
     def origin_counts(self) -> dict[str, int]:
+        """Live instances per origin, over origin-preserving UNEDITED
+        instances only: authored ones have no origin, edited ones no longer
+        carry their origin's text (T39.5)."""
         counts = {o: 0 for o in self.origins}
         for doc in self.docs.values():
             for st in doc.statements:
-                counts[st.origin] = counts.get(st.origin, 0) + 1
+                if st.origin is not None and st.flag != "edited":
+                    counts[st.origin] = counts.get(st.origin, 0) + 1
         return counts
 
     def stats(self) -> dict:
@@ -368,6 +409,13 @@ class Store:
             "orphan_docs": orphans,
             "created_docs": self.created_docs,
             "deleted_docs": self.deleted_docs,
+            # live flagged instances (copies keep their flag), not cumulative
+            "authored_statements": sum(1 for d in self.docs.values()
+                                       for st in d.statements
+                                       if st.flag == "authored"),
+            "edited_statements": sum(1 for d in self.docs.values()
+                                     for st in d.statements
+                                     if st.flag == "edited"),
         }
 
 

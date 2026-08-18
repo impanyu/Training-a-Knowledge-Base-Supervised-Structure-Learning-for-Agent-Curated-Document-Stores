@@ -1,13 +1,15 @@
-"""The 11 actions (spec §2): ONE static tool schema, no per-doc variation,
-no dynamic schema. Phase gating is by schema subset per mode (MODE_TOOLS),
-never by runtime rejection; the loop keeps a runtime error string only as a
-safety net for scripted policies that go off-mode.
+"""The 13 actions (spec §2 + T39.5 authoring): ONE static tool schema, no
+per-doc variation, no dynamic schema. Phase gating is by schema subset per
+mode (MODE_TOOLS), never by runtime rejection; the loop keeps a runtime
+error string only as a safety net for scripted policies that go off-mode.
 
 flow:  answer(text) . done()            -- handled by the loop, not dispatch
 sense: search(query) -> top-k (doc_id, summary)   [k=5]
        read(doc_id)  -> statements (sid: text) + links (doc_id, live summary)
 edit:  copy_statement / move_statement / delete_statement / link / unlink /
-       create_doc / delete_doc
+       create_doc / delete_doc / add_statement / edit_statement
+       (the two authoring edits are train Phase 2 ONLY, like every edit;
+       Phase 1 and test keep search/read/answer)
 
 Invalid ids / dead sids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
@@ -82,10 +84,22 @@ ACTION_SPECS: dict[str, dict] = {
                         "inbound links to it are removed from all other docs."),
         "input_schema": _schema({"doc_id": _S}, ["doc_id"]),
     },
+    "add_statement": {
+        "description": ("Author a NEW statement into a doc: one short "
+                        "self-contained sentence (full names, no pronouns). "
+                        "It gets a new sid and is flagged as authored."),
+        "input_schema": _schema({"doc_id": _S, "text": _S}, ["doc_id", "text"]),
+    },
+    "edit_statement": {
+        "description": ("Rewrite an existing statement instance's text in "
+                        "place (it keeps its sid and is flagged as edited)."),
+        "input_schema": _schema({"sid": _S, "text": _S}, ["sid", "text"]),
+    },
 }
 
 EDIT_ACTIONS = ("copy_statement", "move_statement", "delete_statement",
-                "link", "unlink", "create_doc", "delete_doc")
+                "link", "unlink", "create_doc", "delete_doc",
+                "add_statement", "edit_statement")
 
 # Phase/tool gating by schema subset (spec §4): the model never sees an
 # out-of-phase tool, so gating needs no runtime rejection.
@@ -174,10 +188,23 @@ def _h_delete_doc(store, inp):
     return f"deleted {doc_id} ({n} statement instances died)"
 
 
+def _h_add_statement(store, inp):
+    doc_id = str(inp["doc_id"]).strip()
+    sid = store.add_statement(doc_id, str(inp["text"]))
+    return f"added {sid} to {doc_id}"
+
+
+def _h_edit_statement(store, inp):
+    sid = str(inp["sid"]).strip()
+    store.edit_statement(sid, str(inp["text"]))
+    return f"edited {sid}"
+
+
 _HANDLERS = {
     "search": _h_search, "read": _h_read,
     "copy_statement": _h_copy, "move_statement": _h_move,
     "delete_statement": _h_delete_statement,
     "link": _h_link, "unlink": _h_unlink,
     "create_doc": _h_create_doc, "delete_doc": _h_delete_doc,
+    "add_statement": _h_add_statement, "edit_statement": _h_edit_statement,
 }
