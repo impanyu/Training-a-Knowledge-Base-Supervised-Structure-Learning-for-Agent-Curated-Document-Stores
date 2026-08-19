@@ -238,7 +238,8 @@ def render(report: dict) -> str:
                      f"coverage {s['coverage']:.2f} dup {s['dup_origins']} "
                      f"links {s['n_links']} orphans {s['orphan_nodes']} "
                      f"authored {s.get('authored_statements', 0)} edited "
-                     f"{s.get('edited_statements', 0)}{cost}")
+                     f"{s.get('edited_statements', 0)} merges "
+                     f"{s.get('merges', 0)}{cost}")
     t = report["tokens"]
     lines.append(f"\n== E2 tokens == train {t['train']} | test {t['test']}")
     return "\n".join(lines)

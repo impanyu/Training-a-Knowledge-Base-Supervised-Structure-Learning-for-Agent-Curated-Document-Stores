@@ -49,12 +49,14 @@ ACTION_SPECS: dict[str, dict] = {
     "add": {
         "description": ("Author a NEW note: one short self-contained sentence "
                         "(full names, no pronouns). It gets a new id and is "
-                        "flagged as authored."),
+                        "flagged as authored. A note stating the same fact as "
+                        "an existing note is merged instead of created."),
         "input_schema": _schema({"text": _S}, ["text"]),
     },
     "edit": {
         "description": ("Rewrite an existing note's text in place (it keeps "
-                        "its id and is flagged as edited)."),
+                        "its id and is flagged as edited). An edit that "
+                        "duplicates another note merges into it."),
         "input_schema": _schema({"id": _S, "text": _S}, ["id", "text"]),
     },
     "delete": {
@@ -115,13 +117,17 @@ def _h_read(store, inp):
 
 
 def _h_add(store, inp):
-    nid = store.add(str(inp["text"]))
+    nid, merged = store.add(str(inp["text"]))
+    if merged is not None:      # informative, deliberately NOT an ERROR
+        return f"duplicate of {merged} - merged, no new note created"
     return f"added {nid}"
 
 
 def _h_edit(store, inp):
     nid = str(inp["id"]).strip()
-    store.edit(nid, str(inp["text"]))
+    merged = store.edit(nid, str(inp["text"]))
+    if merged is not None:
+        return f"merged into {merged}"
     return f"edited {nid}"
 
 

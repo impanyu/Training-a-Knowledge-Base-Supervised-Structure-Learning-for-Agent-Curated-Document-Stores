@@ -191,6 +191,65 @@ def test_half_written_trace_tail_is_tolerated(run, tmp_path):
     assert store.to_json() == live.to_json()
 
 
+class MergePolicy:
+    """Backprop per iteration: add one SHARED text (created in iteration 1,
+    judged duplicate ever after), edit s0001 to s0002's exact text (an
+    edit-merge in iteration 1, a dead-id ERROR ever after), done."""
+
+    def __init__(self, u):
+        self._shared = "Shared replay fact about quokkas."
+        self._dup_target = u.nodes[1]["text"]
+        self._key, self._n = None, 0
+
+    def decide(self, system, context, tools) -> Decision:
+        names = {t["name"] for t in tools}
+        m = re.search(r"q\d{4}", context)
+        qid = m.group(0) if m else "?"
+        phase = "p2" if "[phase 2" in context else "p1"
+        if (qid, phase) != self._key:
+            self._key, self._n = (qid, phase), 0
+        self._n += 1
+        if "answer" in names:
+            if self._n == 1:
+                return Decision("search", {"query": "x"}, 3, 1)
+            return Decision("answer", {"text": "unknown"}, 3, 1)
+        step = {1: ("add", {"text": self._shared}),
+                2: ("edit", {"id": "s0001", "text": self._dup_target})
+                }.get(self._n, ("done", {}))
+        return Decision(step[0], dict(step[1]), 3, 1)
+
+
+def test_replay_reproduces_recorded_dedup_merges(tmp_path):
+    u = mini_universe()
+    upath = tmp_path / "universe.json"
+    u.save(upath)
+    live = mini_store(u, judge=lambda a, b: a == b)   # deterministic judge
+    run_dir = tmp_path / "run"
+    log = RunLog(run_dir)
+    run_training(live, MergePolicy(u), u, log, run_dir, epochs=1, seed=0,
+                 train_size=3, universe_path=upath)
+    log.close()
+    rows = [json.loads(l) for l in
+            (run_dir / "trace.jsonl").read_text().splitlines()]
+    results = [r["result"] for r in rows if r["phase"] == 2]
+    assert sum(1 for r in results if r.startswith("added ")) == 1
+    assert sum(1 for r in results
+               if re.fullmatch(r"duplicate of s\d+ - merged, "
+                               r"no new note created", r)) == 2
+    assert "merged into s0002" in results             # iteration-1 edit-merge
+    assert any(r.startswith("ERROR") for r in results)  # later dead-id edits
+    # the replayed store (no judge, no API) must match the live one exactly
+    replayed, n = replay(u, run_dir / "trace.jsonl",
+                         embedding_function=HashEmbedding())
+    assert n == 3
+    assert replayed.to_json() == live.to_json()       # absorbed, merges, ids
+    assert replayed.stats()["merges"] == 3
+    assert replayed.nodes["s0002"].absorbed == ["s0001"]
+    from kb.replay import verify_epoch
+    assert verify_epoch(u, run_dir / "trace.jsonl",
+                        run_dir / "kb_epoch_1.json") == []
+
+
 def test_snapshot_every_writes_iteration_snapshots(run):
     u, upath, live, run_dir = run
     files = sorted(p.name for p in run_dir.glob("kb_iter_*.json"))

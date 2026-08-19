@@ -119,6 +119,26 @@ def test_phase2_authoring_edits_count_and_reembed():
     assert stats["edited_statements"] == 1
 
 
+def test_dedup_merges_are_counted_per_iteration_and_in_stats():
+    store, log = mini_store(U, judge=lambda a, b: a == b), ListLog()
+    q = _answerable()
+    dup = U.nodes[0]
+    pol = ScriptedPolicy([("answer", {"text": q.golds[0]}),
+                          ("add", {"text": dup["text"]}),      # exact dup
+                          ("add", {"text": "A very novel quokka note."}),
+                          ("done", {})])
+    row = train_iteration(store, pol, q, log, epoch=1)
+    assert row["merges"] == 1
+    assert row["edits"]["add"] == 2             # both adds were successful
+    p2 = [r for r in log.rows["trace"] if r["phase"] == 2]
+    assert p2[0]["result"] == (f"duplicate of {dup['id']} - merged, "
+                               "no new note created")
+    assert p2[1]["result"].startswith("added ")
+    stats = store.stats()
+    assert stats["merges"] == 1                 # cumulative, into kb_stats
+    assert stats["authored_statements"] == 1    # only the novel note exists
+
+
 def test_answer_is_not_available_in_phase2():
     store, log = mini_store(U), ListLog()
     q = _answerable()

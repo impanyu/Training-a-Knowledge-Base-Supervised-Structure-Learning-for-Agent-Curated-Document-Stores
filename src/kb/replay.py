@@ -44,6 +44,9 @@ from kb.store import Store, save_snapshot
 
 _EDITS = set(EDIT_ACTIONS)
 _ADD_RESULT = re.compile(r"added (s\d+)$")
+_ADD_MERGE_RESULT = re.compile(
+    r"duplicate of (s\d+) - merged, no new note created$")
+_EDIT_MERGE_RESULT = re.compile(r"merged into (s\d+)$")
 
 
 class ReplayError(Exception):
@@ -94,11 +97,23 @@ def _train_rows(trace_path) -> list[dict]:
 
 
 def _apply(store: Store, row: dict) -> None:
-    """Re-apply one trace row if it is a successful phase-2 edit."""
+    """Re-apply one trace row if it is a successful phase-2 edit. Recorded
+    dedup merges (T42) are replayed from their result strings — the judge's
+    verdict is in the trace, so no judge (and no API) is ever needed."""
     action, result = row["action"], str(row["result"])
     if row.get("phase") != 2 or action not in _EDITS:
         return
     if result.startswith("ERROR"):
+        return
+    if action == "add" and result.startswith("duplicate of "):
+        if not _ADD_MERGE_RESULT.fullmatch(result):
+            raise ReplayError(f"unparseable add-merge result {result!r} "
+                              f"(epoch {row['epoch']} {row['qid']} "
+                              f"step {row['step']})")
+        store.merges += 1               # nothing was created
+        return
+    if action == "edit" and (m := _EDIT_MERGE_RESULT.fullmatch(result)):
+        store.merge(str(row["input"]["id"]).strip(), m.group(1))
         return
     if action == "add":
         m = _ADD_RESULT.fullmatch(result)
@@ -145,9 +160,11 @@ def replay(universe: Universe, trace_path, at: int | None = None,
 # ---------------- verification against epoch snapshots ----------------
 
 def _canon(state: dict) -> dict:
-    """id -> (text, origin, flag, link set) over a store-JSON dict."""
+    """id -> (text, origin, flag, link set, absorbed set) over a store-JSON
+    dict (absorbed: T42 merge provenance; absent in pre-v11 snapshots)."""
     return {n["id"]: (n["text"], n["origin"], n["flag"],
-                      tuple(sorted(n["links"])))
+                      tuple(sorted(n["links"])),
+                      tuple(sorted(n.get("absorbed", []))))
             for n in state["nodes"]}
 
 

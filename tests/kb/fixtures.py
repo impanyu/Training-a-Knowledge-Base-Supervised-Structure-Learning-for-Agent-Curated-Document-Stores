@@ -44,9 +44,10 @@ def mini_universe(seed: int = 0, n_people: int = 12,
     return build_universe(seed, n_people, sizes, eval_sizes, **kw)
 
 
-def mini_store(universe: Universe | None = None) -> Store:
+def mini_store(universe: Universe | None = None, judge=None) -> Store:
     u = universe or mini_universe()
-    return Store.from_nodes(u.nodes, embedding_function=HashEmbedding())
+    return Store.from_nodes(u.nodes, embedding_function=HashEmbedding(),
+                            judge=judge)
 
 
 class ListLog:

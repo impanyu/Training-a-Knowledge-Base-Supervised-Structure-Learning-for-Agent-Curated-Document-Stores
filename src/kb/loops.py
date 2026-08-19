@@ -71,6 +71,7 @@ def _turn(policy, system, mem, remaining, mode):
 
 def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     t0 = time.perf_counter()
+    merges0 = store.merges              # dedup merges this iteration (T42)
     tok_in = tok_out = 0
     mem = IterationMemory(k)
     mem.reset(f"TRAIN QUESTION {q.qid} [phase 1: answer it]\n{q.text}")
@@ -131,6 +132,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
            "category": q.category, "f1": f1v, "em": emv, "answer": answer,
            "answered_at": answered_at, "p1_steps": p1_steps,
            "p2_steps": p2_steps, "edits": edits, "regens": regens,
+           "merges": store.merges - merges0,
            "tokens_in": tok_in, "tokens_out": tok_out,
            "seconds": time.perf_counter() - t0}
     log.train(row)
