@@ -938,11 +938,12 @@ offline construction save no steps either, which suggests the bottleneck is
 the agentic reader's search policy rather than any particular way of
 organizing a store: a reader that decides when to stop searching by its own
 uncertainty will not stop earlier just because a shortcut exists. Third,
-the stratified attribution shows the mechanism is real but narrow, paying
-on hard questions and taxing easy ones. Together these point at a concrete
-next design: gate index construction (and index \emph{use}) on the expected
-derivation cost of a question class, rather than indexing whatever was just
-answered.
+we cannot yet say which part of what the agent built carries the retained
+gain: the observational attribution turned out to be confounded by reverse
+causation (Sec.~\ref{sec:res-e4}), and the store ablations that would
+answer it are running. Together these point at a concrete next design: gate
+index construction --- and index \emph{use} --- on the expected derivation
+cost of a question class, rather than indexing whatever was just answered.
 
 \textbf{Online, not one-shot.} Every offline baseline spends its entire
 build budget before the first query and can never incorporate what queries
