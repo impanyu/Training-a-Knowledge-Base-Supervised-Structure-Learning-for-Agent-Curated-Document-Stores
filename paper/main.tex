@@ -357,29 +357,31 @@ $\approx 0$, so every point of reader performance is earned through the store.
 
 \section{Training Protocol}
 \begin{algorithm}[t]
-\caption{Training a knowledge base}
+\caption{Training a knowledge base. \emph{Reader tools} =
+\texttt{search}/\texttt{read}/\texttt{answer}; \emph{editor tools} =
+\texttt{search}/\texttt{read}/\texttt{add}/\texttt{edit}/\texttt{delete}/%
+\texttt{link}/\texttt{unlink}/\texttt{done}.}
 \label{alg:train}
 \begin{algorithmic}[1]
-\State evaluate reader on \texttt{eval} split \Comment{epoch-0 baseline (= B1)}
+\State evaluate reader on \texttt{eval} \Comment{epoch-0 baseline (= B1)}
 \For{epoch $= 1 \dots E$}
-  \For{each $(q, a^{*})$ in shuffled \texttt{train} split}
+  \For{$(q, a^{*})$ in shuffled \texttt{train}}
     \State reset short-term memory; task $\gets q$
-    \For{step $= 1 \dots N_1$}  \Comment{Phase 1: forward}
-      \State $d \gets$ policy(search/read/answer)
+    \For{step $= 1 \dots N_1$}  \Comment{forward}
+      \State $d \gets$ policy(reader tools)
       \If{$d = \texttt{answer}(\hat a)$}
         \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
       \EndIf
     \EndFor
-    \For{step $= 1 \dots N_2$}  \Comment{Phase 2: backward}
-      \State $d \gets$ policy(search/read/add/edit/delete/link/unlink/done)
+    \For{step $= 1 \dots N_2$}  \Comment{backward}
+      \State $d \gets$ policy(editor tools)
       \If{$d = \texttt{done}$} \textbf{break} \EndIf
     \EndFor
-    \State refresh embeddings of dirty documents; log iteration
+    \State refresh dirty embeddings; log
   \EndFor
-  \State snapshot store; evaluate reader on \texttt{eval} split
-  \Statex \hfill \Comment{learning-curve point}
+  \State snapshot; evaluate reader on \texttt{eval} \Comment{curve point}
 \EndFor
-\State final exam: frozen store, \texttt{test\_in}/\texttt{test\_out}, budget $M$
+\State exam: frozen store, test splits, budget $M$
 \end{algorithmic}
 \end{algorithm}
 
