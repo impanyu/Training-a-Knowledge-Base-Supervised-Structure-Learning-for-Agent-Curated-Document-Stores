@@ -648,6 +648,18 @@ $-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
 starts looking up. Whether this transfers to \emph{unseen} questions is
 precisely what the final exam measures.
 
+\textbf{(5) Where the structure lives.} Figure~\ref{fig:network} maps the
+store's evolution across its semantic space (every document drawn; position
+= t-SNE of the document embedding, so the clusters visible at iteration~0
+are the universe's natural topic groups). Navigation documents appear
+throughout the map; hub directories --- the dense orange cluster --- fan out
+into the topic clusters, and short local links connect semantically adjacent
+documents: the store visibly acquires an access layer it was born without.
+Figure~\ref{fig:trajectory} quantifies the same growth from trace replay:
+$+390$ documents ($+6.6\%$), 597 links, accumulating steadily across both
+epochs --- in sharp contrast to the unguarded $5\times$ blowup of
+Sec.~\ref{sec:pollution}.
+
 \textbf{Edit behavior.} The backward pass writes $\approx$1.6 documents and
 $\approx$2.0 links per iteration in epoch~1; in epoch~2 the add rate falls
 to $1.0$/iteration while linking stays at $2.0$ --- consistent with the
