@@ -731,9 +731,35 @@ B5's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
 \texttt{test\_out}. Crucially it shares the baselines' defining failure ---
 $\rho \approx 1$ against B1 at both budgets. That \emph{every} method here,
 supervised or not, online or one-shot, lands within noise of the flat store
-on steps is the paper's most robust negative finding: at these budgets an
-agentic reader's search length is governed by the question, not by the
-store's organization.
+on steps is the paper's most robust negative finding, and the step
+distribution says why.
+
+\textbf{Why no method saves steps: mean steps is not a lookup-length
+measure.} Steps per question are strongly bimodal --- a mass around 3--6
+and a spike at exactly $M$ --- because a question the reader cannot resolve
+consumes the \emph{entire} budget by construction. The mean therefore
+decomposes as $\bar{s} = p_{\text{give-up}} M + (1 - p_{\text{give-up}})
+\bar{s}_{\text{answered}}$, and at $M{=}15$ the second term is nearly
+arm-invariant: $6.77$ (B1), $6.97$ (B3), $6.91$ (B5), $6.90$ (ours). The
+cleanest contrast is the paired one: on the 103 questions that
+\emph{both} B1 and the trained store answered, the trained store takes
+$6.48$ steps against B1's $6.57$ --- a $0.10$-step difference, i.e.\ none.
+What the trained store actually does is convert give-ups: it rescues 13
+questions B1 abandoned (answering them in $10.2$ steps at F1 $0.69$) while
+losing 7 in the other direction, and that net of 6 fully accounts for the
+mean dropping from $8.97$ to $8.73$. Organization thus moves the
+\emph{give-up rate}, not the length of a successful lookup. Two
+consequences. Methodologically, mean steps conflates two different
+quantities and is a poor efficiency endpoint at budgets where give-ups are
+common ($27$--$35\%$ here); reporting $p_{\text{give-up}}$ and
+$\bar{s}_{\text{answered}}$ separately, as we do above, is the honest
+decomposition. Substantively, the reader's stopping rule is
+confidence-driven rather than structure-driven: it stops when it believes
+it can answer, so a shortcut it traverses earlier does not make it stop
+earlier --- it only changes \emph{whether} it ever gets there. Making
+materialized structure pay in steps therefore requires a reader that can
+recognize it is on a shortcut, which our fixed reader, chosen deliberately
+to isolate the store, cannot.
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.}
