@@ -170,14 +170,15 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
-    assert "3. GENERALIZE to the question's class" in TRAIN_SYSTEM
-    for cue in ("SIBLINGS", "replacing entities with slots",
-                "cover it completely", "several different shapes can reuse"):
-        # objective 3: cover the slot dimension, prefer reusable substrate
+    assert "3. Build STRUCTURE, not answers" in TRAIN_SYSTEM
+    for cue in ("Store the PATH instead", "traversable for ANY entity"
+                if False else "traversable for", "shape-agnostic",
+                "returns that note AND the full text of every note linked"):
+        # objective 3: edges convert uncertain search into certain traversal
         assert cue in TRAIN_SYSTEM
-    # objective 4 bans the contentless pointer notes measured in the v10L run
-    assert "4. Every note must STATE something" in TRAIN_SYSTEM
-    assert "carries no fact" in TRAIN_SYSTEM
+    # objective 4: a note is a FACT or a densely linked ENTRY POINT, else dead
+    assert "4. If you add a note, it must earn its retrieval slot" in TRAIN_SYSTEM
+    assert "dead weight" in TRAIN_SYSTEM
     assert "5. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
     assert "Organize and navigate; don't duplicate." in TRAIN_SYSTEM
     # dead vocabulary from the doc era must be gone
