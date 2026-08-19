@@ -485,7 +485,27 @@ arm are reported as deltas over a mandatory no-store reader baseline.
 
 \subsection{Baselines}
 All baselines differ \emph{only} in how the store is prepared; reader, test
-sets, and budgets are identical, and each reports its one-time build cost.
+sets, and budgets are identical, and each reports its one-time build cost
+(Table~\ref{tab:baselines}).
+
+\begin{table}[t]
+\caption{Baseline arms on \kbgym{}-500. Identical reader, test sets, and
+budgets; arms differ only in store preparation.}
+\label{tab:baselines}
+\centering
+\scriptsize
+\begin{tabular}{p{1.35cm}p{1.6cm}p{2.4cm}p{1.5cm}}
+\toprule
+Arm & Preparation & Structure added & Build cost \\
+\midrule
+B1 flat & none (= epoch 0) & --- & 0 \\
+B3 GraphRAG-style & offline, unsupervised & 135 community-summary docs, 8.5k links & 488k tokens, 63 min \\
+B4 RAPTOR-style & offline, unsupervised & summary hierarchy & (extended version) \\
+B5 HippoRAG-2-style & offline, unsupervised & 660 entity-index docs, 196k links & $\approx$0 (lexical) \\
+Ours & QA-supervised, incremental & links + navigation docs & one training run \\
+\bottomrule
+\end{tabular}
+\end{table}
 \textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B3,
 GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
 extraction, justified by template-shaped text), co-occurrence communities,
