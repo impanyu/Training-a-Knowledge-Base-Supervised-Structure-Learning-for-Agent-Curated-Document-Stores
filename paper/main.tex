@@ -869,58 +869,49 @@ $720\times$ lift. Support sets are never visible to the training agent, so
 this is an honest measure: when the agent links two facts, it is recovering
 genuine reasoning adjacency, not surface similarity.
 
-\textbf{Mechanism attribution: navigation documents help on hard questions
-and hurt on easy ones.} Splitting the 150 exam questions by whether the
-reader's trajectory touched agent-built structure (an authored navigation
-document, or a statement that gained links during training) is confounded
-by difficulty: the touched group is systematically harder, because a reader
-that searches longer is more likely to encounter a navigation document
-(B1 needs $10.8$ steps and scores $0.541$ on the touched questions vs.\
-$7.7$ steps and $0.674$ on the untouched ones). Stratifying by B1 step
-tertiles removes the confound and reverses the naive reading
-(Table~\ref{tab:attrib}). On \emph{easy} questions, touching built structure
-costs $+1.93$ steps and $-0.143$ F1 relative to B1, while untouched easy
-questions are near parity; on \emph{hard} questions the two groups converge
-($-1.36$ vs.\ $-1.72$ steps). Navigation documents thus compete in
-retrieval on questions a direct lookup already solved --- the pollution
-mechanism reappearing at the retrieval layer rather than the store layer,
-and the same signature appears in QC5 abstention ($+2.11$ steps when
-touched: index nodes keep the reader searching where it should decline).
-The one class where the mechanism fires as designed is QC6 join, the class
-with the largest retention gain: touched questions there run $-0.59$ steps
-at $+0.059$ F1. The efficiency claim is therefore not refuted but
-\emph{localized}: built structure pays where derivation is expensive and
-taxes where it is not, so a store that indexes indiscriminately dilutes its
-own benefit. Two limits of this analysis: touching is observational, not
-assigned, so residual confounding within bands is possible; and the built
-layer is thin --- only 71 of 5{,}864 statements gained a link --- so most
-questions have no built path even when one would help.
+\textbf{Mechanism attribution: the observational split does not identify,
+and we say so.} We had intended to attribute the reader's step savings to
+its hits on built structure, splitting exam questions by whether the
+trajectory touched an authored navigation document or a linked statement.
+That split is not identifying, for a mechanical reason: touching is
+\emph{downstream} of searching. The probability that a trajectory
+encounters built structure rises from $0\%$ when the reader issues one
+search to $63\%$ when it issues nine, so the touched group is selected for
+long trajectories by construction. Difficulty matching does not repair
+this: the touched group remains $+0.92$ steps worse than the untouched one
+after exact stratification on B1's step count, which is exactly what
+reverse causation predicts. Two secondary measurements rule out the
+explanation we first reached for --- retrieval crowding. Authored documents
+occupy $5.3\%$ of top-5 retrieval slots against a $5.7\%$ share of the
+store by count, i.e.\ no over-retrieval, and their share \emph{rises} with
+question difficulty ($2.2\%$ easy, $6.6\%$ hard), which is what relevance,
+not pollution, looks like.
 
-\begin{table}[t]
-\caption{Mechanism attribution, stratified by difficulty (B1 step tertiles).
-$\Delta$ is trained minus B1 (untrained flat store) on the
-same questions at $M{=}15$; the touched/untouched grouping is defined by the
-\emph{trained} reader's trajectory. Built
-structure costs steps on easy questions and matches B1 on hard ones.}
-\label{tab:attrib}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{llrrrr}
-\toprule
-Band & Reader touched & $n$ & B1 steps & $\Delta$ steps & $\Delta$ F1 \\
-\midrule
-easy & built structure & 14 & 5.1 & $+1.93$ & $-0.143$ \\
-     & no              & 51 & 4.2 & $+0.49$ & $+0.000$ \\
-\midrule
-mid  & built structure & 19 & 8.7 & $+0.74$ & $-0.105$ \\
-     & no              & 20 & 10.2 & $-1.60$ & $+0.000$ \\
-\midrule
-hard & built structure & 28 & 15.0 & $-1.36$ & $+0.143$ \\
-     & no              & 18 & 15.0 & $-1.72$ & $+0.167$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\textbf{What the agent actually wrote.} Inspection of the 359 authored
+documents separates two kinds. Most ($80\%$) materialize an answer:
+\emph{``Caleb Netherfield's father is Caleb Nightingale and Caleb
+Nightingale's spouse is Petra Jessup and Petra Jessup's job is joiner''}
+collapses a three-hop chain into one document; others aggregate a reverse
+index (\emph{``People whose hobby is pottery include \ldots''}) or a count.
+The remaining $20\%$ are pointer notes that state no fact at all ---
+\emph{``Spouse job index gathers notes that record the jobs of spouses of
+people''}, \emph{``A Junia Wetherby directory links to Junia Wetherby's
+hobby, job, residence, friends, parent, and birth date notes''}. A reader
+that retrieves one of these pays a slot and a read step and learns nothing,
+then still has to find the facts. Notably the linking effort went to the
+wrong kind: pointer notes carry $2.11$ links on average against $1.06$ for
+contentful ones. Their absolute retrieval footprint is small ($0.9\%$ of
+slots), so this is a design smell rather than a proven cost --- which is
+precisely why the causal question needs an intervention on the store rather
+than an observational split.
+
+\textbf{The ablation that would settle it.} Holding reader, questions and
+budget fixed and removing structure from the store gives the missing
+counterfactual: the trained store minus its 359 authored documents (127
+statement-to-statement links retained), and minus its links (authored
+documents retained). Both exams were running at submission time. This is
+the design the confound above forces, and we report the confound rather
+than the attribution it invalidates.
 
 \emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
