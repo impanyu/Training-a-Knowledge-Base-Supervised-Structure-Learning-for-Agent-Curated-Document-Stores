@@ -4,6 +4,8 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{textcomp}
@@ -399,7 +401,8 @@ trajectory plus the revealed gold. No oracle localization is provided.}
 \label{tab:credit}
 \centering
 \small
-\begin{tabular}{p{2.6cm}p{5.2cm}}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{L{2.5cm}L{5.2cm}}
 \toprule
 Trajectory diagnosis & Repair \\
 \midrule
@@ -436,17 +439,18 @@ Three arms share one protocol and differ in document granularity and realism
 \label{tab:arms}
 \centering
 \scriptsize
-\begin{tabular}{p{1.55cm}p{1.85cm}p{1.7cm}p{1.9cm}}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{L{1.35cm}L{1.75cm}L{1.75cm}L{1.75cm}}
 \toprule
  & \kbgym{} (main) & PhantomWiki (official) & MuSiQue (real text) \\
 \midrule
-documents & 5{,}864 single-sentence & 3{,}403 sentences / 405 articles & $\sim$11k paragraphs \\
+documents & 5{,}864 sentences & 3{,}403 sent.\ or 405 articles & $\sim$11k paragraphs \\
 source & our generator & their generator & Wikipedia \\
-categories & 10 (26 templates) & 4 composition shapes & official 2--4-hop shapes \\
-questions & 330 (150/100/50/30) & 330 (same scheme) & same scheme \\
-supports & exact, per question & unavailable & official annotations \\
-contamination & none & none & corrected by no-store baseline \\
-status & built, main runs & data built & planned \\
+categories & 10 (26 templates) & 4 shapes & 2--4-hop shapes \\
+questions & 330 (150/100/50/30) & 330, same scheme & same scheme \\
+supports & exact & unavailable & official \\
+contamination & none & none & delta-corrected \\
+status & built; main runs & data built & planned \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -494,15 +498,16 @@ budgets; arms differ only in store preparation.}
 \label{tab:baselines}
 \centering
 \scriptsize
-\begin{tabular}{p{1.35cm}p{1.6cm}p{2.4cm}p{1.5cm}}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{L{1.5cm}L{1.55cm}L{2.2cm}L{1.35cm}}
 \toprule
 Arm & Preparation & Structure added & Build cost \\
 \midrule
 B1 flat & none (= epoch 0) & --- & 0 \\
-B3 GraphRAG-style & offline, unsupervised & 135 community-summary docs, 8.5k links & 488k tokens, 63 min \\
-B4 RAPTOR-style & offline, unsupervised & summary hierarchy & (extended version) \\
-B5 HippoRAG-2-style & offline, unsupervised & 660 entity-index docs, 196k links & $\approx$0 (lexical) \\
-Ours & QA-supervised, incremental & links + navigation docs & one training run \\
+B3 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok, 63 min \\
+B4 RAPTOR & offline, unsup. & summary hierarchy (ext.) & --- \\
+B5 HippoRAG-2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 (lexical) \\
+Ours & QA-supervised & links + nav docs & 1 training run \\
 \bottomrule
 \end{tabular}
 \end{table}
