@@ -774,12 +774,22 @@ $0.17 \to 0.50$ and QC8 $0.46 \to 0.58$. This is the design prediction of E3
 (Sec.~\ref{sec:suite}) realized: training gains concentrate in the classes retrieval
 cannot solve natively.
 
-\textbf{Retention is also \emph{cheaper} --- the efficiency mechanism at
-work.} On re-encountered questions the forward pass takes $5.7$ steps and
-31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
-$-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
-starts looking up. Whether this transfers to \emph{unseen} questions is
-precisely what the final exam measures.
+\textbf{Retention is also cheaper, with a caveat about what is being
+compared.} On re-encountered questions the forward pass takes $5.7$ steps
+and 31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
+$-32\%$ tokens. Decomposing as in Sec.~\ref{sec:res-e2}, both terms move:
+budget exhaustion falls from $47/150$ ($31\%$) to $7/150$ ($5\%$), and on
+the 100 questions resolved within budget in \emph{both} epochs the lookup
+itself shortens from $6.43$ to $4.64$ steps ($-28\%$) while F1 rises from
+$0.870$ to $0.950$. Unlike the null result on unseen questions, then, the
+conversion of derivation into lookup is genuine here. The caveat is that
+these two epochs are not a controlled store contrast: the store evolves
+\emph{during} epoch~1, so an early epoch-1 question meets a nearly
+untrained store and a late one meets a partly trained store, and the epoch
+label mixes store state with question order. The controlled version --- the
+same 150 training questions examined under the frozen initial store and the
+frozen final store, exactly as the test splits are examined --- is reported
+in Sec.~\ref{sec:res-gap}.
 
 \textbf{Three-layer decomposition, completed.} Retention $0.85$ /
 \texttt{test\_in} $0.63$ / \texttt{test\_out} $0.66$. Both test layers
