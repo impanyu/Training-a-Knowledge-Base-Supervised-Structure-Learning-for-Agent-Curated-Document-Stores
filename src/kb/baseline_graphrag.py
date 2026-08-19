@@ -51,10 +51,11 @@ class LLMSummarizer:
     """One chat call per community (default gpt-5-mini). gpt-5*/o* models
     reject non-default temperature and want max_completion_tokens (same
     handling as kb.policy); reasoning models may burn the whole completion
-    budget on reasoning and return empty content — fall back to the stub
-    text so the build never emits an empty node."""
+    budget on reasoning and return empty content — the budget is sized for
+    the largest communities' fact lists, and a still-empty reply falls back
+    to the stub text so the build never emits an empty node."""
 
-    def __init__(self, model: str = "gpt-5-mini", max_tokens: int = 2000):
+    def __init__(self, model: str = "gpt-5-mini", max_tokens: int = 6000):
         import os
 
         from openai import OpenAI
