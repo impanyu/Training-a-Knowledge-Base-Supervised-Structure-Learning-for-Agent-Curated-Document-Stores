@@ -616,13 +616,48 @@ roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
 $\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
 $\approx \$6$ at current pricing.
 
-\subsection{Main-Condition Results}
-\todo{fill from the v10L (500-person, document-graph, parsimony protocol) run:
-learning curve; final test\_in/test\_out accuracy and steps, trained vs.\ untrained,
-at $M{=}15$ and $M{=}8$; per-class breakdown; store trajectory; break-even point;
-baseline table. Infrastructure for the official-PhantomWiki external arm is built
-(405 articles $\to$ 3{,}403 nodes, 330 questions in our splits) and awaits its
-training run.}
+\subsection{Main-Condition Training Signals}
+Figure~\ref{fig:learning} shows the main run (500-person universe, full
+protocol: parsimony objective plus dedup guard; 300 iterations, 9.7M training
+tokens, 8.4h). Three signals, in increasing strength: \emph{(i)} the held-out
+eval curve drifts upward (eval-in $0.60 \to 0.65$, eval-out
+$0.50 \to 0.60$; $n{=}30$ per point --- directional only); \emph{(ii)}
+\emph{within} epoch~1 the rolling forward accuracy climbs from $\approx$0.45
+to $\approx$0.65 --- later training questions already benefit from structure
+consolidated by earlier ones; \emph{(iii)} on re-encountered questions in
+epoch~2 forward accuracy reaches $\approx$0.80: retention carried entirely by
+the store, since the agent's memory resets every question. Whether (iii) is
+transferable organization or instance memoization is exactly what the final
+\texttt{test\_in}/\texttt{test\_out} exam separates. \todo{final exam
+numbers.}
+
+Figure~\ref{fig:trajectory} shows what training did to the store: growth is
+steady and modest (+390 documents, $+6.6\%$; 597 links; zero merges --- the
+dedup guard was consulted $\approx$30 times and correctly declined every
+candidate, i.e.\ prompt-level parsimony already suppressed duplication),
+in sharp contrast to the unguarded $5\times$ blowup of
+Sec.~\ref{sec:pollution}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{learning.pdf}
+\caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
+per point: 20 trained-template, 10 reserved-template). (b)~Rolling
+(window~30) forward accuracy over training; the dashed line marks epoch~2,
+where questions are re-encountered and retention is carried only by the
+store.}
+\label{fig:learning}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\columnwidth]{trajectory.pdf}
+\caption{Store trajectory during training, reconstructed by trace replay:
+links, authored (navigation) documents, and net document growth per
+iteration. Growth is steady and small ($+6.6\%$ over 300 iterations), unlike
+the unguarded $5\times$ blowup of Sec.~\ref{sec:pollution}.}
+\label{fig:trajectory}
+\end{figure}
 
 \section{Discussion and Limitations}
 \textbf{Curation is a boundary, not a slogan.} Section~\ref{sec:pollution} suggests
