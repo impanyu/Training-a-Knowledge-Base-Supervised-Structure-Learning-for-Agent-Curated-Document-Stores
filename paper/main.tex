@@ -316,7 +316,7 @@ arborist.''). The initial store has \emph{zero links}: a bag of atomic facts.
 Document embeddings back \texttt{search} and are maintained
 automatically as nodes are added, edited, or deleted.
 
-\subsection{Actions}
+\subsection{Actions}\label{sec:actions}
 Reader and training-forward mode: \texttt{search(query)} (top-$k$ document ids
 with full text), \texttt{read(id)} (text plus links, each with target text),
 \texttt{answer(text)}. Training consolidation adds: \texttt{add(text)},
@@ -357,10 +357,8 @@ $\approx 0$, so every point of reader performance is earned through the store.
 
 \section{Training Protocol}
 \begin{algorithm}[t]
-\caption{Training a knowledge base. \emph{Reader tools} =
-\texttt{search}/\texttt{read}/\texttt{answer}; \emph{editor tools} =
-\texttt{search}/\texttt{read}/\texttt{add}/\texttt{edit}/\texttt{delete}/%
-\texttt{link}/\texttt{unlink}/\texttt{done}.}
+\caption{Training a knowledge base (reader and editor tool sets as defined
+in Sec.~\ref{sec:actions})}
 \label{alg:train}
 \begin{algorithmic}[1]
 \State evaluate reader on \texttt{eval} \Comment{epoch-0 baseline (= B1)}
