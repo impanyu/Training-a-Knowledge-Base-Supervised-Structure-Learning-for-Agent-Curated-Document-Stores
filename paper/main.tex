@@ -652,10 +652,13 @@ store.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.8\columnwidth]{trajectory.pdf}
-\caption{Store trajectory during training, reconstructed by trace replay:
-links, authored (navigation) documents, and net document growth per
-iteration. Growth is steady and small ($+6.6\%$ over 300 iterations), unlike
-the unguarded $5\times$ blowup of Sec.~\ref{sec:pollution}.}
+\caption{Store trajectory during training, reconstructed by trace replay.
+\emph{Authored documents} = agent-written documents still alive and unedited
+(navigation/index notes); \emph{net documents added} = total store size
+minus the initial 5{,}864 (authored survivors, including later-edited ones,
+minus deleted originals). Growth is steady and small ($+6.6\%$ over 300
+iterations), unlike the unguarded $5\times$ blowup of
+Sec.~\ref{sec:pollution}.}
 \label{fig:trajectory}
 \end{figure}
 
