@@ -45,3 +45,19 @@ for IT in 25 50 75 100 125 175 200 225 250 275; do
 done
 
 echo "DONE"
+
+# --- proper train/test generalization gap: the TRAIN split under frozen stores ---
+# The epoch1-vs-epoch2 contrast is confounded (the store evolves within epoch 1).
+# The clean control is the same reader on the SAME questions under the frozen
+# initial store vs the frozen final store.
+echo "=== train split: initial store (untrained) ==="
+python3 -m kb.test --kb data/v10L/universe.json --universe data/v10L/universe.json \
+  --split train --epoch 0 --model gpt-5-mini --out runs/v10L_b1_train \
+  > runs/v10L_b1_train.log 2>&1
+
+echo "=== train split: trained store (epoch 2) ==="
+python3 -m kb.test --kb runs/v10L_dedup/kb_epoch_2.json --universe data/v10L/universe.json \
+  --split train --epoch 2 --model gpt-5-mini --out runs/v10L_trained_train \
+  > runs/v10L_trained_train.log 2>&1
+
+echo "ALL DONE"
