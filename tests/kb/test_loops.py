@@ -171,12 +171,10 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
     assert "3. Build STRUCTURE, not answers" in TRAIN_SYSTEM
-    for cue in ("Store the PATH instead", "traversable for ANY entity"
-                if False else "traversable for", "shape-agnostic",
-                "returns that note AND the full text of every note linked"):
-        # objective 3: edges convert uncertain search into certain traversal
+    for cue in ("(a) LINKS", "(b) INDEXES", "shape-agnostic",
+                "completeness of its links", "not a roster of answers"):
+        # objective 3: links for hops, indexes for entry points
         assert cue in TRAIN_SYSTEM
-    # objective 4: a note is a FACT or a densely linked ENTRY POINT, else dead
     assert "4. If you add a note, it must earn its retrieval slot" in TRAIN_SYSTEM
     assert "dead weight" in TRAIN_SYSTEM
     assert "5. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
