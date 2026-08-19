@@ -825,6 +825,20 @@ QC8 deep counts & 26 & 0.46 & 0.58 \\
 \end{tabular}
 \end{table}
 
+\subsection{The Controlled Generalization Gap}\label{sec:res-gap}
+The epoch-to-epoch contrast above mixes store state with question order. The
+controlled comparison holds the store frozen and varies only which questions
+are asked: the same reader, budget and protocol as the test splits, applied
+to the 150 \emph{training} questions under (a) the untrained initial store
+and (b) the frozen epoch-2 store. Together with the test-split results this
+gives the train/test generalization gap in its standard form --- performance
+on questions the store was optimized for, against performance on questions
+it was not, with everything else held fixed. This exam was running at
+submission time; the slot is reserved here because it is the measurement
+that separates an overfitted store from a generalizing one, and the
+evidence so far (large retention gains, near-null transfer of the step
+saving) predicts a wide gap.
+
 \subsection{E4: Trace Mining---Edit Behavior and Store Morphology}\label{sec:res-e4}
 \textbf{Where the structure lives.} Figure~\ref{fig:network} maps the
 store's evolution across its semantic space (every document drawn; position
