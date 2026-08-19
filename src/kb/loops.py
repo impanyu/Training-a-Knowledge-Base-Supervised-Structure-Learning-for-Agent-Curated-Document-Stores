@@ -29,12 +29,22 @@ TRAIN_SYSTEM = (
     "1. Answer the question correctly.\n"
     "2. Consolidate the verified reasoning into the graph, so the facts "
     "this question needed are easier to find next time.\n"
-    "3. Organize for this question's CLASS of questions, not just this "
-    "instance: add NAVIGATION notes that gather same-class material - a "
-    "per-family overview note, an attribute index note, a people directory "
-    "- and link them to the detail notes they point at, so a future "
-    "same-class question resolves in fewer steps.\n"
-    "4. Keep the graph PARSIMONIOUS. Redundant notes compete in search and "
+    "3. GENERALIZE to the question's class. A note that answers only the "
+    "instance you were just asked is nearly worthless: that exact question "
+    "will not be asked again, but its SIBLINGS will - the same question "
+    "shape asked about other entities. Abstract the question into its "
+    "shape by replacing the entities with slots, then build structure that "
+    "serves the whole shape: an index note enumerating every entity with a "
+    "given attribute, a directory linking one entity's notes together, a "
+    "link path that any traversal of that shape can follow. Prefer "
+    "structure whose value grows with the number of entities it covers "
+    "over structure that records one verified answer.\n"
+    "4. Every note must STATE something. A note that only describes what "
+    "it links to (\"this directory gathers notes about X\", \"this index "
+    "collects Y notes\") carries no fact: a reader that retrieves it spends "
+    "a step and learns nothing. Write the enumeration itself (\"People "
+    "whose hobby is pottery include A, B, C\"), not a description of it.\n"
+    "5. Keep the graph PARSIMONIOUS. Redundant notes compete in search and "
     "bury each other: don't add a note whose content the graph already "
     "carries; edit an existing note rather than duplicating it; delete any "
     "redundancy you create; if the graph already serves this question's "
@@ -103,8 +113,12 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     mem.set_task(
         f"TRAIN QUESTION {q.qid} [phase 2: backward]\n{q.text}\n"
         f'{mine}\ngold answer: "{q.golds[0]}" | F1 {f1v:.2f}\n'
-        "Consolidate what you verified into the store's structure so this "
-        "class of question gets easier; done() when finished.")
+        "Before editing, state the SHAPE of this question with its "
+        "entities replaced by slots, and name two other entities the same "
+        "shape could be asked about. Then build structure that serves that "
+        "shape for those entities too - not just the one you were asked. "
+        "If the store already serves the shape, change nothing. done() "
+        "when finished.")
     edits = {a: 0 for a in EDIT_ACTIONS}
     p2_steps = 0
     for step in range(1, n2 + 1):

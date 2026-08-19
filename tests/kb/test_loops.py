@@ -170,11 +170,15 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
-    assert "3. Organize for this question's CLASS" in TRAIN_SYSTEM
-    for cue in ("NAVIGATION notes", "attribute index", "people directory",
-                "fewer steps"):                 # objective 3: concrete guidance
+    assert "3. GENERALIZE to the question's class" in TRAIN_SYSTEM
+    for cue in ("SIBLINGS", "replacing the entities with slots",
+                "index note enumerating", "grows with the number of "
+                "entities it covers"):          # objective 3: class abstraction
         assert cue in TRAIN_SYSTEM
-    assert "4. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
+    # objective 4 bans the contentless pointer notes measured in the v10L run
+    assert "4. Every note must STATE something" in TRAIN_SYSTEM
+    assert "carries no fact" in TRAIN_SYSTEM
+    assert "5. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
     assert "Organize and navigate; don't duplicate." in TRAIN_SYSTEM
     # dead vocabulary from the doc era must be gone
     for stale in ("doc", "summar", "move_statement", "copy_statement"):
