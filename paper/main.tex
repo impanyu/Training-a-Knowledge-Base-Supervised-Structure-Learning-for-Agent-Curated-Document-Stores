@@ -34,8 +34,9 @@ base, yet none of this work measures what curation does to the store itself. We 
 the usual framing: \emph{the knowledge base is the model}. A training agent consumes
 supervised QA pairs one at a time---attempting each question against the current store,
 receiving the gold answer, then consolidating verified reasoning into the store's
-structure---and an independent frozen-store reader is examined on held-out questions
-under a fixed action budget. Our central hypothesis is an \emph{efficiency} claim:
+structure---so the knowledge base \emph{learns online}: it improves while it
+serves, with no separate build phase. An independent frozen-store reader is
+examined on held-out questions under a fixed action budget. Our central hypothesis is an \emph{efficiency} claim:
 by materializing reasoning paths into index and shortcut structure, a trained store
 lets an unchanged reader answer at \emph{non-inferior accuracy in fewer steps},
 amortizing one-time training cost across all future queries. The protocol yields the
@@ -95,9 +96,11 @@ a backward pass (with the revealed gold in hand, \emph{edit the store
 itself}---adding, rewriting, deleting, and linking documents; building index
 and navigation documents---so the question's class becomes easier for a future
 reader); held-out performance is the loss. The knowledge base, not the model
-weights, is the learned object; its structure is carved incrementally by the
-questions actually asked, unlike offline graph construction built blind to
-the query distribution.
+weights, is the learned object, and the learning is \emph{online}: the store
+improves while it answers, structure is carved incrementally by the questions
+actually asked, and supervision keeps flowing after deployment---whereas
+offline graph construction (GraphRAG, RAPTOR, HippoRAG) is a one-shot build,
+fixed before the first query and blind to the query distribution.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
@@ -490,7 +493,10 @@ near-ceiling no-retrieval scores for related datasets), so all scores on this
 arm are reported as deltas over a mandatory no-store reader baseline.
 
 \subsection{Baselines}
-All baselines differ \emph{only} in how the store is prepared; reader, test
+All baselines are \emph{one-shot}: structure is built once, before any
+question is seen, and never revised---the defining contrast with our online
+trainer, which edits the store between every answer. Beyond that they differ
+\emph{only} in how the store is prepared; reader, test
 sets, and budgets are identical, and each reports its one-time build cost
 (Table~\ref{tab:baselines}).
 
@@ -635,7 +641,9 @@ eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
 \textbf{The store improves \emph{within} an epoch.} Rolling forward
 accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
 $0.64$): later training questions already benefit from structure
-consolidated by earlier ones, before any question repeats.
+consolidated by earlier ones, before any question repeats. This is the
+signature of online learning---accuracy rising \emph{while the store
+serves}---which no one-shot build can produce.
 
 \textbf{The frozen exam ($M{=}15$): accuracy transfers; steps do not.}
 An unchanged reader on the frozen epoch-2 store scores $0.630$/$0.660$
@@ -793,6 +801,14 @@ GraphRAG-style summaries added to an already-searchable store regress
 whether the optimizer knows when \emph{not} to edit.
 The train/test protocol makes this boundary measurable; downstream-only evaluation
 cannot see a store being slowly ruined while individual answers still look fine.
+
+\textbf{Online, not one-shot.} Every offline baseline spends its entire
+build budget before the first query and can never incorporate what queries
+reveal; our trainer spends nothing up front and converts each answered
+question into structure, so the store tracks the query distribution it
+actually faces and keeps learning after deployment. The practical corollary:
+an operator does not choose between serving and building---the forward pass
+\emph{is} serving.
 
 \textbf{Deployment reading.} The abstraction targets a real configuration: agent
 fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
