@@ -508,8 +508,12 @@ MiniLM family, environment-maintained. Measured training cost:
 $\approx$23k tokens and 83\,s per iteration on the 120-person universe,
 $\approx$161\,s on the 500-person main configuration ($\approx$\$6 per
 300-iteration run at current pricing). Per-epoch snapshots plus byte-exact
-trace replay reconstruct every intermediate store state for analysis. Basic
-version: single seed (seed~0); seed replication planned.
+trace replay reconstruct every intermediate store state for analysis
+(merge events replay deterministically without the judge). Basic version:
+single seed (seed~0); seed replication planned. The main run reported below
+predates the dedup guard and uses prompt-level parsimony only; the guard is
+default-on for subsequent runs, and its on/off contrast is a natural
+ablation.
 
 \subsection{Experiment Suite and Predictions}
 \textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
