@@ -81,6 +81,27 @@ def read_trace(path):
     return seen
 
 
+def stratified(rows, key, bands=3):
+    """Compare touched/untouched WITHIN difficulty bands, so the split is not
+    confounded by question difficulty (the touched group is systematically
+    harder: readers that search longer are more likely to encounter a
+    navigation document)."""
+    xs = sorted(r[key] for r in rows)
+    n = len(xs)
+    cuts = [xs[n * i // bands] for i in range(1, bands)]
+
+    def band(v):
+        for i, c in enumerate(cuts):
+            if v <= c:
+                return i
+        return bands - 1
+
+    out = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        out[band(r[key])][r["touched"]].append(r)
+    return cuts, out
+
+
 def attribution(run, base, nodes, orig_ids):
     authored = {n["id"] for n in nodes if n.get("flag") == "authored"}
     linked = {n["id"] for n in nodes

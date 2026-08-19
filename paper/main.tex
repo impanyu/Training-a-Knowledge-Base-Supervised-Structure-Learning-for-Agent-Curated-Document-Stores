@@ -800,22 +800,56 @@ $720\times$ lift. Support sets are never visible to the training agent, so
 this is an honest measure: when the agent links two facts, it is recovering
 genuine reasoning adjacency, not surface similarity.
 
-\textbf{Mechanism attribution: the structure is found but does not pay at
-$M{=}15$.} Splitting the 150 exam questions by whether the reader's
-trajectory touched agent-built structure (an authored navigation document,
-or a statement that gained links during training), the touched group
-($n{=}61$) shows $+0.05$ steps and $+0.000$ F1 relative to B1 on the same
-questions, while the untouched group ($n{=}89$) shows $-0.43$ steps and
-$+0.034$ F1. The savings therefore cannot be attributed to the built
-structure at this budget; the trained store's accuracy edge comes from
-questions that never reached it. Two readings are possible and we cannot
-separate them here: the comparison is not causal (harder questions search
-longer and are \emph{more} likely to encounter a navigation document,
-biasing the touched group), and the built layer is thin---only 71 of
-5{,}864 statements gained a link, so most questions have no built path to
-follow even when one would help. Both readings point the same way: the
-\emph{coverage} of trained structure, not its quality, is the binding
-constraint.
+\textbf{Mechanism attribution: navigation documents help on hard questions
+and hurt on easy ones.} Splitting the 150 exam questions by whether the
+reader's trajectory touched agent-built structure (an authored navigation
+document, or a statement that gained links during training) is confounded
+by difficulty: the touched group is systematically harder, because a reader
+that searches longer is more likely to encounter a navigation document
+(B1 needs $10.8$ steps and scores $0.541$ on the touched questions vs.\
+$7.7$ steps and $0.674$ on the untouched ones). Stratifying by B1 step
+tertiles removes the confound and reverses the naive reading
+(Table~\ref{tab:attrib}). On \emph{easy} questions, touching built structure
+costs $+1.93$ steps and $-0.143$ F1 relative to B1, while untouched easy
+questions are near parity; on \emph{hard} questions the two groups converge
+($-1.36$ vs.\ $-1.72$ steps). Navigation documents thus compete in
+retrieval on questions a direct lookup already solved --- the pollution
+mechanism reappearing at the retrieval layer rather than the store layer,
+and the same signature appears in QC5 abstention ($+2.11$ steps when
+touched: index nodes keep the reader searching where it should decline).
+The one class where the mechanism fires as designed is QC6 join, the class
+with the largest retention gain: touched questions there run $-0.59$ steps
+at $+0.059$ F1. The efficiency claim is therefore not refuted but
+\emph{localized}: built structure pays where derivation is expensive and
+taxes where it is not, so a store that indexes indiscriminately dilutes its
+own benefit. Two limits of this analysis: touching is observational, not
+assigned, so residual confounding within bands is possible; and the built
+layer is thin --- only 71 of 5{,}864 statements gained a link --- so most
+questions have no built path even when one would help.
+
+\begin{table}[t]
+\caption{Mechanism attribution, stratified by difficulty (B1 step tertiles).
+$\Delta$ is trained minus B1 on the same questions at $M{=}15$. Built
+structure costs steps on easy questions and matches B1 on hard ones.}
+\label{tab:attrib}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{llrrrr}
+\toprule
+Band & Reader touched & $n$ & B1 steps & $\Delta$ steps & $\Delta$ F1 \\
+\midrule
+easy & built structure & 14 & 5.1 & $+1.93$ & $-0.143$ \\
+     & no              & 51 & 4.2 & $+0.49$ & $+0.000$ \\
+\midrule
+mid  & built structure & 19 & 8.7 & $+0.74$ & $-0.105$ \\
+     & no              & 20 & 10.2 & $-1.60$ & $+0.000$ \\
+\midrule
+hard & built structure & 28 & 15.0 & $-1.36$ & $+0.143$ \\
+     & no              & 18 & 15.0 & $-1.72$ & $+0.167$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
