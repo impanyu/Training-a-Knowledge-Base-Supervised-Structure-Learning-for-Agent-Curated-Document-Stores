@@ -171,9 +171,9 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
     assert "3. GENERALIZE to the question's class" in TRAIN_SYSTEM
-    for cue in ("SIBLINGS", "replacing the entities with slots",
-                "index note enumerating", "grows with the number of "
-                "entities it covers"):          # objective 3: class abstraction
+    for cue in ("SIBLINGS", "replacing entities with slots",
+                "cover it completely", "several different shapes can reuse"):
+        # objective 3: cover the slot dimension, prefer reusable substrate
         assert cue in TRAIN_SYSTEM
     # objective 4 bans the contentless pointer notes measured in the v10L run
     assert "4. Every note must STATE something" in TRAIN_SYSTEM
