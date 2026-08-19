@@ -172,6 +172,7 @@ def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
     assert "3. Build an INDEX for this question's TYPE" in TRAIN_SYSTEM
     for cue in ("the KEY the reader must search for", "Match the index to the type",
+                "Index-to-index edges are how navigation gets levels",
                 "NOT a roster of answers", "COMPLETENESS of its links",
                 "EXTEND it every later time you meet that key"):
         # objective 3: type-keyed indexes, accumulated across iterations
