@@ -661,7 +661,9 @@ serves}---which no one-shot build can produce.
 unchanged reader on the frozen epoch-2 store is non-inferior to B1 at both
 budgets, and at neither budget is it cheaper. At $M{=}15$ it scores
 $0.630$/$0.660$ (\texttt{test\_in}/\texttt{test\_out}) vs.\ B1's
-$0.620$/$0.620$ ($\Delta$ pooled $+0.020$), taking $8.73$ vs.\ $8.97$ steps
+$0.620$/$0.620$ ($\Delta$ pooled $+0.020$; all $\Delta$ in this
+paper are trained minus B1, the untrained flat store, on the same
+questions), taking $8.73$ vs.\ $8.97$ steps
 ($\rho = 0.97$) and saving $80$ tokens per question. At $M{=}8$ it scores
 $0.570$/$0.540$ vs.\ B1's $0.530$/$0.600$ ($\Delta$ pooled $+0.007$: better
 on trained templates, \emph{worse} on reserved ones), at $6.23$ vs.\ $6.21$
@@ -758,7 +760,7 @@ precisely what the final exam measures.
 sit above B1, so the trained organization transfers accuracy --- but the
 $0.2$-point gap to retention says most of the built structure is
 instance-bound rather than class-general. The per-category transfer
-profile (trained vs.\ B1 at $M{=}15$, both splits pooled) is
+profile ($\Delta$ vs.\ B1 at $M{=}15$, both splits pooled, same questions) is
 correspondingly modest: QC4 $+0.10$, QC9 $+0.08$, QC3/QC7 $+0.07$, QC6
 $+0.04$, QC5 $0.00$, QC8 $-0.05$, QC10 $-0.12$ ($n{=}8$). The sharpest
 contrast is reverse lookup: the class with the largest retention jump
@@ -846,7 +848,9 @@ questions have no built path even when one would help.
 
 \begin{table}[t]
 \caption{Mechanism attribution, stratified by difficulty (B1 step tertiles).
-$\Delta$ is trained minus B1 on the same questions at $M{=}15$. Built
+$\Delta$ is trained minus B1 (untrained flat store) on the
+same questions at $M{=}15$; the touched/untouched grouping is defined by the
+\emph{trained} reader's trajectory. Built
 structure costs steps on easy questions and matches B1 on hard ones.}
 \label{tab:attrib}
 \centering
