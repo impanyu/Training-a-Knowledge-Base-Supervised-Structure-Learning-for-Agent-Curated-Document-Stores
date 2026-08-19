@@ -905,6 +905,27 @@ slots), so this is a design smell rather than a proven cost --- which is
 precisely why the causal question needs an intervention on the store rather
 than an observational split.
 
+\textbf{The store never became navigable.} The action set can produce
+exactly two kinds of structure: index notes that point at the notes
+belonging to their key, and edges between notes that already exist
+(fact-to-fact, or index-to-index, which is how navigation acquires
+levels). Profiling the trained store by those classes explains the null
+transfer better than any analysis of the reader's behaviour. Of the 359
+authored index notes, the mean out-degree is $1.27$ and the median is
+$1$; \textbf{151 of them ($42\%$) carry no links at all}, and 340 ($95\%$)
+carry fewer than five. The store holds 316 index-to-fact edges, 139
+index-to-index edges and 127 fact-to-fact edges. The consequence is
+stark: \textbf{only 247 of 5{,}891 facts ($4.2\%$) are reachable from any
+index in a single read}. A store in which $96\%$ of the content has no
+entry point is not an organized store carrying instance-bound structure ---
+it is an unorganized store with 359 mostly empty labels attached. The
+efficiency hypothesis was therefore never really tested by this run: the
+mechanism it posits requires navigable structure, and the agent did not
+build any. This relocates the finding from ``materialized structure does
+not transfer'' to ``this training procedure does not produce materialized
+structure'', which is a statement about the optimizer, not about the
+hypothesis --- and a fixable one. Sec.~\ref{sec:disc} takes it up.
+
 \textbf{The ablation that would settle it.} Holding reader, questions and
 budget fixed and removing structure from the store gives the missing
 counterfactual: the trained store minus its 359 authored documents (127
@@ -916,7 +937,7 @@ than the attribution it invalidates.
 \emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
 
-\section{Discussion and Limitations}
+\section{Discussion and Limitations}\label{sec:disc}
 \textbf{Curation is a boundary, not a slogan.} Our results suggest
 curation creates value where organization is lacking and pollution where it
 is not: training helps on the disorganized main condition, while
@@ -926,7 +947,27 @@ whether the optimizer knows when \emph{not} to edit.
 The train/test protocol makes this boundary measurable; downstream-only evaluation
 cannot see a store being slowly ruined while individual answers still look fine.
 
-\textbf{Reading the negative result.} Our central hypothesis---that
+\textbf{Reading the negative result.} \emph{The proximate cause is
+construction, not concept.} Sec.~\ref{sec:res-e4} shows the trained store
+never became navigable --- $42\%$ of its index notes point at nothing and
+$96\%$ of its facts have no entry point --- so the run tested a procedure
+that failed to build indexes rather than the value of indexes. Three
+plausible reasons, each actionable. The objectives named the goal
+(``organize for the question's class'') without naming the mechanism, so
+the cheapest compliant act was to record the verified answer, which is
+what $80\%$ of authored notes do. The backward budget (15 actions) cannot
+populate a thirty-member index in one iteration, and nothing in the
+protocol asked the agent to \emph{return} to an index and extend it, so
+indexes were created and abandoned. And the parsimony objective, added to
+stop the pollution of Sec.~\ref{sec:design}, penalizes adding notes
+without distinguishing a redundant fact from an entry point that is
+supposed to accumulate links. A revised protocol that names indexes as the
+unit of construction, requires extension of an existing index over
+creation of a new one, and scores an index by its link completeness is the
+obvious next experiment; we state it as the concrete next step rather than
+claim the hypothesis is settled.
+
+\textbf{The broader reading.} Our central hypothesis---that
 materialized structure lets an unchanged reader answer unseen questions in
 fewer steps---is not supported at the budgets we tested. Three observations
 keep this informative rather than merely disappointing. First, the effect
