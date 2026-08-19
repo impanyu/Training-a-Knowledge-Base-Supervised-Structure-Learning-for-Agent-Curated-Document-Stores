@@ -499,15 +499,15 @@ budgets; arms differ only in store preparation.}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.2}
-\begin{tabular}{L{1.5cm}L{1.55cm}L{2.2cm}L{1.35cm}}
+\begin{tabular}{L{1.62cm}L{1.5cm}L{2.15cm}L{1.3cm}}
 \toprule
 Arm & Preparation & Structure added & Build cost \\
 \midrule
-B1 flat & none (= epoch 0) & --- & 0 \\
-B3 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok, 63 min \\
-B4 RAPTOR & offline, unsup. & summary hierarchy (ext.) & --- \\
-B5 HippoRAG-2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 (lexical) \\
-Ours & QA-supervised & links + nav docs & 1 training run \\
+B1 flat & none & --- & 0 \\
+B3 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok \\
+B4 RAPTOR & offline, unsup. & summary hierarchy & --- \\
+B5 HippoRAG2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 \\
+Ours & QA-supervised & links + nav docs & training run \\
 \bottomrule
 \end{tabular}
 \end{table}
