@@ -540,7 +540,7 @@ predates the dedup guard and uses prompt-level parsimony only; the guard is
 default-on for subsequent runs, and its on/off contrast is a natural
 ablation.
 
-\subsection{Experiment Suite and Predictions}
+\subsection{Experiment Suite and Predictions}\label{sec:suite}
 \textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
 epoch (epoch~0 = B1); final \texttt{test\_in}/\texttt{test\_out} pass on the
 last snapshot, at $M \in \{8, 15\}$. Prediction: non-inferior accuracy with
@@ -553,7 +553,7 @@ per-category profile. Prediction: forward classes QC1--QC3 are saturated near
 1.0 at $M{=}15$ (they are the non-inferiority floor, not the headroom);
 gains concentrate in aggregation (QC4/QC8), joins (QC6), intersection (QC7)
 and reverse lookup (QC10), whose answers live in relations between documents;
-QC5 abstention is expected unchanged. \textbf{E5} (trace mining). (i)
+QC5 abstention is expected unchanged. \textbf{E4} (trace mining). (i)
 edit-type mix per epoch; (ii) store-size trajectory from replay (the
 parsimony objective predicts sublinear growth, unlike the 5$\times$ blowup of
 Sec.~\ref{sec:pollution}); (iii) morphology of authored navigation documents
@@ -565,134 +565,16 @@ savings and its hits on authored navigation documents and trained links.
 Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Experiment Results}\label{sec:prelim}
-\emph{Obtained on an earlier document-store variant of the environment (coarse multi-sentence
-documents, copy/move actions) with gpt-5-mini, 120-person universe, 150 train
-questions $\times$ 2 epochs; to be re-established on the final document-graph
-environment.}
-
-\subsection{A Pre-Organized Store Leaves No Headroom}
-With one clean document per person, the untrained reader already scores 0.82
-(\texttt{test\_in}) / 0.96 (\texttt{test\_out}): per-entity documents plus vector
-search \emph{are} the optimal organization for entity-centric questions. Headroom for
-accuracy requires genuine disorganization---our final design initializes at the
-atomic-document level---while \emph{cost} headroom persists even at accuracy
-ceilings, which is one reason efficiency is our primary endpoint.
-
-\subsection{Additive Curation Pollutes}\label{sec:pollution}
-Table~\ref{tab:pollution} shows the entity-initialized condition. Training an
-already-organized store \emph{regressed} the reader at both budgets. The mechanism is
-integer-exact in the provenance ledger: over 300 iterations the agent grew the store
-from 120 to 593 documents, duplicated 381 of 1{,}184 facts, added 1{,}430 links---and
-never invoked \texttt{move} or \texttt{delete}. Near-duplicate pages competed in
-retrieval and buried each other; readers exhausted budgets wandering (27 question-level
-regressions vs.\ 3 improvements). Curation with a consolidation objective but no
-parsimony objective is monotone pollution.
-
-\begin{table}[t]
-\caption{Entity-initialized condition (preliminary): additive curation regresses the
-reader. 100/50 questions per split.}
-\label{tab:pollution}
-\centering
-\begin{tabular}{llccc}
-\toprule
-Budget & Store & test\_in F1 & test\_out F1 & steps/q \\
-\midrule
-$M{=}15$ & untrained (120 docs) & 0.820 & 0.960 & 7.6 \\
-         & trained (593 docs)   & \textbf{0.650} & \textbf{0.820} & 8.9 \\
-\midrule
-$M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
-         & trained              & \textbf{0.320} & \textbf{0.460} & 4.2 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Calibration and Cost Profile}
-Reader difficulty was calibrated by probes on untrained stores: forward named-entity
-chains are natively easy for document-level retrieval at any tested scale (F1
-$1.0$); headroom concentrates in the relation-level classes and grows with universe
-size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
-$9.2$)---motivating the 500-person main configuration, where the cost axis has
-roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
-$\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
-$\approx \$6$ at current pricing.
-
-\subsection{Main-Condition Training Dynamics}
-The main run (500-person universe, full protocol; 300 iterations, 9.7M
-training tokens, 8.4h) produces four mutually consistent signals.
-
-\textbf{(1) Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
-eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
-(Fig.~\ref{fig:learning}a; $n{=}30$ per point, so these are directional).
-
-\textbf{(2) The store improves \emph{within} an epoch.} Rolling forward
-accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
-$0.64$): later training questions already benefit from structure
-consolidated by earlier ones, before any question repeats.
-
-\textbf{(3) Retention is large, and concentrated exactly where predicted.}
-On re-encountered questions (epoch~2) forward F1 reaches $0.85$
-(vs.\ $0.59$ in epoch~1). Table~\ref{tab:retention} decomposes by category:
-forward chains were saturated from the start (QC1--QC3, QC9 at
-$0.86$--$1.00$ in both epochs --- retrieval alone suffices), while the
-relation-level classes, whose answers live \emph{between} documents, jump:
-joins QC6 $0.46 \to 1.00$, intersection QC7 $0.62 \to 1.00$, reverse lookup
-QC10 $0.25 \to 0.83$, abstention QC5 $0.00 \to 0.58$, counts QC4
-$0.17 \to 0.50$ and QC8 $0.46 \to 0.58$. This is the design prediction of
-Sec.~VI-D realized: training gains concentrate in the classes retrieval
-cannot solve natively.
-
-\textbf{(4) Retention is also \emph{cheaper} --- the efficiency mechanism at
-work.} On re-encountered questions the forward pass takes $5.7$ steps and
-31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
-$-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
-starts looking up. Whether this transfers to \emph{unseen} questions is
-precisely what the final exam measures.
-
-\textbf{(5) Where the structure lives.} Figure~\ref{fig:network} maps the
-store's evolution across its semantic space (every document drawn; position
-= t-SNE of the document embedding, so the clusters visible at iteration~0
-are the universe's natural topic groups). Navigation documents appear
-throughout the map; hub directories --- the dense orange cluster --- fan out
-into the topic clusters, and short local links connect semantically adjacent
-documents: the store visibly acquires an access layer it was born without.
-Figure~\ref{fig:trajectory} quantifies the same growth from trace replay:
-$+390$ documents ($+6.6\%$), 597 links, accumulating steadily across both
-epochs --- in sharp contrast to the unguarded $5\times$ blowup of
-Sec.~\ref{sec:pollution}.
-
-\textbf{Edit behavior.} The backward pass writes $\approx$1.6 documents and
-$\approx$2.0 links per iteration in epoch~1; in epoch~2 the add rate falls
-to $1.0$/iteration while linking stays at $2.0$ --- consistent with the
-parsimony objective (less to author once the structure exists). Edits and
-deletes stay rare ($0.13$ and $0.03$/iteration). The dedup judge fired
-$\approx$30 times and correctly declined every candidate (zero merges):
-prompt-level parsimony already suppressed duplication at this scale.
-
-\emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
-reshuffled, so per-class retention rides on small samples. The three-layer
-exam below separates transferable organization from instance memoization.}
-
-\begin{table}[t]
-\caption{Per-category forward F1: first encounter (epoch 1) vs.\
-re-encounter (epoch 2). Retention concentrates in relation-level classes.}
-\label{tab:retention}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{L{2.3cm}rrr}
-\toprule
-Category & $n$ & epoch 1 & epoch 2 \\
-\midrule
-QC1--QC3, QC9 (chains, compare) & 55 & 0.86--1.00 & 0.86--1.00 \\
-QC6 join & 26 & 0.46 & \textbf{1.00} \\
-QC7 intersection & 13 & 0.62 & \textbf{1.00} \\
-QC10 reverse lookup & 12 & 0.25 & \textbf{0.83} \\
-QC5 abstention & 12 & 0.00 & \textbf{0.58} \\
-QC4 counts & 6 & 0.17 & \textbf{0.50} \\
-QC8 deep counts & 26 & 0.46 & 0.58 \\
-\bottomrule
-\end{tabular}
-\end{table}
+Sections~\ref{sec:res-headroom} and~\ref{sec:pollution} report two
+formative findings---obtained on an earlier document-store variant of the
+environment (coarse multi-sentence documents, copy/move actions,
+120-person universe)---that dictated the final design;
+Sec.~\ref{sec:res-calib} reports the calibration that fixed the main
+configuration. The remainder follows the suite of Sec.~\ref{sec:suite} on
+the final environment: the learning curve (E1, Sec.~\ref{sec:res-e1}), the
+baseline table (E2, Sec.~\ref{sec:res-e2}), retention and its per-category
+profile (E3, Sec.~\ref{sec:res-e3}), and trace mining (E4,
+Sec.~\ref{sec:res-e4}).
 
 \begin{figure}[t]
 \centering
@@ -731,6 +613,187 @@ iterations), unlike the unguarded $5\times$ blowup of
 Sec.~\ref{sec:pollution}.}
 \label{fig:trajectory}
 \end{figure}
+
+\subsection{A Pre-Organized Store Leaves No Headroom}\label{sec:res-headroom}
+With one clean document per person, the untrained reader already scores 0.82
+(\texttt{test\_in}) / 0.96 (\texttt{test\_out}): per-entity documents plus vector
+search \emph{are} the optimal organization for entity-centric questions. Headroom for
+accuracy requires genuine disorganization---our final design initializes at the
+atomic-document level---while \emph{cost} headroom persists even at accuracy
+ceilings, which is one reason efficiency is our primary endpoint.
+
+\subsection{Additive Curation Pollutes}\label{sec:pollution}
+Table~\ref{tab:pollution} shows the entity-initialized condition. Training an
+already-organized store \emph{regressed} the reader at both budgets. The mechanism is
+integer-exact in the provenance ledger: over 300 iterations the agent grew the store
+from 120 to 593 documents, duplicated 381 of 1{,}184 facts, added 1{,}430 links---and
+never invoked \texttt{move} or \texttt{delete}. Near-duplicate pages competed in
+retrieval and buried each other; readers exhausted budgets wandering (27 question-level
+regressions vs.\ 3 improvements). Curation with a consolidation objective but no
+parsimony objective is monotone pollution.
+
+\begin{table}[t]
+\caption{Entity-initialized condition (preliminary): additive curation regresses the
+reader. 100/50 questions per split.}
+\label{tab:pollution}
+\centering
+\begin{tabular}{llccc}
+\toprule
+Budget & Store & test\_in F1 & test\_out F1 & steps/q \\
+\midrule
+$M{=}15$ & untrained (120 docs) & 0.820 & 0.960 & 7.6 \\
+         & trained (593 docs)   & \textbf{0.650} & \textbf{0.820} & 8.9 \\
+\midrule
+$M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
+         & trained              & \textbf{0.320} & \textbf{0.460} & 4.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration and Cost Profile}\label{sec:res-calib}
+Reader difficulty was calibrated by probes on untrained stores: forward named-entity
+chains are natively easy for document-level retrieval at any tested scale (F1
+$1.0$); headroom concentrates in the relation-level classes and grows with universe
+size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
+$9.2$)---motivating the 500-person main configuration, where the cost axis has
+roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
+$\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
+$\approx \$6$ at current pricing.
+
+\subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
+The main run (500-person universe, full protocol; 300 iterations, 9.7M
+training tokens, 8.4h) yields the training half of E1; the frozen-store
+exam at $M \in \{8, 15\}$ that completes it was running at the time of
+writing. Two signals.
+
+\textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
+eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
+(Fig.~\ref{fig:learning}a; $n{=}30$ per point, so these are directional).
+
+\textbf{The store improves \emph{within} an epoch.} Rolling forward
+accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
+$0.64$): later training questions already benefit from structure
+consolidated by earlier ones, before any question repeats.
+
+\begin{table}[t]
+\caption{E2: offline-construction baselines under the common reader
+(final environment, gpt-5-mini). F1 and steps per question on
+\texttt{test\_in} ($n{=}100$) and \texttt{test\_out} ($n{=}50$); tok/q =
+mean answering tokens across both splits; Build = one-time construction
+cost. The trained-store rows are completed by the frozen-store exam.}
+\label{tab:e2}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llrrrrr}
+\toprule
+ & & \multicolumn{2}{c}{\texttt{test\_in}} & \multicolumn{2}{c}{\texttt{test\_out}} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Store & Build & F1 & steps & F1 & steps & tok/q \\
+\midrule
+\multicolumn{7}{l}{\emph{budget $M{=}15$}}\\
+B1 flat & --- & 0.620 & 9.0 & 0.620 & 8.9 & 9.7k \\
+B3 GraphRAG-style & 488k tok & 0.570 & 9.3 & 0.640 & 9.1 & 10.5k \\
+B5 HippoRAG2-style & $\sim$0 & \textbf{0.660} & 9.3 & \textbf{0.700} & 7.9 & 11.1k \\
+Ours (trained) & 9.7M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
+\midrule
+\multicolumn{7}{l}{\emph{budget $M{=}8$}}\\
+B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
+B3 GraphRAG-style & 488k tok & \textbf{0.560} & 6.2 & 0.500 & 6.2 & 5.0k \\
+B5 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
+Ours (trained) & 9.7M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{E2: Baselines Buy Accuracy, Not Steps}\label{sec:res-e2}
+Table~\ref{tab:e2} reports the offline-construction baselines under the
+common reader. Three observations. \textbf{(i) No baseline saves steps.}
+Every arm sits at $9.0$--$9.3$ steps/question at $M{=}15$: community
+summaries and entity indexes change \emph{what} the reader finds, not how
+long it searches, so cost reduction---our primary endpoint---is not a free
+by-product of offline structure. \textbf{(ii) Entity indexing is the
+accuracy frontier.} B5 leads both splits ($0.660$/$0.700$) at essentially
+zero build cost, making it the accuracy bar for the trained store.
+\textbf{(iii) Summaries can pollute.} B3 spends a 488k-token build to
+\emph{lose} $0.05$ F1 on \texttt{test\_in} relative to the flat store: its
+135 community summaries compete with source documents in retrieval---the
+mechanism of Sec.~\ref{sec:pollution} reappearing inside a standard
+pipeline. At the tight budget ($M{=}8$) all stores degrade and the ordering
+compresses; no arm dominates. The trained-store rows---and with them the
+step ratio $\rho$ and break-even $N^{*}$
+(Eq.~\ref{eq:breakeven})---are completed by the frozen-store exam.
+
+\subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
+\textbf{Retention is large, and concentrated exactly where predicted.}
+On re-encountered questions (epoch~2) forward F1 reaches $0.85$
+(vs.\ $0.59$ in epoch~1). Table~\ref{tab:retention} decomposes by category:
+forward chains were saturated from the start (QC1--QC3, QC9 at
+$0.86$--$1.00$ in both epochs --- retrieval alone suffices), while the
+relation-level classes, whose answers live \emph{between} documents, jump:
+joins QC6 $0.46 \to 1.00$, intersection QC7 $0.62 \to 1.00$, reverse lookup
+QC10 $0.25 \to 0.83$, abstention QC5 $0.00 \to 0.58$, counts QC4
+$0.17 \to 0.50$ and QC8 $0.46 \to 0.58$. This is the design prediction of E3
+(Sec.~\ref{sec:suite}) realized: training gains concentrate in the classes retrieval
+cannot solve natively.
+
+\textbf{Retention is also \emph{cheaper} --- the efficiency mechanism at
+work.} On re-encountered questions the forward pass takes $5.7$ steps and
+31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
+$-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
+starts looking up. Whether this transfers to \emph{unseen} questions is
+precisely what the final exam measures.
+
+\begin{table}[t]
+\caption{Per-category forward F1: first encounter (epoch 1) vs.\
+re-encounter (epoch 2). Retention concentrates in relation-level classes.}
+\label{tab:retention}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{L{2.3cm}rrr}
+\toprule
+Category & $n$ & epoch 1 & epoch 2 \\
+\midrule
+QC1--QC3, QC9 (chains, compare) & 55 & 0.86--1.00 & 0.86--1.00 \\
+QC6 join & 26 & 0.46 & \textbf{1.00} \\
+QC7 intersection & 13 & 0.62 & \textbf{1.00} \\
+QC10 reverse lookup & 12 & 0.25 & \textbf{0.83} \\
+QC5 abstention & 12 & 0.00 & \textbf{0.58} \\
+QC4 counts & 6 & 0.17 & \textbf{0.50} \\
+QC8 deep counts & 26 & 0.46 & 0.58 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{E4: Trace Mining---Edit Behavior and Store Morphology}\label{sec:res-e4}
+\textbf{Where the structure lives.} Figure~\ref{fig:network} maps the
+store's evolution across its semantic space (every document drawn; position
+= t-SNE of the document embedding, so the clusters visible at iteration~0
+are the universe's natural topic groups). Navigation documents appear
+throughout the map; hub directories --- the dense orange cluster --- fan out
+into the topic clusters, and short local links connect semantically adjacent
+documents: the store visibly acquires an access layer it was born without.
+Figure~\ref{fig:trajectory} quantifies the same growth from trace replay:
+$+390$ documents ($+6.6\%$), 597 links, accumulating steadily across both
+epochs --- in sharp contrast to the unguarded $5\times$ blowup of
+Sec.~\ref{sec:pollution}.
+
+\textbf{Edit behavior.}\textbf{Edit behavior.} The backward pass writes $\approx$1.6 documents and
+$\approx$2.0 links per iteration in epoch~1; in epoch~2 the add rate falls
+to $1.0$/iteration while linking stays at $2.0$ --- consistent with the
+parsimony objective (less to author once the structure exists). Edits and
+deletes stay rare ($0.13$ and $0.03$/iteration). The dedup judge fired
+$\approx$30 times and correctly declined every candidate (zero merges):
+prompt-level parsimony already suppressed duplication at this scale.
+
+The remaining E4 items---structure--semantics alignment and mechanism
+attribution (Sec.~\ref{sec:suite})---are computed once the final exam
+fixes the reader trajectories they correlate over.
+
+\emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
+reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
 
 \section{Discussion and Limitations}
 \textbf{Curation is a boundary, not a slogan.} Section~\ref{sec:pollution} suggests
