@@ -682,6 +682,17 @@ QC8 deep counts & 26 & 0.46 & 0.58 \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{learning.pdf}
+\caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
+per point: 20 trained-template, 10 reserved-template). (b)~Rolling
+(window~30, drawn from the first full window) forward accuracy over
+training; the dashed line marks epoch~2, where questions are re-encountered
+and retention is carried only by the store.}
+\label{fig:learning}
+\end{figure}
+
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.92\textwidth]{network.pdf}
