@@ -791,9 +791,31 @@ deletes stay rare ($0.13$ and $0.03$/iteration). The dedup judge fired
 $\approx$30 times and correctly declined every candidate (zero merges):
 prompt-level parsimony already suppressed duplication at this scale.
 
-The remaining E4 items---structure--semantics alignment and mechanism
-attribution (Sec.~\ref{sec:suite})---are computed once the final exam
-fixes the reader trajectories they correlate over.
+\textbf{Structure--semantics alignment: the links are real.} Of the 596
+built links, 469 attach a navigation document (no support-set analogue
+exists for those) and 127 connect two statements. Of those 127, $25.2\%$
+join documents that co-occur in the support set of some universe
+question---against a $0.03\%$ chance rate for random statement pairs, a
+$720\times$ lift. Support sets are never visible to the training agent, so
+this is an honest measure: when the agent links two facts, it is recovering
+genuine reasoning adjacency, not surface similarity.
+
+\textbf{Mechanism attribution: the structure is found but does not pay at
+$M{=}15$.} Splitting the 150 exam questions by whether the reader's
+trajectory touched agent-built structure (an authored navigation document,
+or a statement that gained links during training), the touched group
+($n{=}61$) shows $+0.05$ steps and $+0.000$ F1 relative to B1 on the same
+questions, while the untouched group ($n{=}89$) shows $-0.43$ steps and
+$+0.034$ F1. The savings therefore cannot be attributed to the built
+structure at this budget; the trained store's accuracy edge comes from
+questions that never reached it. Two readings are possible and we cannot
+separate them here: the comparison is not causal (harder questions search
+longer and are \emph{more} likely to encounter a navigation document,
+biasing the touched group), and the built layer is thin---only 71 of
+5{,}864 statements gained a link, so most questions have no built path to
+follow even when one would help. Both readings point the same way: the
+\emph{coverage} of trained structure, not its quality, is the binding
+constraint.
 
 \emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
