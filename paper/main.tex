@@ -100,7 +100,11 @@ weights, is the learned object, and the learning is \emph{online}: the store
 improves while it answers, structure is carved incrementally by the questions
 actually asked, and supervision keeps flowing after deployment---whereas
 offline graph construction (GraphRAG, RAPTOR, HippoRAG) is a one-shot build,
-fixed before the first query and blind to the query distribution.
+fixed before the first query and blind to the query distribution. In
+machine-learning terms the contrast is exact: offline construction is
+\emph{unsupervised} (structure induced from the corpus alone, no labels),
+while ours is \emph{supervised online} learning---(question, answer) pairs
+are the labels, and structure is optimized against verified answers.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
@@ -493,9 +497,11 @@ near-ceiling no-retrieval scores for related datasets), so all scores on this
 arm are reported as deltas over a mandatory no-store reader baseline.
 
 \subsection{Baselines}
-All baselines are \emph{one-shot}: structure is built once, before any
-question is seen, and never revised---the defining contrast with our online
-trainer, which edits the store between every answer. Beyond that they differ
+All baselines are \emph{one-shot} and \emph{unsupervised}: structure is
+induced from the corpus alone, built once before any question is seen, and
+never revised---the defining contrast with our trainer, which is
+\emph{supervised} (gold answers are labels) and \emph{online} (the store is
+edited between every answer). Beyond that they differ
 \emph{only} in how the store is prepared; reader, test
 sets, and budgets are identical, and each reports its one-time build cost
 (Table~\ref{tab:baselines}).
@@ -806,9 +812,10 @@ cannot see a store being slowly ruined while individual answers still look fine.
 build budget before the first query and can never incorporate what queries
 reveal; our trainer spends nothing up front and converts each answered
 question into structure, so the store tracks the query distribution it
-actually faces and keeps learning after deployment. The practical corollary:
-an operator does not choose between serving and building---the forward pass
-\emph{is} serving.
+actually faces and keeps learning after deployment. In machine-learning terms, the baselines are unsupervised
+pretraining of structure; ours is supervised online learning of it. The
+practical corollary: an operator does not choose between serving and
+building---the forward pass \emph{is} serving.
 
 \textbf{Deployment reading.} The abstraction targets a real configuration: agent
 fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
