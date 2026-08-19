@@ -636,7 +636,11 @@ steady and modest (+390 documents, $+6.6\%$; 597 links; zero merges --- the
 dedup guard was consulted $\approx$30 times and correctly declined every
 candidate, i.e.\ prompt-level parsimony already suppressed duplication),
 in sharp contrast to the unguarded $5\times$ blowup of
-Sec.~\ref{sec:pollution}.
+Sec.~\ref{sec:pollution}. Figure~\ref{fig:network} shows \emph{where} that
+structure lives: navigation documents and links grow across the semantic map
+of the store, with hub directories fanning out into the universe's natural
+topic clusters --- the store visibly acquires an access layer it was born
+without.
 
 \begin{figure}[t]
 \centering
@@ -648,6 +652,20 @@ where questions are re-encountered and retention is carried only by the
 store.}
 \label{fig:learning}
 \end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{network.pdf}
+\caption{Evolution of the document network during training, every 60
+iterations. Every document is drawn; position is a t-SNE projection of its
+embedding, so proximity = semantic similarity (the clusters visible at
+iteration~0 are the universe's natural topic groups). Orange: agent-authored
+navigation documents (size = link degree); green: links. Structure grows
+from nothing into a navigation layer spanning the semantic space: hub
+directories (dense orange cluster) fan out into topic clusters, and local
+links connect semantically adjacent documents.}
+\label{fig:network}
+\end{figure*}
 
 \begin{figure}[t]
 \centering

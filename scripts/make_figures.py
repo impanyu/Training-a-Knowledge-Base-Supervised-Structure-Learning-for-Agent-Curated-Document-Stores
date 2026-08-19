@@ -74,3 +74,53 @@ ax.set_xlabel("training iteration")
 ax.set_ylabel("count")
 ax.legend(frameon=False, fontsize=7.5, loc="upper left")
 save(fig, "trajectory")
+
+
+# ---------- Fig: network evolution (semantic layout, all nodes) ----------
+def network_evolution():
+    pos = json.load(open("/tmp/kbnet_pos.json"))
+    CHECKS = (0, 60, 120, 180, 240, 300)
+    fig, axes = plt.subplots(2, 3, figsize=(7.0, 4.6))
+    for ax, N in zip(axes.flat, CHECKS):
+        st = json.load(open(f"/tmp/kbstate_{N}.json"))["store"]["nodes"]
+        nodes = list(st.values()) if isinstance(st, dict) else st
+        nodes = [nd for nd in nodes if nd["id"] in pos]
+        deg = {}
+        for nd in nodes:
+            for t in nd.get("links", []):
+                deg[nd["id"]] = deg.get(nd["id"], 0) + 1
+                deg[t] = deg.get(t, 0) + 1
+        # edges under nodes
+        for nd in nodes:
+            x0, y0 = pos[nd["id"]]
+            for t in nd.get("links", []):
+                if t in pos:
+                    x1, y1 = pos[t]
+                    ax.plot([x0, x1], [y0, y1], color=GREEN, lw=0.35,
+                            alpha=0.5, zorder=1)
+        orig = [nd for nd in nodes if nd.get("flag") != "authored"]
+        auth = [nd for nd in nodes if nd.get("flag") == "authored"]
+        ax.scatter([pos[n["id"]][0] for n in orig], [pos[n["id"]][1] for n in orig],
+                   s=0.6, color=BLUE, alpha=0.35, lw=0, zorder=2)
+        if auth:
+            ax.scatter([pos[n["id"]][0] for n in auth],
+                       [pos[n["id"]][1] for n in auth],
+                       s=[4 + 1.5 * deg.get(n["id"], 0) for n in auth],
+                       color=VERM, lw=0, zorder=3)
+        nlinks = sum(len(nd.get("links", [])) for nd in nodes)
+        ax.set_title(f"iteration {N}\n{nlinks} links · {len(auth)} nav docs",
+                     fontsize=7.5)
+        ax.set_xticks([]); ax.set_yticks([]); ax.grid(False)
+        for sp in ax.spines.values():
+            sp.set_visible(True); sp.set_color("0.85"); sp.set_linewidth(0.6)
+    fig.legend(handles=[
+        plt.Line2D([], [], marker="o", ls="", color=BLUE, ms=3, label="document (position = semantic embedding, t-SNE)"),
+        plt.Line2D([], [], marker="o", ls="", color=VERM, ms=4, label="authored navigation document (size = degree)"),
+        plt.Line2D([], [], color=GREEN, lw=1, label="link")],
+        loc="lower center", ncol=3, frameon=False, fontsize=7,
+        bbox_to_anchor=(0.5, -0.02))
+    fig.subplots_adjust(bottom=0.09, top=0.90, hspace=0.34, wspace=0.06)
+    save(fig, "network")
+
+
+network_evolution()
