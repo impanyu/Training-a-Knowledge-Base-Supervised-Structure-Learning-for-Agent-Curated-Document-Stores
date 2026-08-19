@@ -643,8 +643,8 @@ current pricing).
 \subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
 The main run (500-person universe, full protocol; 300 iterations, 11.3M
 training tokens, 10.1h) yields the training half of E1; the frozen-store
-exam that completes it is reported below at $M{=}15$ and in progress at
-$M{=}8$. Two training-time signals, then the exam.
+exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
+training-time signals, then the exam.
 
 \textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
 eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
@@ -705,9 +705,9 @@ Ours (trained) & 11.3M tok & 0.630 & 9.0 & 0.660 & 8.3 & 9.7k \\
 \midrule
 \multicolumn{7}{l}{\emph{budget $M{=}8$}}\\
 B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
-B3 GraphRAG-style & 488k tok & \textbf{0.560} & 6.2 & 0.500 & 6.2 & 5.0k \\
+B3 GraphRAG-style & 488k tok & 0.560 & 6.2 & 0.500 & 6.2 & 5.0k \\
 B5 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
-Ours (trained) & 11.3M tok & 0.570 & 6.3 & 0.540 & 6.1 & 5.1k \\
+Ours (trained) & 11.3M tok & \textbf{0.570} & 6.3 & 0.540 & 6.1 & 5.1k \\
 \bottomrule
 \end{tabular}
 \end{table}
