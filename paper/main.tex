@@ -44,12 +44,18 @@ full apparatus of machine learning for knowledge bases: learning curves, a train
 generalization gap, per-class transfer, and a break-even analysis of training cost
 against per-question savings. On a contamination-free synthetic universe with
 document-level ground truth (500 people, 5{,}864 atomic documents), two
-training epochs leave held-out accuracy non-inferior to the flat store
-(0.630/0.660 vs.\ 0.620/0.620 F1), lift re-encountered questions from 0.59
-to 0.85 F1 at 38\% fewer steps, and concentrate gains exactly in the
-relation-level question classes the design predicts---while
-offline-construction baselines (GraphRAG- and HippoRAG2-style) buy accuracy
-but save no steps.
+training epochs lift \emph{re-encountered} questions from 0.59 to 0.85 F1
+at 38\% fewer steps, with gains concentrated exactly in the relation-level
+question classes the design predicts, and the links the agent builds join
+documents that co-occur in a question's support set at 720$\times$ the
+chance rate. On \emph{unseen} questions, however, the efficiency claim
+fails: held-out accuracy is non-inferior to a flat store at two action
+budgets but never cheaper ($\rho \approx 1$), and neither do
+offline-construction baselines (GraphRAG- and HippoRAG2-style) save any
+steps. A difficulty-stratified attribution locates the reason: built
+structure pays where derivation is expensive and taxes retrieval where it
+is not. We report the negative result with the apparatus that makes it
+legible.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -651,26 +657,33 @@ consolidated by earlier ones, before any question repeats. This is the
 signature of online learning---accuracy rising \emph{while the store
 serves}---which no one-shot build can produce.
 
-\textbf{The frozen exam ($M{=}15$): accuracy transfers; steps do not.}
-An unchanged reader on the frozen epoch-2 store scores $0.630$/$0.660$
-(\texttt{test\_in}/\texttt{test\_out}) vs.\ B1's $0.620$/$0.620$:
-non-inferiority holds with margin ($\Delta = +0.01/+0.04$, both above
-$-\delta = -0.03$), and the reserved-template split gains most. The cost
-side is null at this budget: $8.7$ vs.\ $9.0$ steps/question pooled
-($\rho = 0.97$), $80$ tokens/question saved, and Eq.~\ref{eq:breakeven}
-gives $N^{*} \approx 1.4 \times 10^{5}$ questions --- training does not
-amortize at $M{=}15$; the $-38\%$ step saving of Sec.~\ref{sec:res-e3}
-exists on re-encountered questions only. Half of E1's prediction therefore
-fails at the generous budget: accuracy is non-inferior, steps are not
-fewer. The other half --- a leftward shift of the accuracy--budget curve
---- is precisely the $M{=}8$ arm, in progress.
+\textbf{The frozen exam: accuracy transfers; efficiency does not.} An
+unchanged reader on the frozen epoch-2 store is non-inferior to B1 at both
+budgets, and at neither budget is it cheaper. At $M{=}15$ it scores
+$0.630$/$0.660$ (\texttt{test\_in}/\texttt{test\_out}) vs.\ B1's
+$0.620$/$0.620$ ($\Delta$ pooled $+0.020$), taking $8.73$ vs.\ $8.97$ steps
+($\rho = 0.97$) and saving $80$ tokens per question. At $M{=}8$ it scores
+$0.570$/$0.540$ vs.\ B1's $0.530$/$0.600$ ($\Delta$ pooled $+0.007$: better
+on trained templates, \emph{worse} on reserved ones), at $6.23$ vs.\ $6.21$
+steps ($\rho = 1.00$) and $194$ tokens \emph{more}. Both budgets clear the
+non-inferiority margin ($-\delta = -0.03$ pooled), so the store the agent
+built is not damaged---but the efficiency hypothesis, our central claim, is
+\textbf{not supported on unseen questions}: $\rho \approx 1$ at both
+budgets, break-even $N^{*} \approx 1.4 \times 10^{5}$ questions at $M{=}15$
+and undefined at $M{=}8$, and the predicted leftward shift of the
+accuracy--budget curve does not appear (the trained and flat curves are
+within noise of each other at both points). The $-38\%$ step saving of
+Sec.~\ref{sec:res-e3} is real but confined to \emph{re-encountered}
+questions. Sections~\ref{sec:res-e2} and~\ref{sec:res-e4} locate the gap:
+no baseline saves steps either, and the structure that was built pays only
+where derivation is expensive.
 
 \begin{table}[t]
 \caption{E2: offline-construction baselines under the common reader
 (final environment, gpt-5-mini). F1 and steps per question on
 \texttt{test\_in} ($n{=}100$) and \texttt{test\_out} ($n{=}50$); tok/q =
 mean answering tokens across both splits; Build = one-time construction
-cost. The trained-store $M{=}8$ rows complete with the running exam.}
+cost. Best per column in bold.}
 \label{tab:e2}
 \centering
 \scriptsize
@@ -692,7 +705,7 @@ Ours (trained) & 11.3M tok & 0.630 & 9.0 & 0.660 & 8.3 & 9.7k \\
 B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
 B3 GraphRAG-style & 488k tok & \textbf{0.560} & 6.2 & 0.500 & 6.2 & 5.0k \\
 B5 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
-Ours (trained) & 11.3M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
+Ours (trained) & 11.3M tok & 0.570 & 6.3 & 0.540 & 6.1 & 5.1k \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -710,11 +723,15 @@ zero build cost, making it the accuracy bar for the trained store.
 \emph{lose} $0.05$ F1 on \texttt{test\_in} relative to the flat store: its
 135 community summaries compete with source documents in retrieval and bury
 them---summary pollution arising inside a standard pipeline. At the tight budget ($M{=}8$) all stores degrade and the ordering
-compresses; no arm dominates. At $M{=}15$ the trained store enters the
-table at $0.630$/$0.660$: above B1 and B3 on both splits, below B5's
-entity indexes on accuracy, and matching B1's step count
-($\rho = 0.97$; Sec.~\ref{sec:res-e1}). The $M{=}8$ rows complete with
-the running exam.
+compresses; no arm dominates. The trained store enters the table without
+dominating it: at $M{=}15$ it is above B1 and B3 on both splits and below
+B5's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
+\texttt{test\_out}. Crucially it shares the baselines' defining failure ---
+$\rho \approx 1$ against B1 at both budgets. That \emph{every} method here,
+supervised or not, online or one-shot, lands within noise of the flat store
+on steps is the paper's most robust negative finding: at these budgets an
+agentic reader's search length is governed by the question, not by the
+store's organization.
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.}
@@ -863,6 +880,24 @@ GraphRAG-style summaries added to an already-searchable store regress
 whether the optimizer knows when \emph{not} to edit.
 The train/test protocol makes this boundary measurable; downstream-only evaluation
 cannot see a store being slowly ruined while individual answers still look fine.
+
+\textbf{Reading the negative result.} Our central hypothesis---that
+materialized structure lets an unchanged reader answer unseen questions in
+fewer steps---is not supported at the budgets we tested. Three observations
+keep this informative rather than merely disappointing. First, the effect
+\emph{does} exist within the training distribution: re-encountered
+questions run $38\%$ shorter, so structure genuinely converts derivation
+into lookup; what fails is transfer of that saving to new instances.
+Second, the failure is not ours alone---GraphRAG- and HippoRAG2-style
+offline construction save no steps either, which suggests the bottleneck is
+the agentic reader's search policy rather than any particular way of
+organizing a store: a reader that decides when to stop searching by its own
+uncertainty will not stop earlier just because a shortcut exists. Third,
+the stratified attribution shows the mechanism is real but narrow, paying
+on hard questions and taxing easy ones. Together these point at a concrete
+next design: gate index construction (and index \emph{use}) on the expected
+derivation cost of a question class, rather than indexing whatever was just
+answered.
 
 \textbf{Online, not one-shot.} Every offline baseline spends its entire
 build budget before the first query and can never incorporate what queries
