@@ -530,15 +530,14 @@ Trainer and reader are gpt-5-mini (temperature 0.3, 4{,}096 tokens/turn),
 tool-forced decisions, static schemas. Budgets $N_1{=}N_2{=}M{=}15$; FIFO
 $K{=}30$; \texttt{search} returns top-5. Embeddings: chroma default ONNX
 MiniLM family, environment-maintained. Measured training cost:
-$\approx$23k tokens and 83\,s per iteration on the 120-person universe,
-$\approx$161\,s on the 500-person main configuration ($\approx$\$6 per
-300-iteration run at current pricing). Per-epoch snapshots plus byte-exact
+$\approx$23k tokens and 83\,s per iteration on the 120-person universe;
+the 500-person main run averaged 37.7k tokens and 121\,s per iteration
+(11.3M tokens, 10.1\,h, $\approx$\$8 total at current pricing). Per-epoch snapshots plus byte-exact
 trace replay reconstruct every intermediate store state for analysis
 (merge events replay deterministically without the judge). Basic version:
-single seed (seed~0); seed replication planned. The main run reported below
-predates the dedup guard and uses prompt-level parsimony only; the guard is
-default-on for subsequent runs, and its on/off contrast is a natural
-ablation.
+single seed (seed~0); seed replication planned. The main run reported below has the guard enabled: the judge fired
+$\approx$30 times and declined every merge, so at this scale its effect is
+null and prompt-level parsimony carries deduplication.
 
 \subsection{Experiment Suite and Predictions}\label{sec:suite}
 \textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
@@ -656,15 +655,15 @@ chains are natively easy for document-level retrieval at any tested scale (F1
 $1.0$); headroom concentrates in the relation-level classes and grows with universe
 size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
 $9.2$)---motivating the 500-person main configuration, where the cost axis has
-roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
-$\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
-$\approx \$6$ at current pricing.
+roughly $3\times$ headroom over the $\sim$3-step floor. The 300-iteration
+main run consumed 11.3M training tokens over 10.1\,h ($\approx\$8$ at
+current pricing).
 
 \subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
-The main run (500-person universe, full protocol; 300 iterations, 9.7M
-training tokens, 8.4h) yields the training half of E1; the frozen-store
-exam at $M \in \{8, 15\}$ that completes it was running at the time of
-writing. Two signals.
+The main run (500-person universe, full protocol; 300 iterations, 11.3M
+training tokens, 10.1h) yields the training half of E1; the frozen-store
+exam that completes it is reported below at $M{=}15$ and in progress at
+$M{=}8$. Two training-time signals, then the exam.
 
 \textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
 eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
@@ -675,12 +674,26 @@ accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
 $0.64$): later training questions already benefit from structure
 consolidated by earlier ones, before any question repeats.
 
+\textbf{The frozen exam ($M{=}15$): accuracy transfers; steps do not.}
+An unchanged reader on the frozen epoch-2 store scores $0.630$/$0.660$
+(\texttt{test\_in}/\texttt{test\_out}) vs.\ B1's $0.620$/$0.620$:
+non-inferiority holds with margin ($\Delta = +0.01/+0.04$, both above
+$-\delta = -0.03$), and the reserved-template split gains most. The cost
+side is null at this budget: $8.7$ vs.\ $9.0$ steps/question pooled
+($\rho = 0.97$), $80$ tokens/question saved, and Eq.~\ref{eq:breakeven}
+gives $N^{*} \approx 1.4 \times 10^{5}$ questions --- training does not
+amortize at $M{=}15$; the $-38\%$ step saving of Sec.~\ref{sec:res-e3}
+exists on re-encountered questions only. Half of E1's prediction therefore
+fails at the generous budget: accuracy is non-inferior, steps are not
+fewer. The other half --- a leftward shift of the accuracy--budget curve
+--- is precisely the $M{=}8$ arm, in progress.
+
 \begin{table}[t]
 \caption{E2: offline-construction baselines under the common reader
 (final environment, gpt-5-mini). F1 and steps per question on
 \texttt{test\_in} ($n{=}100$) and \texttt{test\_out} ($n{=}50$); tok/q =
 mean answering tokens across both splits; Build = one-time construction
-cost. The trained-store rows are completed by the frozen-store exam.}
+cost. The trained-store $M{=}8$ rows complete with the running exam.}
 \label{tab:e2}
 \centering
 \scriptsize
@@ -696,13 +709,13 @@ Store & Build & F1 & steps & F1 & steps & tok/q \\
 B1 flat & --- & 0.620 & 9.0 & 0.620 & 8.9 & 9.7k \\
 B3 GraphRAG-style & 488k tok & 0.570 & 9.3 & 0.640 & 9.1 & 10.5k \\
 B5 HippoRAG2-style & $\sim$0 & \textbf{0.660} & 9.3 & \textbf{0.700} & 7.9 & 11.1k \\
-Ours (trained) & 9.7M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
+Ours (trained) & 11.3M tok & 0.630 & 9.0 & 0.660 & 8.3 & 9.7k \\
 \midrule
 \multicolumn{7}{l}{\emph{budget $M{=}8$}}\\
 B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
 B3 GraphRAG-style & 488k tok & \textbf{0.560} & 6.2 & 0.500 & 6.2 & 5.0k \\
 B5 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
-Ours (trained) & 9.7M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
+Ours (trained) & 11.3M tok & \multicolumn{5}{c}{\emph{final exam in progress}} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -721,9 +734,11 @@ zero build cost, making it the accuracy bar for the trained store.
 135 community summaries compete with source documents in retrieval---the
 mechanism of Sec.~\ref{sec:pollution} reappearing inside a standard
 pipeline. At the tight budget ($M{=}8$) all stores degrade and the ordering
-compresses; no arm dominates. The trained-store rows---and with them the
-step ratio $\rho$ and break-even $N^{*}$
-(Eq.~\ref{eq:breakeven})---are completed by the frozen-store exam.
+compresses; no arm dominates. At $M{=}15$ the trained store enters the
+table at $0.630$/$0.660$: above B1 and B3 on both splits, below B5's
+entity indexes on accuracy, and matching B1's step count
+($\rho = 0.97$; Sec.~\ref{sec:res-e1}). The $M{=}8$ rows complete with
+the running exam.
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.}
@@ -744,6 +759,18 @@ work.} On re-encountered questions the forward pass takes $5.7$ steps and
 $-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
 starts looking up. Whether this transfers to \emph{unseen} questions is
 precisely what the final exam measures.
+
+\textbf{Three-layer decomposition, completed.} Retention $0.85$ /
+\texttt{test\_in} $0.63$ / \texttt{test\_out} $0.66$. Both test layers
+sit above B1, so the trained organization transfers accuracy --- but the
+$0.2$-point gap to retention says most of the built structure is
+instance-bound rather than class-general. The per-category transfer
+profile (trained vs.\ B1 at $M{=}15$, both splits pooled) is
+correspondingly modest: QC4 $+0.10$, QC9 $+0.08$, QC3/QC7 $+0.07$, QC6
+$+0.04$, QC5 $0.00$, QC8 $-0.05$, QC10 $-0.12$ ($n{=}8$). The sharpest
+contrast is reverse lookup: the class with the largest retention jump
+($0.25 \to 0.83$) transfers \emph{worst} --- its navigation notes
+memoize trained instances, not the class.
 
 \begin{table}[t]
 \caption{Per-category forward F1: first encounter (epoch 1) vs.\
