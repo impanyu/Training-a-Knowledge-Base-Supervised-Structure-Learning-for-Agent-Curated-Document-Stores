@@ -85,10 +85,13 @@ held-out questions.
 
 The value produced by such training is best understood as \emph{index construction}:
 a database does not change its data when an index is built, yet queries get cheaper.
-Each training question's verified reasoning path is materialized into structure---a
-multi-hop chain becomes a traversable link path, a scattered family of facts becomes a
-navigation node---so future readers pay a lookup price instead of a re-derivation
-price. Training cost is thereby amortized: after a computable number of questions, the
+Each training question's verified reasoning path is materialized as
+\emph{access structure}---a multi-hop chain becomes a traversable link
+path, a key that search handles badly gains an index document linking
+everything under it---so future readers pay a lookup price instead of a
+re-derivation price. The distinction from writing the answer into a
+document is the whole point: an answer serves the instance that produced
+it, an index serves every question that enters through the same key. Training cost is thereby amortized: after a computable number of questions, the
 one-time cost of curation is repaid by per-question savings.
 
 \textbf{Contributions.}
@@ -290,7 +293,23 @@ axes:
 \mathrm{cost}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{steps}\big(\mathrm{reader}(K,q)\big)\right].
 \end{align*}
 \emph{Training} is any procedure that consumes supervised pairs $(q, a^{*})$ and edits
-$K$, producing $K_T$ from the initial store $K_0$. Our central hypothesis is a joint
+$K$, producing $K_T$ from the initial store $K_0$. What such a procedure is
+meant to learn is the store's \emph{access structure}, and it is worth
+being precise about this, because the action set admits a shortcut that
+looks like learning and is not. A store can be changed in two ways: by
+adding \emph{content} --- a document stating a fact, including a fact the
+store already implies, such as the answer to a question just solved --- or
+by adding \emph{access structure}: index documents whose value lies in the
+links they carry to the documents belonging to some key, and edges between
+documents that a chain must step across (including edges between index
+documents, which give navigation its levels). Only the second generalizes.
+A document recording a verified answer serves the one instance that
+produced it, and the instance will not recur; an index over a key serves
+every question whose first search names that key, and an edge serves every
+chain that must make that hop, whatever entity it concerns. Our hypothesis
+is therefore a claim about access structure specifically, and we measure
+the store's navigability --- index out-degree and the fraction of content
+reachable from an index in one read --- alongside accuracy and cost. Our central hypothesis is a joint
 condition on the two axes:
 \begin{equation}
 \mathrm{acc}(K_T) \;\ge\; \mathrm{acc}(K_0) - \delta
