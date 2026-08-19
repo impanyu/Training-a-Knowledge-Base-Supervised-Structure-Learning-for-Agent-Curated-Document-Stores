@@ -564,7 +564,489 @@ honest); (v) mechanism attribution: correlation between a reader's step
 savings and its hits on authored navigation documents and trained links.
 Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
-\section{Preliminary Results}\label{sec:prelim}
+\section{Experiment Results}\label{sec:prelim}
+\emph{Obtained on an earlier document-store variant of the environment (coarse multi-sentence
+documents, copy/move actions) with gpt-5-mini, 120-person universe, 150 train
+questions $\times$ 2 epochs; to be re-established on the final document-graph
+environment.}
+
+\subsection{A Pre-Organized Store Leaves No Headroom}
+With one clean document per person, the untrained reader already scores 0.82
+(\texttt{test\_in}) / 0.96 (\texttt{test\_out}): per-entity documents plus vector
+search \emph{are} the optimal organization for entity-centric questions. Headroom for
+accuracy requires genuine disorganization---our final design initializes at the
+atomic-document level---while \emph{cost} headroom persists even at accuracy
+ceilings, which is one reason efficiency is our primary endpoint.
+
+\subsection{Additive Curation Pollutes}\label{sec:pollution}
+Table~\ref{tab:pollution} shows the entity-initialized condition. Training an
+already-organized store \emph{regressed} the reader at both budgets. The mechanism is
+integer-exact in the provenance ledger: over 300 iterations the agent grew the store
+from 120 to 593 documents, duplicated 381 of 1{,}184 facts, added 1{,}430 links---and
+never invoked \texttt{move} or \texttt{delete}. Near-duplicate pages competed in
+retrieval and buried each other; readers exhausted budgets wandering (27 question-level
+regressions vs.\ 3 improvements). Curation with a consolidation objective but no
+parsimony objective is monotone pollution.
+
+\begin{table}[t]
+\caption{Entity-initialized condition (preliminary): additive curation regresses the
+reader. 100/50 questions per split.}
+\label{tab:pollution}
+\centering
+\begin{tabular}{llccc}
+\toprule
+Budget & Store & test\_in F1 & test\_out F1 & steps/q \\
+\midrule
+$M{=}15$ & untrained (120 docs) & 0.820 & 0.960 & 7.6 \\
+         & trained (593 docs)   & \textbf{0.650} & \textbf{0.820} & 8.9 \\
+\midrule
+$M{=}5$  & untrained            & 0.480 & 0.560 & 4.3 \\
+         & trained              & \textbf{0.320} & \textbf{0.460} & 4.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration and Cost Profile}
+Reader difficulty was calibrated by probes on untrained stores: forward named-entity
+chains are natively easy for document-level retrieval at any tested scale (F1
+$1.0$); headroom concentrates in the relation-level classes and grows with universe
+size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
+$9.2$)---motivating the 500-person main configuration, where the cost axis has
+roughly $3\times$ headroom over the $\sim$3-step floor. Training costs
+$\approx 23$k tokens per iteration (gpt-5-mini); a 300-iteration run is
+$\approx \$6$ at current pricing.
+
+\subsection{Main-Condition Training Dynamics}
+The main run (500-person universe, full protocol; 300 iterations, 9.7M
+training tokens, 8.4h) produces four mutually consistent signals.
+
+\textbf{(1) Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
+eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
+(Fig.~\ref{fig:learning}a; $n{=}30$ per point, so these are directional).
+
+\textbf{(2) The store improves \emph{within} an epoch.} Rolling forward
+accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
+$0.64$): later training questions already benefit from structure
+consolidated by earlier ones, before any question repeats.
+
+\textbf{(3) Retention is large, and concentrated exactly where predicted.}
+On re-encountered questions (epoch~2) forward F1 reaches $0.85$
+(vs.\ $0.59$ in epoch~1). Table~\ref{tab:retention} decomposes by category:
+forward chains were saturated from the start (QC1--QC3, QC9 at
+$0.86$--$1.00$ in both epochs --- retrieval alone suffices), while the
+relation-level classes, whose answers live \emph{between} documents, jump:
+joins QC6 $0.46 \to 1.00$, intersection QC7 $0.62 \to 1.00$, reverse lookup
+QC10 $0.25 \to 0.83$, abstention QC5 $0.00 \to 0.58$, counts QC4
+$0.17 \to 0.50$ and QC8 $0.46 \to 0.58$. This is the design prediction of
+Sec.~VI-D realized: training gains concentrate in the classes retrieval
+cannot solve natively.
+
+\textbf{(4) Retention is also \emph{cheaper} --- the efficiency mechanism at
+work.} On re-encountered questions the forward pass takes $5.7$ steps and
+31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
+$-32\%$ tokens. Where the structure exists, the reader stops re-deriving and
+starts looking up. Whether this transfers to \emph{unseen} questions is
+precisely what the final exam measures.
+
+\textbf{Edit behavior.} The backward pass writes $\approx$1.6 documents and
+$\approx$2.0 links per iteration in epoch~1; in epoch~2 the add rate falls
+to $1.0$/iteration while linking stays at $2.0$ --- consistent with the
+parsimony objective (less to author once the structure exists). Edits and
+deletes stay rare ($0.13$ and $0.03$/iteration). The dedup judge fired
+$\approx$30 times and correctly declined every candidate (zero merges):
+prompt-level parsimony already suppressed duplication at this scale.
+
+\emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
+reshuffled, so per-class retention rides on small samples. The three-layer
+exam below separates transferable organization from instance memoization.}
+
+\begin{table}[t]
+\caption{Per-category forward F1: first encounter (epoch 1) vs.\
+re-encounter (epoch 2). Retention concentrates in relation-level classes.}
+\label{tab:retention}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{L{2.3cm}rrr}
+\toprule
+Category & $n$ & epoch 1 & epoch 2 \\
+\midrule
+QC1--QC3, QC9 (chains, compare) & 55 & 0.86--1.00 & 0.86--1.00 \\
+QC6 join & 26 & 0.46 & \textbf{1.00} \\
+QC7 intersection & 13 & 0.62 & \textbf{1.00} \\
+QC10 reverse lookup & 12 & 0.25 & \textbf{0.83} \\
+QC5 abstention & 12 & 0.00 & \textbf{0.58} \\
+QC4 counts & 6 & 0.17 & \textbf{0.50} \\
+QC8 deep counts & 26 & 0.46 & 0.58 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  node/.style={circle, draw=okblue!80, fill=okblue!25, inner sep=1.6pt},
+  nav/.style={circle, draw=okverm, fill=okverm!85, inner sep=2.2pt},
+  stage/.style={draw, rounded corners=2pt, align=center, inner sep=5pt},
+  lbl/.style={font=\footnotesize\itshape, text=black!70},
+  arr/.style={-{Stealth[length=2.2mm]}, thick, draw=black!65},
+  >=Stealth]
+
+% ---- left: initial store
+\node[stage, draw=okblue!70, fill=okblue!5, minimum width=3.4cm,
+      minimum height=2.5cm] (K0) {};
+\node[above=1mm of K0.north, anchor=south] {\textbf{initial store} $K_0$};
+\node[lbl, below=0mm of K0.south, anchor=north] {atomic documents, no links};
+\foreach \i/\x/\y in {1/-1.1/0.6, 2/-0.3/0.8, 3/0.6/0.55, 4/-1.05/-0.1,
+                      5/0.1/0.05, 6/1.05/0.0, 7/-0.6/-0.7, 8/0.35/-0.75, 9/1.0/-0.65}
+  \node[node] (a\i) at ([shift={(\x,\y)}]K0.center) {};
+
+% ---- middle: training loop
+\node[stage, draw=okorange!85, fill=okorange!6, right=1.5cm of K0, minimum width=4.2cm, align=left] (train) {
+  \textbf{training iteration} $(q, a^{*})$\\[1pt]
+  \textcolor{okblue!80!black}{\emph{Phase 1} forward ($N_1$): search/read $\to$ \texttt{answer}}\\
+  \hspace{2mm}$\hookrightarrow$ result reveals $a^{*}$, F1\\[1pt]
+  \textcolor{okverm!90!black}{\emph{Phase 2} backward ($N_2$): add/edit/delete/}\\
+  \textcolor{okverm!90!black}{\hspace{2mm}link/unlink $\to$ \texttt{done}}
+};
+\node[lbl, below=0mm of train.south, anchor=north]
+  {$\times$ 150 questions $\times$ epochs};
+
+% ---- right: trained store
+\node[stage, draw=okgreen!80, fill=okgreen!5, right=1.5cm of train, minimum width=3.4cm, minimum height=2.5cm] (KT) {};
+\node[above=1mm of KT.north, anchor=south] {\textbf{trained store} $K_T$};
+\node[lbl, below=0mm of KT.south, anchor=north] {links + navigation nodes};
+\foreach \i/\x/\y in {1/-1.1/0.6, 2/-0.3/0.8, 3/0.6/0.55, 4/-1.05/-0.1,
+                      5/0.1/0.05, 6/1.05/0.0, 7/-0.6/-0.7, 8/0.35/-0.75, 9/1.0/-0.65}
+  \node[node] (b\i) at ([shift={(\x,\y)}]KT.center) {};
+\node[nav] (hub) at ([shift={(-0.2,-0.35)}]KT.center) {};
+\draw[okgreen!70!black, thick] (hub)--(b4) (hub)--(b5) (hub)--(b7) (hub)--(b8)
+                (b2)--(b5) (b3)--(b6) (b6)--(b9);
+
+% ---- arrows
+\draw[arr] (K0) -- node[above, lbl]{} (train);
+\draw[arr] (train) -- (KT);
+
+% ---- bottom: exam
+\node[stage, draw=okpurple!80, fill=okpurple!6, below=0.9cm of KT, minimum width=4.6cm, align=center] (exam)
+  {\textbf{exam} (store frozen)\\ fresh reader: search/read/\texttt{answer},
+   budget $M$\\ held-out questions, gold never shown};
+\draw[arr] (KT) -- (exam);
+\node[stage, draw=okpurple!80, fill=okpurple!6, left=1.2cm of exam, align=center] (out)
+  {F1 (non-inferior?)\\ steps per question ($\rho<1$?)};
+\draw[arr] (exam) -- (out);
+\end{tikzpicture}
+\caption{The train/test protocol. A training agent consumes supervised QA pairs,
+answering each from the current store (gold revealed only after its single answer)
+and consolidating verified reasoning into structure. Evaluation freezes the store and
+examines an independent budgeted reader on held-out questions; the hypothesis
+(Eq.~\ref{eq:hypothesis}) is non-inferior accuracy at strictly lower per-question
+cost.}
+\label{fig:protocol}
+\end{figure*}
+
+\section{Problem Formulation}
+A knowledge base $K$ is a directed graph of \emph{documents}: each document holds
+one self-contained sentence and a set of outgoing links. The \emph{reader} is a fixed
+LLM policy with three tools---vector \texttt{search}, node \texttt{read} (text plus
+linked nodes), and \texttt{answer}---a fixed action budget $M$, and a short-term
+memory holding only the current question and the last $k$ action--result pairs.
+Reader performance on a question distribution $Q$ defines store quality along two
+axes:
+\begin{align*}
+\mathrm{acc}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{F1}\big(\mathrm{reader}(K,q)\big)\right],\\
+\mathrm{cost}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{steps}\big(\mathrm{reader}(K,q)\big)\right].
+\end{align*}
+\emph{Training} is any procedure that consumes supervised pairs $(q, a^{*})$ and edits
+$K$, producing $K_T$ from the initial store $K_0$. Our central hypothesis is a joint
+condition on the two axes:
+\begin{equation}
+\mathrm{acc}(K_T) \;\ge\; \mathrm{acc}(K_0) - \delta
+\quad\text{and}\quad
+\rho \;=\; \frac{\mathrm{cost}(K_T)}{\mathrm{cost}(K_0)} \;<\; 1,
+\label{eq:hypothesis}
+\end{equation}
+with non-inferiority margin $\delta = 0.03$. Training cost amortizes: if training
+spent $C_{\mathrm{train}}$ tokens and the per-question saving is
+$c_0 - c_T$ tokens, the \emph{break-even point}
+\begin{equation}
+N^{*} \;=\; \frac{C_{\mathrm{train}}}{c_0 - c_T}
+\label{eq:breakeven}
+\end{equation}
+is the query volume after which curation has paid for itself---the single number
+that tells a practitioner whether training a store is worth it for their workload.
+
+The correspondence to supervised learning is exact: the store configuration is the
+parameter vector, one training iteration is one optimization step, the training agent
+is the optimizer, and held-out reader performance is the loss. Formally, the
+environment with a \emph{fixed} reader policy induces a Markov process over store
+configurations; training is a guided walk through configuration space, and the
+questions are its supervision signal. Because training-agent forward passes and test
+readers use identical tools, budgets, and the single-shot answer rule, the train/test
+generalization gap is well defined: the three-layer decomposition compares accuracy on
+re-encountered train instances (retention carried \emph{only} by the store---the
+agent's memory resets every question), unseen instances of trained templates
+(class-level generalization), and reserved templates (within-category transfer).
+
+\section{The \kbgym{} Environment}
+\subsection{Universe and Store}
+A generator in the PhantomWiki style samples a fictional population (500 people in
+the main configuration): family trees, spouses, friendships, per-person attributes
+(job, hobby, city), globally distinct birthdates, and \emph{name distractors}---extra
+people sharing first names with questioned subjects. Facts render through fixed
+templates into $\sim$5{,}900 atomic single-sentence documents (``Alice Johnson's job is
+arborist.''). The initial store has \emph{zero links}: a bag of atomic facts.
+Document embeddings back \texttt{search} and are maintained
+automatically as nodes are added, edited, or deleted.
+
+\subsection{Actions}\label{sec:actions}
+Reader and training-forward mode: \texttt{search(query)} (top-$k$ document ids
+with full text), \texttt{read(id)} (text plus links, each with target text),
+\texttt{answer(text)}. Training consolidation adds: \texttt{add(text)},
+\texttt{edit(id,text)}, \texttt{delete(id)}, \texttt{link(a,b)},
+\texttt{unlink(a,b)}, \texttt{done()}. Provenance is tracked throughout: initial
+documents carry an origin; edited ones are flagged; authored ones have no origin.
+Coverage and duplication are integer-exact; any authored content is attributable.
+
+\subsection{Question Classes and Splits}
+Ten categories over $\sim$26 templates. \emph{Forward} classes QC1--QC3 (1--3-hop
+named-entity chains) are natively easy for document-level retrieval and serve as the
+non-inferiority floor. \emph{Hard} classes target relations \emph{between}
+documents: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint joins
+without a name anchor (QC6), set intersection (QC7), comparison/superlatives over
+birthdates (QC9), and reverse lookup with a uniqueness guarantee (QC10). Golds are
+computed by graph traversal over the fact layer; every question carries template id,
+gold variants, and its support set. Splits (instance-disjoint): \texttt{train} (150;
+i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} (100; unseen instances of
+trained templates), \texttt{test\_out} (50; one reserved template per category),
+\texttt{eval} (30; stratified, drives the per-epoch learning curve so the final test
+is touched exactly once). Grading is SQuAD-normalized F1/EM.
+
+\subsection{Design Rationale}
+Four decisions carry the methodology. \emph{(i) No LLM judge anywhere}: golds are
+exact, grading is SQuAD normalization, store metrics are integer counts over
+provenance---every number in this paper is reproducible to the digit.
+\emph{(ii) Realistic retrieval}: \texttt{search} returns matched document text, as
+production vector stores do; an early variant returning only titles collapsed the
+reader to F1 $0.0$ and would have credited the trained store for fixing an
+artificially crippled interface. \emph{(iii) Atomic documents}: the store is its
+own chunking, so organization is expressible \emph{only} through links and navigation
+nodes---any efficiency gain is attributable to structure, and any authored content is
+provenance-flagged. \emph{(iv) Contamination control}: we measured gpt-5-mini
+answering HotpotQA-style questions at F1 $\approx 1.0$ with \emph{no retrieval at
+all}; on public corpora, a reader's score conflates the store with the weights, and
+``store value'' loses meaning. A fictional universe makes the no-store score
+$\approx 0$, so every point of reader performance is earned through the store.
+
+\section{Training Protocol}
+\begin{algorithm}[t]
+\caption{Training a knowledge base (reader and editor tool sets as defined
+in Sec.~\ref{sec:actions})}
+\label{alg:train}
+\begin{algorithmic}[1]
+\State evaluate reader on \texttt{eval} \Comment{epoch-0 baseline (= B1)}
+\For{epoch $= 1 \dots E$}
+  \For{$(q, a^{*})$ in shuffled \texttt{train}}
+    \State reset short-term memory; task $\gets q$
+    \For{step $= 1 \dots N_1$}  \Comment{forward}
+      \State $d \gets$ policy(reader tools)
+      \If{$d = \texttt{answer}(\hat a)$}
+        \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
+      \EndIf
+    \EndFor
+    \For{step $= 1 \dots N_2$}  \Comment{backward}
+      \State $d \gets$ policy(editor tools)
+      \If{$d = \texttt{done}$} \textbf{break} \EndIf
+    \EndFor
+    \State refresh dirty embeddings; log
+  \EndFor
+  \State snapshot; evaluate reader on \texttt{eval} \Comment{curve point}
+\EndFor
+\State exam: frozen store, test splits, budget $M$
+\end{algorithmic}
+\end{algorithm}
+
+Phase 1 uses exactly the reader's toolset and budget, so train-forward accuracy is
+directly comparable to test accuracy. The single-shot \texttt{answer} reveals the gold
+in its result---standard supervised learning: predict, then see the label, then
+update. Leftover Phase-1 budget is forfeited (no smuggling forward steps into
+consolidation); a budget-exhausted forward scores $0$ but still receives the gold, so
+failed questions---where repair matters most---get targeted consolidation.
+Every intermediate store state is reconstructible by replaying the edit trace
+(validated byte-exact against epoch snapshots), giving per-iteration store
+trajectories for analysis at no storage cost.
+
+\begin{table}[t]
+\caption{Credit assignment: Phase-2 diagnosis and repair, determined by the Phase-1
+trajectory plus the revealed gold. No oracle localization is provided.}
+\label{tab:credit}
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{L{2.5cm}L{5.2cm}}
+\toprule
+Trajectory diagnosis & Repair \\
+\midrule
+Needed fact never surfaced & directed re-search \emph{with the answer in hand}; link
+from where the blind search wandered to where the fact lives \\
+Fact read but chain unassembled & materialize the chain as links; optionally author a
+navigation node for the class \\
+Conflicting documents found & resolve using the gold as arbiter (delete or edit the
+loser) \\
+Class-level gap (same failure would recur on siblings) & build/extend an index node
+gathering same-class material \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The training agent's objectives, stated as goals (mechanisms are its choice):
+(1)~answer correctly; (2)~consolidate verified reasoning into structure; (3)~organize
+for the question's \emph{class}---build or extend index/navigation nodes so unseen
+instances of the class resolve in fewer steps; (4)~keep the store
+\emph{parsimonious}: duplicated facts compete in search and bury each other; delete
+redundancy you create; if the store already serves the class, change nothing.
+Objective~(4) was added after the negative result of
+Section~\ref{sec:prelim}. Credit assignment needs no oracle: a wrong answer plus the
+revealed gold lets the agent re-search \emph{with the answer in hand}, and the repair
+is determined by the trajectory difference.
+
+\section{Experimental Design}
+\subsection{Benchmarks}
+Three arms share one protocol and differ in document granularity and realism
+(Table~\ref{tab:arms}).
+
+\begin{table}[t]
+\caption{Benchmark arms. All use the same splits scheme, reader, and budgets.}
+\label{tab:arms}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{L{1.35cm}L{1.75cm}L{1.75cm}L{1.75cm}}
+\toprule
+ & \kbgym{} (main) & PhantomWiki (official) & MuSiQue (real text) \\
+\midrule
+documents & 5{,}864 sentences & 3{,}403 sent.\ or 405 articles & $\sim$11k paragraphs \\
+source & our generator & their generator & Wikipedia \\
+categories & 10 (26 templates) & 4 shapes & 2--4-hop shapes \\
+questions & 330 (150/100/50/30) & 330, same scheme & same scheme \\
+supports & exact & unavailable & official \\
+contamination & none & none & delta-corrected \\
+status & built; main runs & data built & planned \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{\kbgym{} (main).} 500 fictional people (10\% name distractors; family
+trees, spouses, friendships; job/hobby/city attributes; globally distinct
+birthdates) render into 5{,}864 atomic documents. Ten question categories over
+26 templates: forward chains QC1--QC3; aggregation counts QC4/QC8 (children,
+friends, grandchildren, attribute-filtered counts); abstention QC5;
+multi-constraint joins QC6 (no name anchor; unique answer enforced against
+distractors); set intersection QC7 (common friends); comparison/superlatives
+QC9 (birthdates; ties excluded by construction); reverse lookup QC10 (exactly
+one qualifier). Golds are graph-derived with accepted variants; every question
+carries its support set. Splits are instance-disjoint: \texttt{train} 150
+(i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} 100 (unseen
+instances of trained templates), \texttt{test\_out} 50 (one reserved template
+per category), \texttt{eval} 30 (stratified; drives the learning curve so the
+final test is touched exactly once).
+
+\textbf{Official PhantomWiki (external validity).} A generator we do not
+control (phantom-wiki 1.0.3, SWI-Prolog 10.0.2): 16 family trees, 405 person
+articles, 480 generated QA over 8 templates grouped into four composition
+shapes, with per-question hop depth 1--5; two reserved templates (relational
+and aggregative) form \texttt{test\_out}. Their Prolog-derived relations have
+no per-fact supports, so repair diagnostics are unavailable on this arm; the
+train/test protocol itself does not need them. Documents at sentence or
+article granularity (the latter tests the method at paragraph scale with zero
+contamination).
+
+\textbf{MuSiQue (real-text arm)~\cite{musique}.} Paragraphs are the documents; the official
+composition shapes are the categories, a held-out shape is
+\texttt{test\_out}, and the annotated supporting paragraphs restore support
+diagnostics. Real corpora are parametrically contaminated (we measured
+near-ceiling no-retrieval scores for related datasets), so all scores on this
+arm are reported as deltas over a mandatory no-store reader baseline.
+
+\subsection{Baselines}
+All baselines differ \emph{only} in how the store is prepared; reader, test
+sets, and budgets are identical, and each reports its one-time build cost
+(Table~\ref{tab:baselines}).
+
+\begin{table}[t]
+\caption{Baseline arms on \kbgym{}-500. Identical reader, test sets, and
+budgets; arms differ only in store preparation.}
+\label{tab:baselines}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{L{1.62cm}L{1.5cm}L{2.15cm}L{1.3cm}}
+\toprule
+Arm & Preparation & Structure added & Build cost \\
+\midrule
+B1 flat & none & --- & 0 \\
+B3 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok \\
+B4 RAPTOR & offline, unsup. & summary hierarchy & --- \\
+B5 HippoRAG2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 \\
+Ours & QA-supervised & links + nav docs & training run \\
+\bottomrule
+\end{tabular}
+\end{table}
+\textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B3,
+GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
+extraction, justified by template-shaped text), co-occurrence communities,
+one LLM-written community summary document per community linked to its
+members. \textbf{B4, RAPTOR-style}~\cite{raptor} (extended version):
+recursive embedding clustering with LLM summary documents per cluster,
+hierarchically linked. \textbf{B5, HippoRAG-2-style}~\cite{hipporag2}:
+(subject, relation, object) triples per document, entity-sharing links
+between documents, per-entity hub documents. B3--B5 structure lands as
+authored documents and links \emph{in our store format}, so the common
+budgeted reader can traverse it: we test their \emph{structure} under a fixed
+reader rather than their retrieval algorithms (a documented adaptation; e.g.\
+B5 forgoes Personalized PageRank).
+
+\subsection{Implementation}
+Trainer and reader are gpt-5-mini (temperature 0.3, 4{,}096 tokens/turn),
+tool-forced decisions, static schemas. Budgets $N_1{=}N_2{=}M{=}15$; FIFO
+$K{=}30$; \texttt{search} returns top-5. Embeddings: chroma default ONNX
+MiniLM family, environment-maintained. Measured training cost:
+$\approx$23k tokens and 83\,s per iteration on the 120-person universe,
+$\approx$161\,s on the 500-person main configuration ($\approx$\$6 per
+300-iteration run at current pricing). Per-epoch snapshots plus byte-exact
+trace replay reconstruct every intermediate store state for analysis
+(merge events replay deterministically without the judge). Basic version:
+single seed (seed~0); seed replication planned. The main run reported below
+predates the dedup guard and uses prompt-level parsimony only; the guard is
+default-on for subsequent runs, and its on/off contrast is a natural
+ablation.
+
+\subsection{Experiment Suite and Predictions}
+\textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
+epoch (epoch~0 = B1); final \texttt{test\_in}/\texttt{test\_out} pass on the
+last snapshot, at $M \in \{8, 15\}$. Prediction: non-inferior accuracy with
+fewer steps, and a leftward shift of the accuracy--budget curve (the trained
+store dominates at tight budgets). \textbf{E2.} The baseline table: F1,
+steps/question, build tokens, per-question tokens, for B1/B3/B4/B5/ours on
+both test splits. \textbf{E3} (log slicing). Three-layer generalization
+(train-forward from epoch~2 / \texttt{test\_in} / \texttt{test\_out}) and the
+per-category profile. Prediction: forward classes QC1--QC3 are saturated near
+1.0 at $M{=}15$ (they are the non-inferiority floor, not the headroom);
+gains concentrate in aggregation (QC4/QC8), joins (QC6), intersection (QC7)
+and reverse lookup (QC10), whose answers live in relations between documents;
+QC5 abstention is expected unchanged. \textbf{E5} (trace mining). (i)
+edit-type mix per epoch; (ii) store-size trajectory from replay (the
+parsimony objective predicts sublinear growth, unlike the 5$\times$ blowup of
+Sec.~\ref{sec:pollution}); (iii) morphology of authored navigation documents
+(out-degree distribution, what they gather); (iv) structure--semantics
+alignment: the share of built links connecting documents that co-occur in
+some support set (supports are invisible to the agent, making the measure
+honest); (v) mechanism attribution: correlation between a reader's step
+savings and its hits on authored navigation documents and trained links.
+Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
+
+\section{Experiment Results}\label{sec:prelim}
 \emph{Obtained on an earlier document-store variant of the environment (coarse multi-sentence
 documents, copy/move actions) with gpt-5-mini, 120-person universe, 150 train
 questions $\times$ 2 epochs; to be re-established on the final document-graph
