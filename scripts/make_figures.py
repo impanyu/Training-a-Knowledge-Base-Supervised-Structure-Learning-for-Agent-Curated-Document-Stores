@@ -37,8 +37,7 @@ ev_out = [sum(by[(e, "out")]) / len(by[(e, "out")]) for e in epochs]
 tl = [json.loads(l) for l in open(RUN / "train_log.jsonl")]
 f1s = [r["f1"] for r in tl]
 W = 30
-roll = [sum(f1s[max(0, i - W + 1):i + 1]) / len(f1s[max(0, i - W + 1):i + 1])
-        for i in range(len(f1s))]
+roll = [sum(f1s[i - W + 1:i + 1]) / W for i in range(W - 1, len(f1s))]
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.9, 2.5))
 ax1.plot(epochs, ev_in, "o-", color=BLUE, label="eval-in (trained templates)")
@@ -50,7 +49,7 @@ ax1.set_ylim(0, 1.0)
 ax1.legend(frameon=False, fontsize=7.5)
 ax1.set_title("(a) held-out eval by epoch", fontsize=9)
 
-ax2.plot(range(1, len(roll) + 1), roll, color=GREEN, lw=1.4)
+ax2.plot(range(W, W + len(roll)), roll, color=GREEN, lw=1.4)
 ax2.axvline(150.5, color="0.6", ls="--", lw=0.8)
 ax2.text(152, 0.08, "epoch 2\n(re-encountered\nquestions)", fontsize=7, color="0.35")
 ax2.set_xlabel("training iteration")
