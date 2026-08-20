@@ -86,7 +86,7 @@ def test_phase2_edits_dispatch_and_done_ends():
     assert p2[1]["result"] == f"linked {a} -> {b}"
     assert p2[2]["result"].startswith("ERROR:")
     assert p2[3]["action"] == "done" and p2[3]["result"] == "phase complete"
-    assert pol.seen[1][2] == ("search", "search_wide", "read", "add",
+    assert pol.seen[1][2] == ("search", "search_keyword", "read", "add",
                               "edit", "delete", "link", "link_many",
                               "unlink", "done")
 
@@ -176,9 +176,8 @@ def test_two_skills_carry_goal_means_and_example():
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
     # curation shows several types with deliberately different answers
-    for ex in ("A join.", "A count.", "An intersection.",
+    for ex in ("A join.", "A count over a relation.", "An intersection.",
                "A lookup that already worked.",
-               "Sometimes the right structure is only edges",
                "Answering correctly is NOT the test",
                "On an unstructured store, doing nothing is almost never correct"):
         assert ex in CURATION_SKILL
@@ -194,8 +193,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "Others exist that nobody has written down",
                 "WHAT YOU CAN BUILD",
                 "link_many costs ONE action",
-                "search_wide returns thirty",
-                "not enough to enumerate everything under a key",
+                "search_keyword is different",
+                "one call closes a set exactly",
                 "ONE note holds ONE statement",
                 "It is COMPLETE"):
         assert cue in CURATION_SKILL

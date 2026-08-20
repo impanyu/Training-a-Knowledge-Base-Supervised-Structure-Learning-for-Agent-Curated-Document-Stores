@@ -14,7 +14,7 @@ Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
 
 SEARCH_K = 5
-SEARCH_WIDE_K = 30       # curation only: enumerating a set needs more than 5
+KEYWORD_CAP = 200        # curation only: guard against a keyword matching the store
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -43,14 +43,16 @@ ACTION_SPECS: dict[str, dict] = {
                         f"top-{SEARCH_K} notes as (id, text)."),
         "input_schema": _schema({"query": _S}, ["query"]),
     },
-    "search_wide": {
-        "description": (f"Like search, but returns the top-{SEARCH_WIDE_K} "
-                        "notes instead of five. Available while curating "
-                        "only, because enumerating everything under a key - "
-                        "every resident of a city, every holder of a job - "
-                        "cannot be done five at a time. The reader you are "
-                        "building for does not have this."),
-        "input_schema": _schema({"query": _S}, ["query"]),
+    "search_keyword": {
+        "description": ("EVERY note whose text contains all of the given "
+                        "keywords, matched literally and case-insensitively "
+                        "- not a similarity ranking and not a top-k. This is "
+                        "how you enumerate a set completely: one call returns "
+                        "all of it, and the count tells you the set is "
+                        "closed. Available while curating only; the reader "
+                        "you are building for has similarity search alone, "
+                        "which is why it needs the structure you leave."),
+        "input_schema": _schema({"keywords": _SLIST}, ["keywords"]),
     },
     "read": {
         "description": ("Read one note: its text and its links, each rendered "
@@ -100,7 +102,7 @@ EDIT_ACTIONS = ("add", "edit", "delete", "link", "link_many", "unlink")
 # tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
-    "train_backward": ("search", "search_wide", "read") + EDIT_ACTIONS + ("done",),
+    "train_backward": ("search", "search_keyword", "read") + EDIT_ACTIONS + ("done",),
     "test": ("search", "read", "answer"),
 }
 
@@ -128,9 +130,23 @@ def _h_search(store, inp):
     return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no results)"
 
 
-def _h_search_wide(store, inp):
-    hits = store.search(str(inp["query"]), k=SEARCH_WIDE_K)
-    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no hits)"
+def _h_search_keyword(store, inp):
+    """Exact substring match over every note, so a set can be closed in one
+    call. Similarity search cannot do this: the same query returns the same
+    five notes however often it is asked."""
+    kws = [str(k).strip().lower() for k in (inp.get("keywords") or []) if str(k).strip()]
+    if not kws:
+        return "ERROR: keywords is empty"
+    hits = [(nid, n.text) for nid, n in store.nodes.items()
+            if all(k in n.text.lower() for k in kws)]
+    if not hits:
+        return "(no notes contain all of: " + ", ".join(kws) + ")"
+    head = sorted(hits)[:KEYWORD_CAP]
+    body = "\n".join(f"- {nid}: {text}" for nid, text in head)
+    if len(hits) > KEYWORD_CAP:
+        return (f"{len(hits)} notes match; showing the first {KEYWORD_CAP}. "
+                f"Narrow the keywords.\n{body}")
+    return f"{len(hits)} notes match, all shown.\n{body}"
 
 
 def _h_read(store, inp):
@@ -196,7 +212,7 @@ def _h_unlink(store, inp):
 
 
 _HANDLERS = {
-    "search": _h_search, "search_wide": _h_search_wide, "read": _h_read,
+    "search": _h_search, "search_keyword": _h_search_keyword, "read": _h_read,
     "add": _h_add, "edit": _h_edit, "delete": _h_delete,
     "link": _h_link, "link_many": _h_link_many, "unlink": _h_unlink,
 }
