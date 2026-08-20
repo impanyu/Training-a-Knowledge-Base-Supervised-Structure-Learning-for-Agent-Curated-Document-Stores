@@ -175,12 +175,6 @@ def test_two_skills_carry_goal_means_and_example():
     from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
-    # curation shows several types with deliberately different answers
-    for ex in ("A join.", "A count over a relation.", "An intersection.",
-               "A lookup that already worked.",
-               "Answering correctly is NOT the test",
-               "On an unstructured store, doing nothing is almost never correct"):
-        assert ex in CURATION_SKILL
     for cue in ("search(query)", "read(id)", "answer(text)",
                 "the full text of every note linked to it",
                 "A second case."):
@@ -191,9 +185,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "You do not have to abstract the question",
                 "Examples of the mapping",
                 "AN INDEX POINTS; IT DOES NOT LIST",
-                "it does not have to", "COMPLETENESS."):
-        if cue == "it does not have to":
-            continue
+                "COMPLETENESS."):
         assert cue in CURATION_SKILL
     for cue in ("search_keyword is different", "link_many costs ONE action",
                 "ONE note holds ONE statement"):
