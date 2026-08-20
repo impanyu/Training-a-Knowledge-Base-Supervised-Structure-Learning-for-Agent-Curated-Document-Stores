@@ -60,4 +60,19 @@ python3 -m kb.test --kb runs/v11_main/kb_epoch_2.json \
 
 python3 scripts/note_character.py --kb runs/v11_main/kb_epoch_2.json \
   --baseline runs/v10L_dedup/kb_epoch_2.json | tee runs/v11_structure.txt
+# The retrieval skill changed (Phase 1 and the exam now share it), so every
+# baseline must be re-measured under it before the E2 table means anything.
+echo "=== re-measuring baselines under the shared retrieval skill ==="
+for ARM in "b1:data/v10L/universe.json" \
+           "graphrag:data/v10L_graphrag/universe.json" \
+           "hipporag:data/v10L_hipporag/universe.json"; do
+  NAME=${ARM%%:*}; KB=${ARM#*:}
+  for M in 15 8; do
+    python3 -m kb.test --kb "$KB" --universe data/v10L/universe.json \
+      --split both --epoch 0 --m $M --model gpt-5-mini \
+      --out runs/v11base_${NAME}_m$M > runs/v11base_${NAME}_m$M.log 2>&1
+    echo "  ${NAME} M=$M done"
+  done
+done
+
 echo "V11 DONE"
