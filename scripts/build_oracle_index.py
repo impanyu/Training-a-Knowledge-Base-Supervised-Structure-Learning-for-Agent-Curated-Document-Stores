@@ -19,19 +19,28 @@ never in its text.
 """
 import argparse
 import json
-import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-PATTERNS = [
-    (re.compile(r"^(.+?)'s job is (.+)\.$"), "job"),
-    (re.compile(r"^(.+?)'s hobby is (.+)\.$"), "hobby"),
-    (re.compile(r"^(.+?) lives in the city of (.+)\.$"), "city"),
-    (re.compile(r"^(.+?) is married to (.+)\.$"), "spouse"),
-    (re.compile(r"^(.+?) is a friend of (.+)\.$"), "friend"),
-    (re.compile(r"^(.+?) is the (?:father|mother) of (.+)\.$"), "parent"),
-    (re.compile(r"^(.+?) is a child of (.+)\.$"), "child"),
-]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from kb.baseline_common import extract_all, entity_mentions  # noqa: E402
+
+# Which relations make two people neighbours, and which make a person an
+# instance of an attribute. Written to cover both arms: KBGym renders
+# "X's job is cooper" while PhantomWiki renders "The occupation of X is
+# cooper", and the oracle should not care which universe it is given.
+PERSON_REL = {"spouse", "married to", "friend", "friends", "parent of",
+              "child of", "mother", "father", "husband", "wife", "son",
+              "sons", "daughter", "daughters", "brother", "brothers",
+              "sister", "sisters"}
+ATTR_LABEL = {"job": "People whose job is", "occupation": "People whose job is",
+              "hobby": "People whose hobby is",
+              "lives in": "People who live in the city of",
+              "city": "People who live in the city of"}
+CHILD_REL = {"parent of", "son", "sons", "daughter", "daughters"}
+PARENT_REL = {"child of", "mother", "father"}
+FRIEND_REL = {"friend", "friends"}
 
 
 def main():
@@ -47,32 +56,29 @@ def main():
         n.setdefault("flag", None)
     by_person = defaultdict(list)          # person -> their note ids
     attr = defaultdict(lambda: defaultdict(set))   # kind -> value -> persons
-    rel = defaultdict(lambda: defaultdict(set))    # kind -> person -> persons
+    rel_map = defaultdict(lambda: defaultdict(set))  # kind -> person -> persons
 
     for n in nodes:
-        for pat, kind in PATTERNS:
-            m = pat.match(n["text"])
-            if not m:
-                continue
-            subj, obj = m.group(1), m.group(2)
+        for subj, rel, obj in extract_all(n["text"]):
             by_person[subj].append(n["id"])
-            if kind in ("job", "hobby", "city"):
-                attr[kind][obj].add(subj)
-            else:
-                by_person[obj].append(n["id"])
-                if kind == "friend":
-                    rel["friends"][subj].add(obj)
-                    rel["friends"][obj].add(subj)
-                elif kind == "spouse":
-                    rel["spouse"][subj].add(obj)
-                    rel["spouse"][obj].add(subj)
-                elif kind == "parent":
-                    rel["children"][subj].add(obj)
-                    rel["parents"][obj].add(subj)
-                elif kind == "child":
-                    rel["parents"][subj].add(obj)
-                    rel["children"][obj].add(subj)
-            break
+            if rel in ATTR_LABEL:
+                attr[rel][obj].add(subj)
+                continue
+            if rel not in PERSON_REL:
+                continue                       # birth dates, gender: no index
+            by_person[obj].append(n["id"])
+            if rel in FRIEND_REL:
+                rel_map["friends"][subj].add(obj)
+                rel_map["friends"][obj].add(subj)
+            elif rel in CHILD_REL:
+                rel_map["children"][subj].add(obj)
+                rel_map["parents"][obj].add(subj)
+            elif rel in PARENT_REL:
+                rel_map["parents"][subj].add(obj)
+                rel_map["children"][obj].add(subj)
+            else:                              # spouse-like, symmetric
+                rel_map["spouse"][subj].add(obj)
+                rel_map["spouse"][obj].add(subj)
 
     nid = max(int(n["id"][1:]) for n in nodes)
 
@@ -91,23 +97,22 @@ def main():
     # layer 2: attribute indexes, linked to person nodes
     n_attr = 0
     for kind, values in attr.items():
-        label = {"job": "People whose job is", "hobby": "People whose hobby is",
-                 "city": "People who live in the city of"}[kind]
+        label = ATTR_LABEL[kind]
         for value, people in sorted(values.items()):
             new(f"{label} {value}", [person_node[p] for p in people if p in person_node])
             n_attr += 1
 
     # layer 3: relation indexes, linked to person nodes
     n_rel = 0
-    for p, friends in sorted(rel["friends"].items()):
+    for p, friends in sorted(rel_map["friends"].items()):
         if p in person_node:
             new(f"Friends of {p}", [person_node[q] for q in friends if q in person_node])
             n_rel += 1
-    for p, kids in sorted(rel["children"].items()):
+    for p, kids in sorted(rel_map["children"].items()):
         if p in person_node:
             new(f"Children of {p}", [person_node[q] for q in kids if q in person_node])
             n_rel += 1
-            grand = {g for k in kids for g in rel["children"].get(k, ())}
+            grand = {g for k in kids for g in rel_map["children"].get(k, ())}
             if grand:
                 new(f"Grandchildren of {p}",
                     [person_node[q] for q in grand if q in person_node])

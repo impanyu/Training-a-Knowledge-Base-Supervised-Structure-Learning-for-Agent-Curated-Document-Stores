@@ -30,7 +30,8 @@ import json
 import sys
 import time
 
-from kb.baseline_common import (copy_universe, index_statements, next_sid,
+from kb.baseline_common import (extract_pw, PW_PERSON_RELATIONS,
+                                copy_universe, index_statements, next_sid,
                                 write_output)
 
 SYNAPSE_CAP = 40

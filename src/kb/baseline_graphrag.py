@@ -29,7 +29,8 @@ import sys
 import time
 from collections import Counter
 
-from kb.baseline_common import (PERSON_RELATIONS, copy_universe,
+from kb.baseline_common import (extract_pw, PW_PERSON_RELATIONS,
+                                PERSON_RELATIONS, copy_universe,
                                 index_statements, next_sid, write_output)
 
 MAX_COMMUNITY = 10

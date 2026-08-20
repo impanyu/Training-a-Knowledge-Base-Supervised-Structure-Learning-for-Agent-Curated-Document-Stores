@@ -39,12 +39,29 @@ ATTR_KIND = {"job": "job", "hobby": "hobby", "lives in": "city"}
 
 def extract_triple(text: str) -> tuple[str, str, str] | None:
     """(subject, relation, object) for a template-shaped statement, else
-    None (agent-authored / summary nodes do not parse, by design)."""
+    None (agent-authored / summary nodes do not parse, by design).
+
+    Tries the KBGym templates first, then the PhantomWiki grammar, so a
+    baseline builds on either arm without being told which it is looking at.
+    A plural PhantomWiki sentence names several objects; only the first is
+    returned here, and callers wanting all of them use extract_all()."""
     for pat, rel in TEMPLATES:
         m = pat.match(text.strip())
         if m:
             return m.group(1), rel, m.group(2)
-    return None
+    pw = extract_pw(text.strip())
+    return pw[0] if pw else None
+
+
+def extract_all(text: str) -> list[tuple[str, str, str]]:
+    """Every triple in a statement. Identical to extract_triple on KBGym,
+    where a sentence carries one fact; on PhantomWiki a friends list yields
+    one triple per friend, which is what makes those people co-occur."""
+    t = extract_triple(text.strip())
+    if t is None:
+        return []
+    pw = extract_pw(text.strip())
+    return pw if len(pw) > 1 else [t]
 
 
 def entity_mentions(triple: tuple[str, str, str]) -> list[tuple[str, str]]:
@@ -53,10 +70,12 @@ def entity_mentions(triple: tuple[str, str, str]) -> list[tuple[str, str]]:
     one statement each) so they are useless as shared entities — excluded."""
     subj, rel, obj = triple
     out = [("person", subj)]
-    if rel in PERSON_RELATIONS:
+    if rel in PERSON_RELATIONS or rel in PW_PERSON_RELATIONS:
         out.append(("person", obj))
     elif rel in ATTR_KIND:
         out.append((ATTR_KIND[rel], obj))
+    elif rel in ("occupation", "hobby"):        # PhantomWiki attribute names
+        out.append(("job" if rel == "occupation" else "hobby", obj))
     return out
 
 
@@ -66,12 +85,13 @@ def index_statements(nodes: list[dict]) -> tuple[dict, dict]:
     by_entity: dict[tuple[str, str], list[str]] = {}
     triples: dict[str, tuple[str, str, str]] = {}
     for n in nodes:
-        t = extract_triple(n["text"])
-        if t is None:
+        ts = extract_all(n["text"])
+        if not ts:
             continue
-        triples[n["id"]] = t
-        for ent in entity_mentions(t):
-            by_entity.setdefault(ent, []).append(n["id"])
+        triples[n["id"]] = ts[0]
+        for t in ts:
+            for ent in entity_mentions(t):
+                by_entity.setdefault(ent, []).append(n["id"])
     for sids in by_entity.values():
         sids.sort()
     return by_entity, triples
@@ -96,3 +116,34 @@ def write_output(out_dir, universe: dict, meta: dict) -> None:
         json.dump(universe, f, ensure_ascii=False)
     with open(out / "build_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
+
+# ---------------------------------------------------------------- PhantomWiki
+# Their articles are template-rendered too, but with a different grammar:
+# "The <relation> of <NAME> is <VALUE>." and its plural "... are <V1>, <V2>."
+# Two patterns cover 3,403 of 3,403 notes, so the baselines can be built on
+# this arm with the same free, exact extraction used on KBGym rather than
+# being skipped for want of an extractor.
+_PW_NAME = r"[A-Z][a-zA-Z'\-]+(?: [A-Z][a-zA-Z'\-]+)*"
+PW_SINGULAR = re.compile(rf"^The ([\w ]+?) of ({_PW_NAME}) is (.+)\.$")
+PW_PLURAL = re.compile(rf"^The ([\w ]+?) of ({_PW_NAME}) are (.+)\.$")
+
+PW_PERSON_RELATIONS = frozenset({
+    "mother", "father", "husband", "wife", "son", "sons", "daughter",
+    "daughters", "brother", "brothers", "sister", "sisters", "friend",
+    "friends",
+})
+
+
+def extract_pw(text: str) -> list[tuple[str, str, str]]:
+    """(subject, relation, object) triples from one PhantomWiki sentence.
+
+    A plural sentence names several objects and yields one triple each, so a
+    friends list becomes edges rather than a single opaque fact."""
+    m = PW_SINGULAR.match(text)
+    if m:
+        return [(m.group(2), m.group(1), m.group(3))]
+    m = PW_PLURAL.match(text)
+    if m:
+        rel, subj = m.group(1), m.group(2)
+        return [(subj, rel, o.strip()) for o in m.group(3).split(",") if o.strip()]
+    return []
