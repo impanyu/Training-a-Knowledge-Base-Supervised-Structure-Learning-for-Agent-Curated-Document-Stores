@@ -176,7 +176,7 @@ def test_two_skills_carry_goal_means_and_example():
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
     # the curation example demonstrates each of the five buildable structures
     for case in ("Step one, name the TYPE", "Step two, find the KEY",
-                 "Step three, locate",
+                 "Step three, locate ALL of them",
                  "(1) new INDEX note", "(2) new STATEMENT note",
                  "(3) statement to statement", "(4) index to statement",
                  "(5) index to index", "What came LAST", "link_many(n90,"):
@@ -197,11 +197,14 @@ def test_two_skills_carry_goal_means_and_example():
                 "Rank what you build by how many kinds of question it could serve",
                 "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
+                "COMPLETENESS IS THE POINT",
+                "a partial index is not merely weak, it is WRONG",
+                "an unfinished index is a debt, not an achievement",
                 "Its key can be too broad",
                 "FIT THE INDEX TO THE QUESTION TYPE",
                 "Finish the one you started",
                 "Use the gold answer as a LOCATOR, not as material for a post-mortem",
-                "one with no links is worth nothing"):
+                "An index with no links is worth"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()
 
