@@ -185,6 +185,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "You do not have to abstract the question",
                 "Examples of the mapping",
                 "AN INDEX POINTS; IT DOES NOT LIST",
+                "PRECISION FIRST, THEN COMPLETENESS",
                 "COMPLETENESS."):
         assert cue in CURATION_SKILL
     for cue in ("search(query, k) returns the k most similar notes",
