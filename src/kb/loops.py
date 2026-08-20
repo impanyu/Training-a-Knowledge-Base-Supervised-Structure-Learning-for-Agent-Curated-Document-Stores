@@ -367,7 +367,7 @@ def _log_stats(log, store, epoch, train_rows=()):
 def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
                  n1=N1, n2=N2, m=M, k=K, train_size=None,
                  eval_each_epoch=False, test_policy=None,
-                 universe_path=None, snapshot_every=0) -> None:
+                 universe_path=None, snapshot_every=0, start_at=0) -> None:
     """Epoch driver: seeded per-epoch shuffle of the train split, per-epoch KB
     snapshots (epoch 0 = the untrained store = pure RAG baseline), optional
     evaluation on the small EVAL split after every snapshot. Training never
@@ -375,7 +375,14 @@ def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
     training, via kb.test on the snapshot of choice. snapshot_every=N > 0
     (T39.8) additionally writes kb_iter_XXXX.json every N train iterations,
     numbered across epochs — the same numbering kb.replay --at uses; the
-    default 0 keeps per-epoch snapshots only."""
+    default 0 keeps per-epoch snapshots only.
+
+    start_at=N resumes an interrupted run. The per-epoch order is a seeded
+    shuffle and therefore identical on every invocation, so skipping the
+    first N iterations replays exactly the questions already consumed. The
+    store passed in must be the one those iterations produced - rebuild it
+    with kb.replay --at N - and the epoch-0 snapshot and baseline eval are
+    not written again."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     test_policy = test_policy or policy
@@ -385,19 +392,22 @@ def run_training(store, policy, universe, log, out_dir, epochs=1, seed=0,
         run_test(store, test_policy, universe, "eval", log, epoch=epoch,
                  m=m, k=k)
 
-    save_snapshot(store, out / "kb_epoch_0.json", universe_path)
-    _log_stats(log, store, 0)
-    if eval_each_epoch:
-        _eval(0)
+    if not start_at:
+        save_snapshot(store, out / "kb_epoch_0.json", universe_path)
+        _log_stats(log, store, 0)
+        if eval_each_epoch:
+            _eval(0)
     it = 0
     for epoch in range(1, epochs + 1):
         order = list(train_qids)
         random.Random(seed * 100003 + epoch).shuffle(order)
         rows = []
         for qid in order:
+            it += 1
+            if it <= start_at:
+                continue                  # consumed before the interruption
             rows.append(train_iteration(store, policy, universe.questions[qid],
                                         log, epoch, n1, n2, k))
-            it += 1
             if snapshot_every and it % snapshot_every == 0:
                 save_snapshot(store, out / f"kb_iter_{it:04d}.json",
                               universe_path)

@@ -38,20 +38,42 @@ def main(argv: list[str] | None = None) -> None:
                          "is consulted on add/edit")
     ap.add_argument("--judge-model", default="gpt-5-mini",
                     help="model for the duplicate judge")
+    ap.add_argument("--resume", action="store_true",
+                    help="continue an interrupted run in --out: the store is "
+                         "rebuilt from its trace, the questions already "
+                         "consumed are skipped, and the logs are appended to")
     args = ap.parse_args(argv)
 
     universe = Universe.load(args.universe)
     judge = None if args.no_dedup else LLMDuplicateJudge(args.judge_model)
-    store = Store.from_nodes(universe.nodes, judge=judge,
-                             dedup_threshold=args.dedup_threshold)
+    start_at = 0
+    if args.resume:
+        # A run killed mid-flight (an API outage, a machine restart) has a
+        # complete trace of every edit it made, so the store it had built is
+        # recoverable exactly and without spending a single call. Rebuild it
+        # and skip the questions already consumed rather than starting over.
+        from kb.replay import replay
+        done = Path(args.out) / "train_log.jsonl"
+        start_at = sum(1 for _ in open(done)) if done.exists() else 0
+        if not start_at:
+            raise SystemExit(f"--resume: nothing logged in {args.out}")
+        store, _ = replay(universe, Path(args.out) / "trace.jsonl",
+                          at=start_at, embedding_function=None)
+        store.judge = judge
+        store.dedup_threshold = args.dedup_threshold
+        print(f"resuming {args.out} at iteration {start_at} "
+              f"({len(store.nodes)} nodes rebuilt from the trace)")
+    else:
+        store = Store.from_nodes(universe.nodes, judge=judge,
+                                 dedup_threshold=args.dedup_threshold)
     policy = make_policy(args.model)
-    log = RunLog(args.out)
+    log = RunLog(args.out, append=bool(start_at))
     run_training(store, policy, universe, log, args.out, epochs=args.epochs,
                  seed=args.seed, n1=args.n1, n2=args.n2, m=args.m, k=K,
                  train_size=args.train_size,
                  eval_each_epoch=args.eval_each_epoch,
                  universe_path=args.universe,
-                 snapshot_every=args.snapshot_every)
+                 snapshot_every=args.snapshot_every, start_at=start_at)
     meta = {"universe": args.universe, "epochs": args.epochs,
             "seed": args.seed, "model": args.model,
             "n1": args.n1, "n2": args.n2, "m": args.m,
