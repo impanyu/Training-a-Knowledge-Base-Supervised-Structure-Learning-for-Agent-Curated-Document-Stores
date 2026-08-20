@@ -174,8 +174,15 @@ def test_two_skills_carry_goal_means_and_example():
     from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
+    # curation shows several types with deliberately different answers
+    for ex in ("A join.", "A count.", "An intersection.",
+               "A lookup that already worked.",
+               "Sometimes the right structure is only edges",
+               "Changing nothing is a legitimate use of the budget"):
+        assert ex in CURATION_SKILL
     for cue in ("search(query)", "read(id)", "answer(text)",
-                "the full text of every note linked to it"):
+                "the full text of every note linked to it",
+                "A second case."):
         assert cue in RETRIEVAL_SKILL
     # curation: a goal, the environment's facts, and open-ended guidance
     for cue in ("GOAL. Leave the store better for the NEXT question",
