@@ -47,13 +47,15 @@ def to_openai_tools(tools: list[dict]) -> list[dict]:
 class OpenAICompatPolicy:
     """One tool call per turn, tool_choice=required (spec §2/§5)."""
 
-    def __init__(self, model: str, max_tokens: int = 12000, temperature: float = 0.3):
+    def __init__(self, model: str, max_tokens: int = 12000,
+                 temperature: float = 0.3, reasoning_effort: str = "low"):
         import os
 
         from openai import OpenAI
         self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), max_retries=5)
         self.model = model
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         self.temperature = temperature
 
     def decide(self, system: str, context: str, tools: list[dict]) -> Decision:
@@ -69,6 +71,10 @@ class OpenAICompatPolicy:
         # max_tokens (they want max_completion_tokens).
         if self.model.startswith("gpt-5") or self.model.startswith("o"):
             kwargs["max_completion_tokens"] = self.max_tokens
+            # Reasoning is the wall clock here: at default effort a curation
+            # step took ~16 s and a 300-iteration run projected to 33 hours.
+            if self.reasoning_effort:
+                kwargs["reasoning_effort"] = self.reasoning_effort
         else:
             kwargs["max_tokens"] = self.max_tokens
             kwargs["temperature"] = self.temperature
@@ -98,5 +104,6 @@ class OpenAICompatPolicy:
         return Decision(call.function.name, args, in_tok, out_tok)
 
 
-def make_policy(model: str, max_tokens: int = 12000, temperature: float = 0.3):
-    return OpenAICompatPolicy(model, max_tokens, temperature)
+def make_policy(model: str, max_tokens: int = 12000, temperature: float = 0.3,
+                reasoning_effort: str = "low"):
+    return OpenAICompatPolicy(model, max_tokens, temperature, reasoning_effort)
