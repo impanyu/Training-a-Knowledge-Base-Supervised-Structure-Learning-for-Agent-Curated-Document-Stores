@@ -174,6 +174,11 @@ def test_two_skills_carry_goal_means_and_example():
     from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
+    # the curation example demonstrates each of the five buildable structures
+    for case in ("(1) new INDEX note", "(2) new STATEMENT note",
+                 "(3) statement to statement", "(4) index to statement",
+                 "(5) index to index", "What you did NOT do"):
+        assert case in CURATION_SKILL
     # retrieval: tools and the free-links fact, no editing vocabulary
     for cue in ("search(query)", "read(id)", "answer(text)",
                 "the full text of every note linked to it"):
