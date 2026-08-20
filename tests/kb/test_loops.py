@@ -197,6 +197,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "Rank what you build by how many kinds of question it could serve",
                 "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
+                "LINK WHAT THE READER WILL NEED, not just what matches the key",
+                "Reach one hop further than the key strictly implies",
                 "COMPLETENESS IS THE POINT",
                 "a partial index is not merely weak, it is WRONG",
                 "an unfinished index is a debt, not an achievement",
