@@ -34,8 +34,7 @@ base, yet none of this work measures what curation does to the store itself. We 
 the usual framing: \emph{the knowledge base is the model}. A training agent consumes
 supervised QA pairs one at a time---attempting each question against the current store,
 receiving the gold answer, then consolidating verified reasoning into the store's
-structure---so the knowledge base \emph{learns online}: it improves while it
-serves, with no separate build phase. An independent frozen-store reader is
+structure. An independent frozen-store reader is then
 examined on held-out questions under a fixed action budget. Our central hypothesis is an \emph{efficiency} claim:
 by materializing reasoning paths into index and shortcut structure, a trained store
 lets an unchanged reader answer at \emph{non-inferior accuracy in fewer steps},
@@ -105,15 +104,13 @@ a backward pass (with the revealed gold in hand, \emph{edit the store
 itself}---adding, rewriting, deleting, and linking documents; building index
 and navigation documents---so the question's class becomes easier for a future
 reader); held-out performance is the loss. The knowledge base, not the model
-weights, is the learned object, and the learning is \emph{online}: the store
-improves while it answers, structure is carved incrementally by the questions
-actually asked, and supervision keeps flowing after deployment---whereas
-offline graph construction (GraphRAG, RAPTOR, HippoRAG) is a one-shot build,
-fixed before the first query and blind to the query distribution. In
-machine-learning terms the contrast is exact: offline construction is
-\emph{unsupervised} (structure induced from the corpus alone, no labels),
-while ours is \emph{supervised online} learning---(question, answer) pairs
-are the labels, and structure is optimized against verified answers.
+weights, is the learned object, and the structure is carved incrementally by
+the questions actually asked rather than induced from the corpus alone. In
+machine-learning terms the contrast with offline graph construction
+(GraphRAG, RAPTOR, HippoRAG) is exact: those are \emph{unsupervised} ---
+structure inferred from the corpus with no labels and no notion of what will
+be asked --- while ours is \emph{supervised}: (question, answer) pairs are
+the labels, and structure is optimized against verified answers.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
@@ -522,11 +519,10 @@ near-ceiling no-retrieval scores for related datasets), so all scores on this
 arm are reported as deltas over a mandatory no-store reader baseline.
 
 \subsection{Baselines}
-All baselines are \emph{one-shot} and \emph{unsupervised}: structure is
-induced from the corpus alone, built once before any question is seen, and
-never revised---the defining contrast with our trainer, which is
-\emph{supervised} (gold answers are labels) and \emph{online} (the store is
-edited between every answer). Beyond that they differ
+All baselines are \emph{unsupervised}: structure is induced from the corpus
+alone, with no access to questions or answers---the defining contrast with
+our trainer, for which gold answers are labels and the structure built is
+whatever those labels showed to be missing. Beyond that they differ
 \emph{only} in how the store is prepared; reader, test
 sets, and budgets are identical, and each reports its one-time build cost
 (Table~\ref{tab:baselines}).
@@ -673,8 +669,9 @@ eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
 accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
 $0.64$): later training questions already benefit from structure
 consolidated by earlier ones, before any question repeats. This is the
-signature of online learning---accuracy rising \emph{while the store
-serves}---which no one-shot build can produce.
+evidence that the structure is genuinely accumulating rather than being
+rebuilt per question: what earlier questions left behind is already paying
+off before anything repeats.
 
 \textbf{The frozen exam: accuracy transfers; efficiency does not.} An
 unchanged reader on the frozen epoch-2 store is non-inferior to B1 at both
@@ -749,7 +746,7 @@ dominating it: at $M{=}15$ it is above B1 and B3 on both splits and below
 B5's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
 \texttt{test\_out}. Crucially it shares the baselines' defining failure ---
 $\rho \approx 1$ against B1 at both budgets. That \emph{every} method here,
-supervised or not, online or one-shot, lands within noise of the flat store
+supervised or not, lands within noise of the flat store
 on steps is the paper's most robust negative finding, and the step
 distribution says why.
 
@@ -1025,14 +1022,13 @@ answer it are running. Together these point at a concrete next design: gate
 index construction --- and index \emph{use} --- on the expected derivation
 cost of a question class, rather than indexing whatever was just answered.
 
-\textbf{Online, not one-shot.} Every offline baseline spends its entire
-build budget before the first query and can never incorporate what queries
-reveal; our trainer spends nothing up front and converts each answered
-question into structure, so the store tracks the query distribution it
-actually faces and keeps learning after deployment. In machine-learning terms, the baselines are unsupervised
-pretraining of structure; ours is supervised online learning of it. The
-practical corollary: an operator does not choose between serving and
-building---the forward pass \emph{is} serving.
+\textbf{Supervised, not unsupervised.} Every offline baseline induces its
+structure from the corpus alone and can never incorporate what the questions
+reveal; our trainer is told, question by question, which answers it failed to
+support, and builds against that signal. In machine-learning terms the
+baselines are unsupervised pretraining of structure and ours is supervised
+learning of it, which is why the gains concentrate in the question classes
+the labels actually covered.
 
 \textbf{Deployment reading.} The abstraction targets a real configuration: agent
 fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
@@ -1055,6 +1051,19 @@ single-agent by design (concurrent maintenance, with its conflict taxonomy, is t
 natural sequel); support-set diagnostics are unavailable on the external arm.
 Grading is token-F1 against short golds---adequate for entity answers, blunt for
 free-form ones; the environment avoids the latter by construction.
+
+\textbf{An online variant.} We deliberately separate a training phase from a
+frozen-store examination, because that separation is what makes the
+generalization question answerable at all: a store edited during evaluation
+cannot be said to have been tested on anything. Nothing in the method
+requires it. The training loop already answers a question before it edits,
+so the same agent could curate against live traffic, treating whatever
+feedback a deployment provides---a correction, a follow-up, a click---as the
+label the gold answer supplies here. What such a variant would need is not a
+different curator but a different measurement: with the store changing
+underneath, held-out accuracy stops being well defined, and the honest
+alternative is a prequential one, scoring each question before the edits it
+provokes.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
