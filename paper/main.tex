@@ -753,6 +753,26 @@ supervised or not, online or one-shot, lands within noise of the flat store
 on steps is the paper's most robust negative finding, and the step
 distribution says why.
 
+\textbf{Retrieval cannot enumerate, and that is what structure is for.}
+The reader's \texttt{search} returns the five most similar documents and
+nothing else: no paging, no count, no way to ask for the sixth. A question
+whose answer requires a \emph{set} --- how many grandchildren, which friend
+is shared, which holder of a job lives in a city --- is therefore not
+merely hard for such a reader, it is out of reach unless the store itself
+makes the set reachable, because the twenty-five residents of a city cannot
+be recovered five at a time from a store that does not connect them. This
+predicts exactly where offline structure should pay, and the baselines
+confirm it. Partitioning our ten classes into those that need a set
+(QC4, QC6--QC8, QC10) and those answerable from a single document or a
+chain (QC1--QC3, QC5, QC9), B5's entity indexes lift the first group from
+$0.388$ to $0.514$ F1 and the second group from $0.797$ to $0.797$ --- a
+gain of $+0.126$ where enumeration is required and of exactly zero
+where it is not. Per class the pattern is sharp: counts QC4 $+0.30$,
+intersection QC7 $+0.29$, join QC6 $+0.09$, while QC1 and QC2 sit at
+$1.00$ under every arm. Structure in a store is not a general accelerant;
+it is specifically a substitute for the enumeration that vector retrieval
+cannot perform.
+
 \textbf{Why no method saves steps: mean steps is not a lookup-length
 measure.} Steps per question are strongly bimodal --- a mass around 3--6
 and a spike at exactly $M$ --- because a question the reader cannot resolve
