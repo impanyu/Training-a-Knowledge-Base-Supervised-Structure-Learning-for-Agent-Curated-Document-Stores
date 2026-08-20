@@ -107,17 +107,19 @@ CURATION_SKILL = (
     "would phrase the key, linked to the notes belonging to it. Indexes "
     "are worth returning to: one you extend on a later question covers "
     "more than one you abandon. An index whose links are incomplete is "
-    "worth little; one with no links is worth nothing. The gold answer is "
-    "your supervision - with it in hand you can find what the store "
-    "failed to surface, and a failed trajectory tells you more about the "
-    "store's gaps than a successful one.\n"
+    "worth little; one with no links is worth nothing. Use the gold "
+    "answer as a LOCATOR, not as material for a post-mortem: searching "
+    "it takes you straight to notes worth linking, which is time spent "
+    "building rather than explaining. Do not spend the budget working "
+    "out why the attempt failed - spend it leaving structure behind.\n"
     "\nEXAMPLE - one for each of the five (illustrative; these notes are "
     "not in your store). You were asked which cooper lives in Fenmarch, "
     "searched \"cooper Fenmarch\", got five unrelated notes and ran out of "
     "budget. The gold is Tomas Ashford. Searching the gold shows "
     "n43: \"Tomas Ashford's job is cooper.\" and n44: \"Tomas Ashford "
     "lives in Fenmarch.\" - both present all along, neither reachable "
-    "from what a reader searches first.\n"
+    "from what a reader searches first. That one search is all the "
+    "looking back you need; everything below is building.\n"
     "  (3) statement to statement: link(n43, n44). The hop this chain "
     "needed. A reader landing on either note now gets the other free. "
     "This repairs the instance; the rest generalize it.\n"
@@ -205,21 +207,20 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     mine = (f'your answer: "{answer}"' if answer is not None
             else "your answer: (none - budget exhausted, scored F1 0.00)")
     if answer is None:
-        outcome = ("The budget ran out before you located the answer. ")
+        outcome = "The budget ran out before you located the answer. "
     elif f1v < 0.5:
-        outcome = ("Your answer was wrong. ")
+        outcome = "Your answer was wrong. "
     else:
-        outcome = ("Your answer was right. ")
+        outcome = "Your answer was right. "
     mem.set_task(
         f"TRAIN QUESTION {q.qid} [phase 2: backward]\n{q.text}\n"
         f'{mine}\ngold answer: "{q.golds[0]}" | F1 {f1v:.2f}\n'
         + outcome
-        + "You now have the gold answer and your own trajectory. Leave "
-        "the store better for the next question of this kind - asked "
-        "about a different entity - than it was for this one; an index "
-        "on whatever a reader of that kind must search for first is "
-        "usually where the gain is. If the store already serves that "
-        "kind well, change nothing. done() when finished.")
+        + "Leave the store better for the next question of this kind - "
+        "asked about a different entity - than it was for this one. Do "
+        "not spend the budget explaining this attempt; spend it "
+        "building. If the store already serves that kind well, change "
+        "nothing. done() when finished.")
     edits = {a: 0 for a in EDIT_ACTIONS}
     p2_steps = 0
     for step in range(1, n2 + 1):

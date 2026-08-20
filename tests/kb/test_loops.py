@@ -195,6 +195,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "Rank what you build by how many kinds of question it could serve",
                 "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
+                "Use the gold answer as a LOCATOR, not as material for a post-mortem",
                 "one with no links is worth nothing"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()
