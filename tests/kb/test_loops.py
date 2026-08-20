@@ -170,22 +170,15 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
-    assert "2. Diagnose the trajectory you just ran" in TRAIN_SYSTEM
-    for cue in ("WITH THE ANSWER IN HAND",
-                "A failed trajectory is worth more than a successful one",
-                "the notes surfaced but the chain would not assemble",
-                "the gold is the arbiter"):
-        # objective 2: credit assignment (paper Table I) now in the prompt
+    # objectives are stated as GOALS; mechanism is the agent's choice
+    assert "2. Repair what the trajectory exposed" in TRAIN_SYSTEM
+    assert "a trajectory that failed tells you more" in TRAIN_SYSTEM
+    assert "3. Make the next question of this KIND cheaper" in TRAIN_SYSTEM
+    for cue in ("ACCESS STRUCTURE, not the answer you just computed",
+                "returns that note AND the full text of every note linked to it",
+                "one with no links is worth nothing"):
         assert cue in TRAIN_SYSTEM
-    assert "3. Build an INDEX for this question's TYPE" in TRAIN_SYSTEM
-    for cue in ("the KEY the reader must search for", "Match the index to the type",
-                "Index-to-index edges are how navigation gets levels",
-                "NOT a roster of answers", "COMPLETENESS of its links",
-                "EXTEND it every later time you meet that key"):
-        # objective 3: type-keyed indexes, accumulated across iterations
-        assert cue in TRAIN_SYSTEM
-    assert "4. If you add a note, it must earn its retrieval slot" in TRAIN_SYSTEM
-    assert "dead weight" in TRAIN_SYSTEM
+    assert "4. Every note you add must earn its retrieval slot" in TRAIN_SYSTEM
     assert "5. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
     assert "Organize and navigate; don't duplicate." in TRAIN_SYSTEM
     # dead vocabulary from the doc era must be gone
