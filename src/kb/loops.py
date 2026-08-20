@@ -26,9 +26,10 @@ from kb.store import save_snapshot
 # larger: the backward pass must both diagnose the trajectory and build
 # structure, and in the v10L run diagnosis consumed 79% of a 15-action
 # budget on failed questions, leaving 0.46 links per iteration.
-# 20 is enough with link_many (attaching is one action) and short
-# enough that a stuck agent stops searching and acts.
-N1, N2, M, K = 15, 20, 15, 30
+# 30, because paged search made enumeration cost a step per page: at
+# N2=20 the backward pass spent 15.5 of its 20 actions searching and
+# attached half the edges the unpaged version did.
+N1, N2, M, K = 15, 30, 15, 30
 
 # Two skills, each with goal, means and a worked example. RETRIEVAL_SKILL is
 # used by BOTH train Phase 1 and the frozen-store exam, so the forward pass

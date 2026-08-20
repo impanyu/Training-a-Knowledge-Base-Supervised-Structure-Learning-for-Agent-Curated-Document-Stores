@@ -13,7 +13,7 @@ export PYTHONPATH="$PWD/src"
 
 echo "=== v11 full: 2 epochs x 150 questions ==="
 python3 -m kb.train --universe data/v10L/universe.json --epochs 2 \
-  --seed 0 --model gpt-5-mini --n1 15 --n2 20 --m 15 \
+  --seed 0 --model gpt-5-mini --n1 15 --n2 30 --m 15 \
   --out runs/v11_main --eval-each-epoch > runs/v11_main.log 2>&1
 
 echo "=== frozen exams on the v11 store ==="
