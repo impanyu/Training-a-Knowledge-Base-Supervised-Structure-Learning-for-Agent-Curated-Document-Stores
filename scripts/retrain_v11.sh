@@ -29,18 +29,40 @@ python3 scripts/note_character.py --kb runs/v11_pilot/kb_epoch_1.json \
 
 # Gate: the two failures we measured must be fixed. Baseline was mean
 # out-degree 1.27 with 42% of indexes empty.
+python3 scripts/index_precision.py --kb runs/v11_pilot/kb_epoch_1.json \
+  | tee runs/v11_pilot_precision.txt | head -3
 python3 - <<'PY'
-import json, sys, statistics as S
+import json, re, sys, statistics as S
+# Out-degree alone passed a store whose attribute indexes were 20% correct,
+# so the gate scores precision too: an index full of the wrong notes misleads
+# the reader more than an empty one does.
 d = json.load(open("runs/v11_pilot/kb_epoch_1.json"))
 nodes = d["store"]["nodes"]
+by_id = {n["id"]: n for n in nodes}
 idx = [n for n in nodes if n.get("flag") == "authored"]
 if not idx:
     sys.exit("GATE FAIL: no index notes authored")
 deg = [len(n.get("links", [])) for n in idx]
 mean, empty = S.mean(deg), sum(1 for x in deg if x == 0) / len(deg)
-print(f"gate: {len(idx)} indexes, mean out-degree {mean:.2f}, empty {empty:.0%}")
-if mean < 4.0 or empty > 0.20:
-    sys.exit(f"GATE FAIL: need mean>=4.0 (got {mean:.2f}) and empty<=20% (got {empty:.0%})")
+NAME = re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b")
+uni = json.load(open("data/v10L/universe.json"))["vocab"]
+vocab = list(uni.get("jobs", [])) + list(uni.get("hobbies", [])) + list(uni.get("cities", []))
+tot = hit = 0
+for n in idx:
+    names = NAME.findall(n["text"])
+    key = names[0] if len(names) == 1 else next(
+        (v for v in vocab if re.search(rf"\b{re.escape(v)}\b", n["text"], re.I)), None)
+    links = [t for t in n.get("links", []) if t in by_id]
+    if not key or not links:
+        continue
+    tot += len(links)
+    hit += sum(1 for t in links if re.search(re.escape(key), by_id[t]["text"], re.I))
+prec = hit / tot if tot else 0.0
+print(f"gate: {len(idx)} indexes, mean out-degree {mean:.2f}, empty {empty:.0%}, "
+      f"precision {prec:.0%}")
+if mean < 4.0 or empty > 0.20 or prec < 0.80:
+    sys.exit(f"GATE FAIL: need mean>=4.0 ({mean:.2f}), empty<=20% ({empty:.0%}), "
+             f"precision>=80% ({prec:.0%})")
 print("GATE PASS")
 PY
 
