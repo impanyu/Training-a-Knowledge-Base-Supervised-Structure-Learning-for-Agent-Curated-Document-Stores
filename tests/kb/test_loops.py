@@ -182,7 +182,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "Generalizing is required, not optional",
                 "prefer ACCESS STRUCTURE over the answer you just computed",
                 "ONE QUESTION TYPE, MANY POSSIBLE INDEXES",
-                "invent shapes nobody listed here",
+                "Others exist that nobody has written down",
                 "WHAT YOU CAN BUILD",
                 "link_many costs ONE action",
                 "ONE note holds ONE statement",
