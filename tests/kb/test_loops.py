@@ -177,7 +177,7 @@ def test_two_skills_carry_goal_means_and_example():
     # the curation example demonstrates each of the five buildable structures
     for case in ("(1) new INDEX note", "(2) new STATEMENT note",
                  "(3) statement to statement", "(4) index to statement",
-                 "(5) index to index", "What you did NOT do"):
+                 "(5) index to index", "What came LAST"):
         assert case in CURATION_SKILL
     # retrieval: tools and the free-links fact, no editing vocabulary
     for cue in ("search(query)", "read(id)", "answer(text)",
@@ -191,7 +191,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "never pack two facts into one note",
                 "(3) statement to statement", "(5) index to index",
                 "Generalizing is required, not optional",
-                "ACCESS STRUCTURE, not the answer you just computed",
+                "prefer ACCESS STRUCTURE over the answer you just computed",
+                "Rank what you build by how many kinds of question it could serve",
                 "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
                 "one with no links is worth nothing"):
