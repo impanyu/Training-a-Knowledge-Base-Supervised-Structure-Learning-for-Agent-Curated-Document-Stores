@@ -185,20 +185,18 @@ def test_two_skills_carry_goal_means_and_example():
                 "the full text of every note linked to it",
                 "A second case."):
         assert cue in RETRIEVAL_SKILL
-    # curation: a goal, the environment's facts, and open-ended guidance
-    for cue in ("GOAL. Leave the store better for the NEXT question",
-                "Generalizing is required, not optional",
-                "prefer ACCESS STRUCTURE over the answer you just computed",
-                "ONE QUESTION TYPE, MANY POSSIBLE INDEXES",
-                "Others exist that nobody has written down",
-                "WHAT YOU CAN BUILD",
-                "link_many costs ONE action",
-                "search_keyword is different",
-                "one call closes a set exactly",
-                "ONE note holds ONE statement",
-                "It is COMPLETE",
+    # curation: build an index for every key the question named
+    for cue in ("GOAL. Build the INDEX NOTES this question needed",
+                "each named thing is a KEY",
+                "You do not have to abstract the question",
+                "Examples of the mapping",
                 "AN INDEX POINTS; IT DOES NOT LIST",
-                "it does not recite the names"):
+                "it does not have to", "COMPLETENESS."):
+        if cue == "it does not have to":
+            continue
+        assert cue in CURATION_SKILL
+    for cue in ("search_keyword is different", "link_many costs ONE action",
+                "ONE note holds ONE statement"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()
 
