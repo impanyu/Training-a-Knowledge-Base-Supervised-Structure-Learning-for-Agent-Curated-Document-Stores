@@ -1,4 +1,4 @@
-"""The 9 actions (v9.6 node graph): ONE static tool schema, no per-node
+"""The 10 actions (v9.6 node graph): ONE static tool schema, no per-node
 variation, no dynamic schema. Phase gating is by schema subset per mode
 (MODE_TOOLS), never by runtime rejection; the loop keeps a runtime error
 string only as a safety net for scripted policies that go off-mode.
@@ -6,7 +6,8 @@ string only as a safety net for scripted policies that go off-mode.
 flow:  answer(text) . done()            -- handled by the loop, not dispatch
 sense: search(query) -> top-k (id, full text)     [k=5]
        read(id)      -> text + links (target id, target full text)
-edit:  add(text) / edit(id, text) / delete(id) / link(a, b) / unlink(a, b)
+edit:  add(text) / edit(id, text) / delete(id) / link(a, b)
+       link_many(a, targets) / unlink(a, b)
        (train Phase 2 ONLY; Phase 1 and test keep search/read/answer)
 
 Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
@@ -20,6 +21,7 @@ def _schema(props: dict, required: list[str]) -> dict:
 
 
 _S = {"type": "string"}
+_SLIST = {"type": "array", "items": {"type": "string"}}
 
 ACTION_SPECS: dict[str, dict] = {
     # -------- flow --------
@@ -68,13 +70,21 @@ ACTION_SPECS: dict[str, dict] = {
         "description": "Add a directed link from note a to note b (ids only).",
         "input_schema": _schema({"a": _S, "b": _S}, ["a", "b"]),
     },
+    "link_many": {
+        "description": ("Link one note to MANY notes in a single action: the "
+                        "cheap way to build or extend an index, since "
+                        "populating one costs a single step rather than one "
+                        "per member. Ids that do not exist are reported and "
+                        "skipped; the rest are linked."),
+        "input_schema": _schema({"a": _S, "targets": _SLIST}, ["a", "targets"]),
+    },
     "unlink": {
         "description": "Remove the link from note a to note b.",
         "input_schema": _schema({"a": _S, "b": _S}, ["a", "b"]),
     },
 }
 
-EDIT_ACTIONS = ("add", "edit", "delete", "link", "unlink")
+EDIT_ACTIONS = ("add", "edit", "delete", "link", "link_many", "unlink")
 
 # Phase/tool gating by schema subset: the model never sees an out-of-phase
 # tool, so gating needs no runtime rejection.
@@ -143,6 +153,27 @@ def _h_link(store, inp):
     return f"linked {a} -> {b}"
 
 
+def _h_link_many(store, inp):
+    """One action, many edges. Partial failure is reported, not fatal: an
+    index built from search results will sometimes name an id that has since
+    been merged or deleted, and losing the whole batch for that would make
+    the cheap path the risky one."""
+    a = str(inp["a"]).strip()
+    targets = [str(t).strip() for t in (inp.get("targets") or [])]
+    if not targets:
+        return "ERROR: targets is empty"
+    ok, bad = [], []
+    for t in targets:
+        try:
+            store.link(a, t)
+            ok.append(t)
+        except StoreError as e:
+            bad.append(f"{t} ({e})")
+    out = f"linked {a} -> {len(ok)} notes: {', '.join(ok)}" if ok else \
+        f"no links made from {a}"
+    return out + (f" | skipped: {'; '.join(bad)}" if bad else "")
+
+
 def _h_unlink(store, inp):
     a, b = str(inp["a"]).strip(), str(inp["b"]).strip()
     store.unlink(a, b)
@@ -152,5 +183,5 @@ def _h_unlink(store, inp):
 _HANDLERS = {
     "search": _h_search, "read": _h_read,
     "add": _h_add, "edit": _h_edit, "delete": _h_delete,
-    "link": _h_link, "unlink": _h_unlink,
+    "link": _h_link, "link_many": _h_link_many, "unlink": _h_unlink,
 }

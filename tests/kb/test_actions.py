@@ -7,10 +7,11 @@ FLOW = {"answer", "done"}
 SENSE = {"search", "read"}
 
 
-def test_the_catalog_is_exactly_the_nine():
+def test_the_catalog_is_exactly_the_ten():
     assert set(ACTION_SPECS) == FLOW | SENSE | set(EDIT_ACTIONS)
-    assert len(ACTION_SPECS) == 9
-    assert EDIT_ACTIONS == ("add", "edit", "delete", "link", "unlink")
+    assert len(ACTION_SPECS) == 10
+    assert EDIT_ACTIONS == ("add", "edit", "delete", "link", "link_many",
+                            "unlink")
 
 
 def test_mode_subsets_per_spec():

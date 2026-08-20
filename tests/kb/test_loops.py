@@ -87,7 +87,7 @@ def test_phase2_edits_dispatch_and_done_ends():
     assert p2[2]["result"].startswith("ERROR:")
     assert p2[3]["action"] == "done" and p2[3]["result"] == "phase complete"
     assert pol.seen[1][2] == ("search", "read", "add", "edit", "delete",
-                              "link", "unlink", "done")
+                              "link", "link_many", "unlink", "done")
 
 
 def test_phase2_budget_exhaustion_ends_without_done():
@@ -175,9 +175,11 @@ def test_two_skills_carry_goal_means_and_example():
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
     # the curation example demonstrates each of the five buildable structures
-    for case in ("(1) new INDEX note", "(2) new STATEMENT note",
+    for case in ("Step one, name the TYPE", "Step two, find the KEY",
+                 "Step three, locate",
+                 "(1) new INDEX note", "(2) new STATEMENT note",
                  "(3) statement to statement", "(4) index to statement",
-                 "(5) index to index", "What came LAST"):
+                 "(5) index to index", "What came LAST", "link_many(n90,"):
         assert case in CURATION_SKILL
     # retrieval: tools and the free-links fact, no editing vocabulary
     for cue in ("search(query)", "read(id)", "answer(text)",
@@ -196,6 +198,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
                 "Its key can be too broad",
+                "FIT THE INDEX TO THE QUESTION TYPE",
                 "Finish the one you started",
                 "Use the gold answer as a LOCATOR, not as material for a post-mortem",
                 "one with no links is worth nothing"):
