@@ -247,7 +247,7 @@ learned object.
 % ---- right: trained store
 \node[stage, draw=okgreen!80, fill=okgreen!5, right=1.5cm of train, minimum width=3.4cm, minimum height=2.5cm] (KT) {};
 \node[above=1mm of KT.north, anchor=south] {\textbf{trained store} $K_T$};
-\node[lbl, below=0mm of KT.south, anchor=north] {links + navigation nodes};
+\node[lbl, below=0mm of KT.south, anchor=north] {links + navigation documents};
 \foreach \i/\x/\y in {1/-1.1/0.6, 2/-0.3/0.8, 3/0.6/0.55, 4/-1.05/-0.1,
                       5/0.1/0.05, 6/1.05/0.0, 7/-0.6/-0.7, 8/0.35/-0.75, 9/1.0/-0.65}
   \node[node] (b\i) at ([shift={(\x,\y)}]KT.center) {};
@@ -278,10 +278,38 @@ cost.}
 \end{figure*}
 
 \section{Problem Formulation}
-A knowledge base $K$ is a directed graph of \emph{documents}: each document holds
-one self-contained sentence and a set of outgoing links. The \emph{reader} is a fixed
-LLM policy with three tools---vector \texttt{search}, node \texttt{read} (text plus
-linked nodes), and \texttt{answer}---a fixed action budget $M$, and a short-term
+A knowledge base $K$ is a directed graph of \emph{documents}. A document is
+deliberately small --- one self-contained sentence --- so that what the store
+learns is visible in its structure rather than hidden inside prose, and so
+that every edit is attributable. Concretely it carries six fields:
+
+\begin{itemize}\itemsep2pt
+\item \texttt{id} --- a stable handle; links and every log entry refer to it.
+\item \texttt{text} --- one sentence stating one fact, with full names and no
+pronouns, so it is self-contained and its embedding is about that fact alone.
+It is the only thing \texttt{search} matches against and the only thing a
+reader is shown.
+\item \texttt{links} --- outgoing edges to other documents. \texttt{read}
+returns a document together with the full text of everything it links, so a
+document's edges are what makes traversal cheaper than search.
+\item \texttt{origin} --- which universe fact this document represents, or
+\texttt{None} when the agent wrote it. This is what makes the coverage and
+duplication ledger exact: every original fact is either still represented or
+demonstrably lost.
+\item \texttt{flag} --- \texttt{None} for an untouched original,
+\texttt{authored} for a document the agent wrote, \texttt{edited} for an
+original it rewrote. Structure the agent added is therefore separable from
+the corpus it was given, which is what the structural measurements report on.
+\item \texttt{absorbed} --- origins folded in when a duplicate was merged, so
+a merge loses no provenance.
+\end{itemize}
+
+An \emph{index document} is not a distinct type: it is a document whose text
+names a key and whose value lies in its links rather than in the fact it
+states. Nothing in the store distinguishes the two, which is why an index
+that carries no links is indistinguishable from a sentence nobody needs. The \emph{reader} is a fixed
+LLM policy with three tools---vector \texttt{search}, document \texttt{read} (text plus
+linked documents), and \texttt{answer}---a fixed action budget $M$, and a short-term
 memory holding only the current question and the last $k$ action--result pairs.
 Reader performance on a question distribution $Q$ defines store quality along two
 axes:
@@ -345,7 +373,7 @@ people sharing first names with questioned subjects. Facts render through fixed
 templates into $\sim$5{,}900 atomic single-sentence documents (``Alice Johnson's job is
 arborist.''). The initial store has \emph{zero links}: a bag of atomic facts.
 Document embeddings back \texttt{search} and are maintained
-automatically as nodes are added, edited, or deleted.
+automatically as documents are added, edited, or deleted.
 
 \subsection{Actions}\label{sec:actions}
 Reader and training-forward mode: \texttt{search(query)} (top-$k$ document ids
@@ -438,10 +466,10 @@ Trajectory diagnosis & Repair \\
 Needed fact never surfaced & directed re-search \emph{with the answer in hand}; link
 from where the blind search wandered to where the fact lives \\
 Fact read but chain unassembled & materialize the chain as links; optionally author a
-navigation node for the class \\
+navigation document for the class \\
 Conflicting documents found & resolve using the gold as arbiter (delete or edit the
 loser) \\
-Class-level gap (same failure would recur on siblings) & build/extend an index node
+Class-level gap (same failure would recur on siblings) & build/extend an index document
 gathering same-class material \\
 \bottomrule
 \end{tabular}
@@ -449,7 +477,7 @@ gathering same-class material \\
 
 The training agent's objectives, stated as goals (mechanisms are its choice):
 (1)~answer correctly; (2)~consolidate verified reasoning into structure; (3)~organize
-for the question's \emph{class}---build or extend index/navigation nodes so unseen
+for the question's \emph{class}---build or extend index/navigation documents so unseen
 instances of the class resolve in fewer steps; (4)~keep the store
 \emph{parsimonious}: duplicated facts compete in search and bury each other; delete
 redundancy you create; if the store already serves the class, change nothing.
@@ -636,7 +664,7 @@ links connect semantically adjacent documents.}
 \includegraphics[width=0.8\columnwidth]{trajectory.pdf}
 \caption{Store trajectory during training, reconstructed by trace replay.
 \emph{Authored documents} = agent-written documents still alive and unedited
-(navigation/index notes); \emph{net documents added} = total store size
+(navigation/index documents); \emph{net documents added} = total store size
 minus the initial 5{,}864 (authored survivors, including later-edited ones,
 minus deleted originals). Growth is steady and small ($+6.6\%$ over 300
 iterations).}
@@ -836,7 +864,7 @@ profile ($\Delta$ vs.\ B1 at $M{=}15$, both splits pooled, same questions) is
 correspondingly modest: QC4 $+0.10$, QC9 $+0.08$, QC3/QC7 $+0.07$, QC6
 $+0.04$, QC5 $0.00$, QC8 $-0.05$, QC10 $-0.12$ ($n{=}8$). The sharpest
 contrast is reverse lookup: the class with the largest retention jump
-($0.25 \to 0.83$) transfers \emph{worst} --- its navigation notes
+($0.25 \to 0.83$) transfers \emph{worst} --- its navigation documents
 memoize trained instances, not the class.
 
 \begin{table}[t]
@@ -929,25 +957,25 @@ documents separates two kinds. Most ($80\%$) materialize an answer:
 Nightingale's spouse is Petra Jessup and Petra Jessup's job is joiner''}
 collapses a three-hop chain into one document; others aggregate a reverse
 index (\emph{``People whose hobby is pottery include \ldots''}) or a count.
-The remaining $20\%$ are pointer notes that state no fact at all ---
+The remaining $20\%$ are pointer documents that state no fact at all ---
 \emph{``Spouse job index gathers notes that record the jobs of spouses of
 people''}, \emph{``A Junia Wetherby directory links to Junia Wetherby's
 hobby, job, residence, friends, parent, and birth date notes''}. A reader
 that retrieves one of these pays a slot and a read step and learns nothing,
 then still has to find the facts. Notably the linking effort went to the
-wrong kind: pointer notes carry $2.11$ links on average against $1.06$ for
+wrong kind: pointer documents carry $2.11$ links on average against $1.06$ for
 contentful ones. Their absolute retrieval footprint is small ($0.9\%$ of
 slots), so this is a design smell rather than a proven cost --- which is
 precisely why the causal question needs an intervention on the store rather
 than an observational split.
 
 \textbf{The store never became navigable.} The action set can produce
-exactly two kinds of structure: index notes that point at the notes
-belonging to their key, and edges between notes that already exist
+exactly two kinds of structure: index documents that point at the documents
+belonging to their key, and edges between documents that already exist
 (fact-to-fact, or index-to-index, which is how navigation acquires
 levels). Profiling the trained store by those classes explains the null
 transfer better than any analysis of the reader's behaviour. Of the 359
-authored index notes, the mean out-degree is $1.27$ and the median is
+authored index documents, the mean out-degree is $1.27$ and the median is
 $1$; \textbf{151 of them ($42\%$) carry no links at all}, and 340 ($95\%$)
 carry fewer than five. The store holds 316 index-to-fact edges, 139
 index-to-index edges and 127 fact-to-fact edges. The consequence is
@@ -985,17 +1013,17 @@ cannot see a store being slowly ruined while individual answers still look fine.
 
 \textbf{Reading the negative result.} \emph{The proximate cause is
 construction, not concept.} Sec.~\ref{sec:res-e4} shows the trained store
-never became navigable --- $42\%$ of its index notes point at nothing and
+never became navigable --- $42\%$ of its index documents point at nothing and
 $96\%$ of its facts have no entry point --- so the run tested a procedure
 that failed to build indexes rather than the value of indexes. Three
 plausible reasons, each actionable. The objectives named the goal
 (``organize for the question's class'') without naming the mechanism, so
 the cheapest compliant act was to record the verified answer, which is
-what $80\%$ of authored notes do. The backward budget (15 actions) cannot
+what $80\%$ of authored documents do. The backward budget (15 actions) cannot
 populate a thirty-member index in one iteration, and nothing in the
 protocol asked the agent to \emph{return} to an index and extend it, so
 indexes were created and abandoned. And the parsimony objective, added to
-stop the pollution of Sec.~\ref{sec:design}, penalizes adding notes
+stop the pollution of Sec.~\ref{sec:design}, penalizes adding documents
 without distinguishing a redundant fact from an entry point that is
 supposed to accumulate links. A revised protocol that names indexes as the
 unit of construction, requires extension of an existing index over
