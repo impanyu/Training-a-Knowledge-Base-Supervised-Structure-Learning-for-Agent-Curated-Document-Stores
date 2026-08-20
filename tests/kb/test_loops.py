@@ -196,7 +196,9 @@ def test_two_skills_carry_goal_means_and_example():
                 "search_keyword is different",
                 "one call closes a set exactly",
                 "ONE note holds ONE statement",
-                "It is COMPLETE"):
+                "It is COMPLETE",
+                "AN INDEX POINTS; IT DOES NOT LIST",
+                "it does not recite the names"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()
 
