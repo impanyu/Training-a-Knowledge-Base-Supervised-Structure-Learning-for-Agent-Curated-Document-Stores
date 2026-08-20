@@ -40,16 +40,16 @@ ACTION_SPECS: dict[str, dict] = {
     },
     # -------- sense --------
     "search": {
-        "description": ("Search the knowledge base by meaning. Returns the "
-                        f"k most similar notes as (id, text); k defaults to "
-                        f"{SEARCH_K} and may be raised to {TOPK_MAX} when "
-                        "five is plainly not the whole set - a city's "
-                        "residents come back as the same five however often "
-                        "you ask. A set is closed when raising k further "
-                        "returns nothing new."),
+        "description": ("Search the knowledge base by meaning. Returns "
+                        f"{SEARCH_K} notes per page, most similar first. "
+                        "page defaults to 1; ask for page 2, 3, ... to see "
+                        "the next five. A set is closed when a page comes "
+                        "back empty. Each page costs one action, so walking "
+                        "a large set this way is expensive - that is the "
+                        "cost an index exists to remove."),
         "input_schema": {"type": "object",
                          "properties": {"query": _S,
-                                        "k": {"type": "integer"}},
+                                        "page": {"type": "integer"}},
                          "required": ["query"]},
     },
     "read": {
@@ -124,16 +124,22 @@ def dispatch(store: Store, name: str, inp: dict) -> str:
 # ---------------- handlers ----------------
 
 def _h_search(store, inp):
-    """One search for reader and trainer alike. k is optional so the reader's
-    default behaviour is unchanged, and raising it is what makes a set
-    recoverable at all: five notes cannot enumerate twenty-nine residents."""
+    """One search for reader and trainer alike, five results per page.
+
+    Enumerating a set is possible but priced: a page is an action, so the
+    twenty-nine residents of a city cost six of them, while one read of a
+    complete index costs one. That gap is what the trained store is supposed
+    to close, and handing the reader sixty results at once would erase it."""
     try:
-        k = int(inp.get("k", SEARCH_K))
+        page = int(inp.get("page", 1))
     except (TypeError, ValueError):
-        return "ERROR: k must be an integer"
-    k = max(1, min(k, TOPK_MAX))
-    hits = store.search(str(inp["query"]), k=k)
-    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no hits)"
+        return "ERROR: page must be an integer"
+    page = max(1, min(page, TOPK_MAX // SEARCH_K))
+    hits = store.search(str(inp["query"]), k=SEARCH_K * page)[SEARCH_K * (page - 1):]
+    if not hits:
+        return f"(page {page} is empty - no further matches)"
+    body = "\n".join(f"- {nid}: {text}" for nid, text in hits)
+    return f"page {page}:\n{body}"
 
 
 def _h_read(store, inp):

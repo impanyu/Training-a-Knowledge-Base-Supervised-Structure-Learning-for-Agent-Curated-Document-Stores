@@ -33,10 +33,16 @@ def test_tools_for_emits_static_schemas():
     assert tools_for("train_forward")[0]["input_schema"] is ACTION_SPECS["search"]["input_schema"]
 
 
-def test_search_result_lines_are_id_and_full_text():
+def test_search_pages_five_at_a_time():
+    """A page is one action, so enumerating a set is priced rather than free
+    - that gap is what an index is supposed to remove."""
     s = three_nodes()
     out = dispatch(s, "search", {"query": "Alpha beta."})
-    assert out.splitlines()[0] == "- s0001: Alpha beta."
+    assert out.splitlines()[0] == "page 1:"
+    assert out.splitlines()[1] == "- s0001: Alpha beta."
+    beyond = dispatch(s, "search", {"query": "Alpha beta.", "page": 4})
+    assert "empty" in beyond                      # walked past the last match
+    assert dispatch(s, "search", {"query": "x", "page": "two"}).startswith("ERROR")
 
 
 def test_read_shows_text_and_link_target_texts():

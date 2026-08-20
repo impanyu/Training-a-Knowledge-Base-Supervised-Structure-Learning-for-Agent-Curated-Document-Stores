@@ -175,7 +175,7 @@ def test_two_skills_carry_goal_means_and_example():
     from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
-    for cue in ("search(query, k)", "read(id)", "answer(text)",
+    for cue in ("search(query, page)", "read(id)", "answer(text)",
                 "the full text of every note linked to it",
                 "A second case."):
         assert cue in RETRIEVAL_SKILL
@@ -189,7 +189,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "IF NOTHING BELONGS, DELETE IT",
                 "COMPLETENESS."):
         assert cue in CURATION_SKILL
-    for cue in ("search(query, k) returns the k most similar notes",
+    for cue in ("search(query, page) returns five notes per page",
                 "link_many costs ONE action",
                 "ONE note holds ONE statement"):
         assert cue in CURATION_SKILL

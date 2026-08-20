@@ -16,7 +16,7 @@ export PYTHONPATH="$PWD/src"
 echo "=== pw1 training: 2 epochs x 150 questions ==="
 python3 -m kb.train --universe data/pw1/universe.json --epochs 2 \
   --seed 0 --model gpt-5-mini --n1 15 --n2 20 --m 15 \
-  --out runs/pw1_main --eval-each-epoch --resume >> runs/pw1_main.log 2>&1
+  --out runs/pw1_main --eval-each-epoch > runs/pw1_main.log 2>&1
 
 echo "=== pw1 frozen exams ==="
 for M in 15 8; do
