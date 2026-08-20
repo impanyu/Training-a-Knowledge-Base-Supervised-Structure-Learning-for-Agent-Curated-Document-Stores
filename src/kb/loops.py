@@ -27,8 +27,21 @@ TRAIN_SYSTEM = (
     "self-contained statement, found by semantic search over its text and "
     "linked to other notes by id. Your objectives, in order:\n"
     "1. Answer the question correctly.\n"
-    "2. Consolidate the verified reasoning into the graph, so the facts "
-    "this question needed are easier to find next time.\n"
+    "2. Diagnose the trajectory you just ran, and repair what it exposed. "
+    "The gold answer is the supervision: it lets you do the search you "
+    "could not do before, WITH THE ANSWER IN HAND. A failed trajectory is "
+    "worth more than a successful one, because it points at missing "
+    "structure. Diagnose which happened and repair exactly that:\n"
+    "   - the needed note never surfaced: search for the gold answer "
+    "itself, find the note holding it, then ask what a reader would have "
+    "searched for first - the gap between that entry point and where the "
+    "answer lives IS the missing structure. Close that gap.\n"
+    "   - the notes surfaced but the chain would not assemble: the hops "
+    "were there and the edges were not. Add the edges.\n"
+    "   - conflicting notes surfaced: the gold is the arbiter. Edit or "
+    "delete the loser.\n"
+    "   - you answered correctly and cheaply: this question needed no "
+    "repair. Spend the budget on objective 3, or on nothing.\n"
     "3. Build an INDEX for this question's TYPE. You just computed an "
     "answer; do not store it. That exact question will not be asked "
     "again - questions of its type will, about other entities - and a "
@@ -140,16 +153,35 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
 
     mine = (f'your answer: "{answer}"' if answer is not None
             else "your answer: (none - budget exhausted, scored F1 0.00)")
+    if answer is None:
+        diagnosis = (
+            "You never answered: the trajectory ran out of budget without "
+            "locating the answer. Start by searching for the gold answer "
+            "itself to find the note that holds it, then work back to the "
+            "entry point your blind search used and connect the two. ")
+    elif f1v < 0.5:
+        diagnosis = (
+            "You answered wrongly. Search for the gold answer to see where "
+            "it actually lives, compare that with what your searches "
+            "returned, and repair the specific gap - a missing edge, a "
+            "missing entry point, or a note that outranked the right one. ")
+    else:
+        diagnosis = (
+            "You answered correctly. Do not repair what worked; check "
+            "instead whether the structure that carried you would carry a "
+            "sibling question about a different entity. ")
     mem.set_task(
         f"TRAIN QUESTION {q.qid} [phase 2: backward]\n{q.text}\n"
         f'{mine}\ngold answer: "{q.golds[0]}" | F1 {f1v:.2f}\n'
-        "Before editing: name this question's TYPE and the KEY a reader "
-        "must search for first to answer any question of that type. Then "
-        "check whether an index note for that key exists - search for it. "
-        "If it does not, create it and link what you can find. If it "
-        "does, EXTEND it: find members it is missing and link them. Do "
-        "not store the answer you just computed. If the index for this "
-        "key is already complete, change nothing. done() when finished.")
+        + diagnosis
+        + "Then: name this question's TYPE and the KEY a reader must "
+        "search for first to answer any question of that type, and check "
+        "whether an index note for that key exists - search for it. If it "
+        "does not, create it and link what you can find. If it does, "
+        "EXTEND it: find members it is missing and link them. Do not "
+        "store the answer you just computed. If the diagnosis found "
+        "nothing to repair and the index for this key is already "
+        "complete, change nothing. done() when finished.")
     edits = {a: 0 for a in EDIT_ACTIONS}
     p2_steps = 0
     for step in range(1, n2 + 1):

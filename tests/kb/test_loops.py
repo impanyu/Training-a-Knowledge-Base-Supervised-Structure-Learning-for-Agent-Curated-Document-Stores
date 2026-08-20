@@ -170,6 +170,13 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 
 def test_train_prompt_carries_node_model_indexing_and_parsimony():
     assert "graph of single-sentence notes" in TRAIN_SYSTEM
+    assert "2. Diagnose the trajectory you just ran" in TRAIN_SYSTEM
+    for cue in ("WITH THE ANSWER IN HAND",
+                "A failed trajectory is worth more than a successful one",
+                "the notes surfaced but the chain would not assemble",
+                "the gold is the arbiter"):
+        # objective 2: credit assignment (paper Table I) now in the prompt
+        assert cue in TRAIN_SYSTEM
     assert "3. Build an INDEX for this question's TYPE" in TRAIN_SYSTEM
     for cue in ("the KEY the reader must search for", "Match the index to the type",
                 "Index-to-index edges are how navigation gets levels",
