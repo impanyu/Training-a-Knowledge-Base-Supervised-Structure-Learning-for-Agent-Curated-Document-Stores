@@ -12,6 +12,7 @@ Test iteration (budget M, frozen KB): answer() ends it, its result is empty
 "unanswered" (distinct from answered-wrong)."""
 import json
 import random
+import re
 import time
 from pathlib import Path
 
@@ -25,9 +26,9 @@ from kb.store import save_snapshot
 # larger: the backward pass must both diagnose the trajectory and build
 # structure, and in the v10L run diagnosis consumed 79% of a 15-action
 # budget on failed questions, leaving 0.46 links per iteration.
-# 40 gives room to locate an index's members and attach them; with
-# link_many the attaching is one action, so the budget goes to search.
-N1, N2, M, K = 15, 40, 15, 30
+# 20 is enough with link_many (attaching is one action) and short
+# enough that a stuck agent stops searching and acts.
+N1, N2, M, K = 15, 20, 15, 30
 
 # Two skills, each with goal, means and a worked example. RETRIEVAL_SKILL is
 # used by BOTH train Phase 1 and the frozen-store exam, so the forward pass
@@ -190,8 +191,12 @@ def _dedup(seen: dict, name: str, inp: dict, result: str) -> str:
         return result            # edits are replayed verbatim; never rewrite
     key = (name, json.dumps(inp, sort_keys=True, default=str))
     if seen.get(key) == result:
-        return (f"same {name} as before - result unchanged. Act on what it "
-                f"already gave you, or try something different.")
+        # Keep the ids: the agent repeats a search precisely when it is about
+        # to link, and a bare "unchanged" would take away what it needs.
+        ids = re.findall(r"^- (\w+):", result, re.M) or re.findall(r"\b(s\d+)\b", result)
+        listed = ", ".join(dict.fromkeys(ids))
+        return (f"same {name} as before, same {len(set(ids))} notes: {listed}"
+                f" - use these ids, or search for something else.")
     seen[key] = result
     return result
 
