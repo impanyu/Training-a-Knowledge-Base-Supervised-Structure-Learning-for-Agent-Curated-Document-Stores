@@ -186,8 +186,12 @@ def _h_link_many(store, inp):
             ok.append(t)
         except StoreError as e:
             bad.append(f"{t} ({e})")
-    out = f"linked {a} -> {len(ok)} notes: {', '.join(ok)}" if ok else \
-        f"no links made from {a}"
+    if not ok:
+        return f"no links made from {a}" + (
+            f" | skipped: {'; '.join(bad)}" if bad else "")
+    deg = len(store.nodes[a].links) if a in store.nodes else len(ok)
+    shown = ", ".join(ok[:8]) + (f", +{len(ok) - 8} more" if len(ok) > 8 else "")
+    out = f"linked {a} -> {len(ok)} notes: {shown} ({a} now has {deg})"
     return out + (f" | skipped: {'; '.join(bad)}" if bad else "")
 
 
