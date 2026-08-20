@@ -1,4 +1,4 @@
-"""The 10 actions (v9.6 node graph): ONE static tool schema, no per-node
+"""The 11 actions (v9.6 node graph): ONE static tool schema, no per-node
 variation, no dynamic schema. Phase gating is by schema subset per mode
 (MODE_TOOLS), never by runtime rejection; the loop keeps a runtime error
 string only as a safety net for scripted policies that go off-mode.
@@ -14,6 +14,7 @@ Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
 
 SEARCH_K = 5
+SEARCH_WIDE_K = 30       # curation only: enumerating a set needs more than 5
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -40,6 +41,15 @@ ACTION_SPECS: dict[str, dict] = {
     "search": {
         "description": ("Search the knowledge base by meaning; returns the "
                         f"top-{SEARCH_K} notes as (id, text)."),
+        "input_schema": _schema({"query": _S}, ["query"]),
+    },
+    "search_wide": {
+        "description": (f"Like search, but returns the top-{SEARCH_WIDE_K} "
+                        "notes instead of five. Available while curating "
+                        "only, because enumerating everything under a key - "
+                        "every resident of a city, every holder of a job - "
+                        "cannot be done five at a time. The reader you are "
+                        "building for does not have this."),
         "input_schema": _schema({"query": _S}, ["query"]),
     },
     "read": {
@@ -90,7 +100,7 @@ EDIT_ACTIONS = ("add", "edit", "delete", "link", "link_many", "unlink")
 # tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
-    "train_backward": ("search", "read") + EDIT_ACTIONS + ("done",),
+    "train_backward": ("search", "search_wide", "read") + EDIT_ACTIONS + ("done",),
     "test": ("search", "read", "answer"),
 }
 
@@ -116,6 +126,11 @@ def dispatch(store: Store, name: str, inp: dict) -> str:
 def _h_search(store, inp):
     hits = store.search(str(inp["query"]), k=SEARCH_K)
     return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no results)"
+
+
+def _h_search_wide(store, inp):
+    hits = store.search(str(inp["query"]), k=SEARCH_WIDE_K)
+    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no hits)"
 
 
 def _h_read(store, inp):
@@ -181,7 +196,7 @@ def _h_unlink(store, inp):
 
 
 _HANDLERS = {
-    "search": _h_search, "read": _h_read,
+    "search": _h_search, "search_wide": _h_search_wide, "read": _h_read,
     "add": _h_add, "edit": _h_edit, "delete": _h_delete,
     "link": _h_link, "link_many": _h_link_many, "unlink": _h_unlink,
 }

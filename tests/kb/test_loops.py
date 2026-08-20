@@ -86,8 +86,9 @@ def test_phase2_edits_dispatch_and_done_ends():
     assert p2[1]["result"] == f"linked {a} -> {b}"
     assert p2[2]["result"].startswith("ERROR:")
     assert p2[3]["action"] == "done" and p2[3]["result"] == "phase complete"
-    assert pol.seen[1][2] == ("search", "read", "add", "edit", "delete",
-                              "link", "link_many", "unlink", "done")
+    assert pol.seen[1][2] == ("search", "search_wide", "read", "add",
+                              "edit", "delete", "link", "link_many",
+                              "unlink", "done")
 
 
 def test_phase2_budget_exhaustion_ends_without_done():
@@ -192,6 +193,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "Others exist that nobody has written down",
                 "WHAT YOU CAN BUILD",
                 "link_many costs ONE action",
+                "search_wide returns thirty",
+                "not enough to enumerate everything under a key",
                 "ONE note holds ONE statement",
                 "It is COMPLETE"):
         assert cue in CURATION_SKILL

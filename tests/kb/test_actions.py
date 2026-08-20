@@ -4,19 +4,23 @@ from kb.actions import (ACTION_SPECS, EDIT_ACTIONS, MODE_TOOLS, dispatch,
 from .test_store import three_nodes
 
 FLOW = {"answer", "done"}
-SENSE = {"search", "read"}
+SENSE = {"search", "search_wide", "read"}
 
 
-def test_the_catalog_is_exactly_the_ten():
+def test_the_catalog_is_exactly_the_eleven():
     assert set(ACTION_SPECS) == FLOW | SENSE | set(EDIT_ACTIONS)
-    assert len(ACTION_SPECS) == 10
+    assert len(ACTION_SPECS) == 11
     assert EDIT_ACTIONS == ("add", "edit", "delete", "link", "link_many",
                             "unlink")
 
 
 def test_mode_subsets_per_spec():
     assert set(MODE_TOOLS["train_forward"]) == {"search", "read", "answer"}
-    assert set(MODE_TOOLS["train_backward"]) == {"search", "read", "done"} | set(EDIT_ACTIONS)
+    assert set(MODE_TOOLS["train_backward"]) == {"search", "search_wide",
+                                                 "read", "done"} | set(EDIT_ACTIONS)
+    # wide search is a training-time capability; the reader never gets it
+    assert "search_wide" not in MODE_TOOLS["test"]
+    assert "search_wide" not in MODE_TOOLS["train_forward"]
     assert set(MODE_TOOLS["test"]) == {"search", "read", "answer"}
     assert "answer" not in MODE_TOOLS["train_backward"]
     for mode in ("train_forward", "test"):     # edits are train Phase 2 ONLY
