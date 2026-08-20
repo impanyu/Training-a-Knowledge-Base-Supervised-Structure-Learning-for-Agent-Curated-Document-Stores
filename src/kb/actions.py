@@ -14,7 +14,7 @@ Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
 
 SEARCH_K = 5
-KEYWORD_CAP = 200        # curation only: guard against a keyword matching the store
+KEYWORD_CAP = 40         # the largest legitimate key in this universe is ~36
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -49,7 +49,9 @@ ACTION_SPECS: dict[str, dict] = {
                         "- not a similarity ranking and not a top-k. This is "
                         "how you enumerate a set completely: one call returns "
                         "all of it, and the count tells you the set is "
-                        "closed. Available while curating only; the reader "
+                        "closed. If more than 40 notes match, only "
+                        "the count comes back - that key is too broad to be "
+                        "an index. Available while curating only; the reader "
                         "you are building for has similarity search alone, "
                         "which is why it needs the structure you leave."),
         "input_schema": _schema({"keywords": _SLIST}, ["keywords"]),
@@ -141,11 +143,14 @@ def _h_search_keyword(store, inp):
             if all(k in n.text.lower() for k in kws)]
     if not hits:
         return "(no notes contain all of: " + ", ".join(kws) + ")"
-    head = sorted(hits)[:KEYWORD_CAP]
-    body = "\n".join(f"- {nid}: {text}" for nid, text in head)
     if len(hits) > KEYWORD_CAP:
-        return (f"{len(hits)} notes match; showing the first {KEYWORD_CAP}. "
-                f"Narrow the keywords.\n{body}")
+        # Deliberately no listing: a key this broad is not an index key, and
+        # returning hundreds of notes would flood the context for every
+        # later step. The count alone is the useful signal.
+        return (f"{len(hits)} notes match - too many to be one key, so none "
+                f"are shown. Narrow the keywords until the count is a set "
+                f"you would index (at most {KEYWORD_CAP}).")
+    body = "\n".join(f"- {nid}: {text}" for nid, text in sorted(hits))
     return f"{len(hits)} notes match, all shown.\n{body}"
 
 
