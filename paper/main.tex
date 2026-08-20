@@ -586,18 +586,50 @@ reader rather than their retrieval algorithms (a documented adaptation; e.g.\
 B5 forgoes Personalized PageRank).
 
 \subsection{Implementation}
-Trainer and reader are gpt-5-mini (temperature 0.3, 4{,}096 tokens/turn),
-tool-forced decisions, static schemas. Budgets $N_1{=}N_2{=}M{=}15$; FIFO
-$K{=}30$; \texttt{search} returns top-5. Embeddings: chroma default ONNX
-MiniLM family, environment-maintained. Measured training cost:
-$\approx$23k tokens and 83\,s per iteration on the 120-person universe;
-the 500-person main run averaged 37.7k tokens and 121\,s per iteration
-(11.3M tokens, 10.1\,h, $\approx$\$8 total at current pricing). Per-epoch snapshots plus byte-exact
-trace replay reconstruct every intermediate store state for analysis
-(merge events replay deterministically without the judge). Basic version:
-single seed (seed~0); seed replication planned. The main run reported below has the guard enabled: the judge fired
-$\approx$30 times and declined every merge, so at this scale its effect is
-null and prompt-level parsimony carries deduplication.
+\textbf{Storage.} The store is held in memory as a dictionary from document
+id to a record of \texttt{text} and a list of outgoing link ids; there is no
+database and no object store. Links are ids only, never copies, so a document
+is named in exactly one place and a delete cascades: the removed id is
+stripped from every other document's link list rather than left dangling. The
+whole store serialises to newline-delimited JSON, one object per document,
+which is what the per-epoch snapshots contain and what makes them readable
+and diffable.
+
+\textbf{Retrieval.} A separate in-memory vector index (chroma, ephemeral
+client, default ONNX MiniLM embeddings) serves \texttt{search} and nothing
+else: it holds each document's \texttt{text} and id, and never its links or
+provenance. Adding or editing a document marks it dirty; the environment
+re-embeds every dirty document in one batch at the end of the iteration, and
+a delete drops its row. The agent therefore never manages embeddings, and the
+index is strictly derived state --- discarding it and rebuilding from the
+documents changes nothing.
+
+\textbf{Reproducibility.} Every action and its result is appended to a trace,
+so any intermediate store can be rebuilt exactly by replaying that trace from
+the initial universe, without an API call --- including merges, whose
+verdicts are recorded rather than recomputed. Embeddings are not serialised
+because they are recomputable from text. This is not only an analysis
+convenience: when an API outage killed a run 100 iterations in, the store was
+reconstructed from its own trace in under two minutes and training continued
+from that point.
+
+\textbf{Models and budgets.} Trainer and reader are gpt-5-mini (temperature
+0.3, low reasoning effort, 12k completion tokens per turn), tool-forced
+decisions, static schemas. Budgets $N_1{=}M{=}15$ and $N_2{=}20$; the
+backward pass is longer because it must both locate a set and attach it. FIFO
+memory $K{=}30$. \texttt{search} returns five documents by default and up to
+sixty when asked, and \texttt{link\_many} attaches any number of documents in
+one action, so the cost of building an index is dominated by finding its
+members rather than by wiring them.
+
+\textbf{Cost.} The 500-person main run averaged 37.7k tokens and 121\,s per
+iteration (11.3M tokens, 10.1\,h, $\approx$\$8 at current pricing). Single
+seed (seed~0); seed replication is left to future work. The infrastructure
+deduplication guard is enabled: on add or edit the store embeds the candidate,
+takes the three nearest documents, and consults an LLM judge when cosine
+similarity exceeds $0.90$. It fired $\approx$30 times and declined every
+merge, so at this scale deduplication is carried by the parsimony objective
+rather than by the guard.
 
 \subsection{Experiment Suite and Predictions}\label{sec:suite}
 \textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
