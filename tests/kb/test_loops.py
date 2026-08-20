@@ -179,7 +179,8 @@ def test_two_skills_carry_goal_means_and_example():
     for ex in ("A join.", "A count.", "An intersection.",
                "A lookup that already worked.",
                "Sometimes the right structure is only edges",
-               "Changing nothing is a legitimate use of the budget"):
+               "Answering correctly is NOT the test",
+               "On an unstructured store, doing nothing is almost never correct"):
         assert ex in CURATION_SKILL
     for cue in ("search(query)", "read(id)", "answer(text)",
                 "the full text of every note linked to it",
