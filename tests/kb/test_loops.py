@@ -182,6 +182,8 @@ def test_two_skills_carry_goal_means_and_example():
         assert banned not in RETRIEVAL_SKILL.lower().replace("linked", "")
     # curation: generalization required, index suggested not prescribed
     for cue in ("NEW NOTES.", "NEW LINKS.",
+                "ONE note holds ONE statement",
+                "never pack two facts into one note",
                 "(3) statement to statement", "(5) index to index",
                 "Generalizing is required, not optional",
                 "ACCESS STRUCTURE, not the answer you just computed",
