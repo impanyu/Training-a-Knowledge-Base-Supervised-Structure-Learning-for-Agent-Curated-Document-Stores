@@ -174,45 +174,22 @@ def test_two_skills_carry_goal_means_and_example():
     from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
-    # the curation example demonstrates each of the five buildable structures
-    for case in ("Step one, name the TYPE", "Step two, find the KEYS - plural here",
-                 "Step three, locate ALL of them",
-                 "(1) new INDEX note", "(2) new STATEMENT note",
-                 "(3) statement to statement", "(4) index to statement",
-                 "(5) index to index", "What came LAST", "link_many(n90,"):
-        assert case in CURATION_SKILL
-    # retrieval: tools and the free-links fact, no editing vocabulary
     for cue in ("search(query)", "read(id)", "answer(text)",
                 "the full text of every note linked to it"):
         assert cue in RETRIEVAL_SKILL
-    for banned in ("add(", "link(a, b)", "index", "generaliz"):
-        assert banned not in RETRIEVAL_SKILL.lower().replace("linked", "")
-    # curation: generalization required, index suggested not prescribed
-    for cue in ("NEW NOTES.", "NEW LINKS.",
-                "ONE note holds ONE statement",
-                "never pack two facts into one note",
-                "(3) statement to statement", "(5) index to index",
+    # curation: a goal, the environment's facts, and open-ended guidance
+    for cue in ("GOAL. Leave the store better for the NEXT question",
                 "Generalizing is required, not optional",
                 "prefer ACCESS STRUCTURE over the answer you just computed",
-                "Rank what you build by how many kinds of question it could serve",
-                "SUGGESTED, NOT PRESCRIBED",
-                "Indexes are worth returning to",
-                "TWO LAYERS COVER ALMOST EVERYTHING",
-                "two reads and an intersection",
-                "read() expands ONE level",
-                "A third, narrower layer is worth it when a COMBINATION keeps",
-                "answer by navigation rather than intersection",
-                "COMPLETENESS IS THE POINT",
-                "a partial index is not merely weak, it is WRONG",
-                "an unfinished index is a debt, not an achievement",
-                "Its key can be too broad",
-                "FIT THE INDEX TO THE QUESTION TYPE",
-                "A type can have MORE THAN ONE key",
-                "Finish the one you started",
-                "Use the gold answer as a LOCATOR, not as material for a post-mortem",
-                "An index with no links is worth"):
+                "ONE QUESTION TYPE, MANY POSSIBLE INDEXES",
+                "invent shapes nobody listed here",
+                "WHAT YOU CAN BUILD",
+                "link_many costs ONE action",
+                "ONE note holds ONE statement",
+                "It is COMPLETE"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()
+
 
 
 
