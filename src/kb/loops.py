@@ -10,6 +10,7 @@ dirty nodes re-embed now (store.refresh at iteration end).
 Test iteration (budget M, frozen KB): answer() ends it, its result is empty
 ("submitted"), gold never appears; exhaustion -> scored 0 and counted as
 "unanswered" (distinct from answered-wrong)."""
+import json
 import random
 import time
 from pathlib import Path
@@ -173,6 +174,28 @@ def _fmt(d) -> str:
     return f"{d.name}({args})"
 
 
+def _dedup(seen: dict, name: str, inp: dict, result: str) -> str:
+    """Collapse a repeated action whose result has not changed.
+
+    A reader or trainer that reissues the same search gets the same notes,
+    and re-inserting them into the window costs the whole payload again on
+    every later step - one k=60 search repeated seven times was enough to
+    push an iteration past half a million tokens. The full result is kept
+    the first time and referenced afterwards, so nothing is hidden.
+
+    Only search and read are collapsed. Edit results are replayed verbatim
+    by kb.replay, which compares them byte for byte, so rewriting one would
+    make the run unreproducible."""
+    if name not in ("search", "read"):
+        return result            # edits are replayed verbatim; never rewrite
+    key = (name, json.dumps(inp, sort_keys=True, default=str))
+    if seen.get(key) == result:
+        return (f"same {name} as before - result unchanged. Act on what it "
+                f"already gave you, or try something different.")
+    seen[key] = result
+    return result
+
+
 def _turn(policy, system, mem, remaining, mode):
     ctx = mem.render(f"Remaining actions this phase: {remaining}.")
     return policy.decide(system, ctx, tools_for(mode))
@@ -185,6 +208,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     mem = IterationMemory(k)
     mem.reset(f"TRAIN QUESTION {q.qid} [phase 1: answer it]\n{q.text}")
     answer, answered_at, f1v, emv = None, None, 0.0, 0.0
+    seen: dict = {}                      # collapse repeated identical actions
     p1_steps = 0
     for step in range(1, n1 + 1):
         p1_steps = step
@@ -195,7 +219,8 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
             answered_at = step
             result = f'submitted. gold answer: "{q.golds[0]}" | your F1: {f1v:.2f}'
         elif d.name in MODE_TOOLS["train_forward"]:
-            result = dispatch(store, d.name, d.inp)
+            result = _dedup(seen, d.name, d.inp,
+                            dispatch(store, d.name, d.inp))
         else:
             result = f"ERROR: {d.name} is not available in this phase"
         mem.add(_fmt(d), result)
@@ -225,6 +250,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
         "is partial, and change nothing if they are already complete. "
         "done() when finished.")
     edits = {a: 0 for a in EDIT_ACTIONS}
+    seen = {}                            # fresh window for the backward phase
     p2_steps = 0
     for step in range(1, n2 + 1):
         p2_steps = step
@@ -232,7 +258,8 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
         if d.name == "done":
             result = "phase complete"
         elif d.name in MODE_TOOLS["train_backward"]:
-            result = dispatch(store, d.name, d.inp)
+            result = _dedup(seen, d.name, d.inp,
+                            dispatch(store, d.name, d.inp))
             if d.name in edits and not result.startswith("ERROR"):
                 edits[d.name] += 1
         else:
@@ -264,6 +291,7 @@ def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
     mem = IterationMemory(k)                     # fresh memory each question
     mem.reset(f"QUESTION {q.qid}\n{q.text}")
     answer, steps = None, 0
+    seen: dict = {}                              # collapse repeated actions
     for step in range(1, m + 1):
         steps = step
         d = _turn(policy, RETRIEVAL_SKILL, mem, m - step + 1, "test")
@@ -271,7 +299,8 @@ def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
             answer = str(d.inp.get("text", ""))
             result = "submitted"                 # gold never appears in test
         elif d.name in MODE_TOOLS["test"]:
-            result = dispatch(store, d.name, d.inp)
+            result = _dedup(seen, d.name, d.inp,
+                            dispatch(store, d.name, d.inp))
         else:
             result = f"ERROR: {d.name} is not available in this phase"
         mem.add(_fmt(d), result)
