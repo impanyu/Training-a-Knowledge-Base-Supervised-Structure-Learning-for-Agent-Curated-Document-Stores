@@ -199,6 +199,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "Indexes are worth returning to",
                 "LINK WHAT THE READER WILL NEED, not just what matches the key",
                 "Reach one hop further than the key strictly implies",
+                "DEPTH COSTS A READ PER LEVEL",
+                "Depth for reuse, breadth for speed",
                 "COMPLETENESS IS THE POINT",
                 "a partial index is not merely weak, it is WRONG",
                 "an unfinished index is a debt, not an achievement",
