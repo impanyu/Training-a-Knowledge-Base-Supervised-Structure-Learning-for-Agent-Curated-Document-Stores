@@ -186,6 +186,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "Examples of the mapping",
                 "AN INDEX POINTS; IT DOES NOT LIST",
                 "PRECISION FIRST, THEN COMPLETENESS",
+                "IF NOTHING BELONGS, DELETE IT",
                 "COMPLETENESS."):
         assert cue in CURATION_SKILL
     for cue in ("search(query, k) returns the k most similar notes",
