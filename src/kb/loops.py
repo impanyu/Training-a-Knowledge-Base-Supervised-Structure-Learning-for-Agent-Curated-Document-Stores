@@ -21,70 +21,111 @@ from kb.store import save_snapshot
 
 N1, N2, M, K = 15, 15, 15, 30
 
-TRAIN_SYSTEM = (
-    "You are training a knowledge base on supervised question answering. "
-    "The store is a graph of single-sentence notes: each note is one "
-    "self-contained statement, found by semantic search over its text and "
-    "linked to other notes by id. Your objectives, in order:\n"
-    "1. Answer the question correctly.\n"
-    "2. Repair what the trajectory exposed. The gold answer is your "
-    "supervision: with it in hand you can find what the store failed to "
-    "surface, and a trajectory that failed tells you more about the "
-    "store's gaps than one that succeeded. A question you answered "
-    "correctly and cheaply needed nothing from you.\n"
-    "3. GENERALIZE - this is required, not optional. Make the next "
-    "question of this KIND cheaper, not this one. That exact question "
-    "will not be asked again; questions of its kind will, about other "
-    "entities. So what you leave behind must be ACCESS STRUCTURE, not "
-    "the answer you just computed: an answer serves the one instance "
-    "that produced it, whereas an index over some key serves every "
-    "question that enters through that key, and an edge serves every "
-    "chain that must make that hop, whatever entity it concerns. An "
-    "iteration that leaves the store no better for a sibling question "
-    "has failed, even if you answered correctly.\n"
-    "   Suggested, not prescribed - you may find better. The kind of a "
-    "question is usually fixed by what it makes a reader search for "
-    "FIRST: a person, a city, a job, a hobby, a family. That first "
-    "search is where search is weakest, because the question names a "
-    "class rather than a note, so an index built on that key tends to "
-    "pay well - named the way a searcher would phrase the key, and "
-    "linked to the notes belonging to it. Indexes are worth returning "
-    "to: one you extend on a later question covers more than one you "
-    "abandon. Two facts about this environment are worth knowing. "
-    "Reading a note returns that note AND the full text of every note "
-    "linked to it, so a well-linked entry point can replace a sequence "
-    "of uncertain searches. And everything you can build is one of two "
-    "things: a note that points at other notes, or an edge between "
-    "notes that already exist - including an edge between two such "
-    "pointing notes, which is how navigation acquires levels. An index "
-    "whose links are incomplete is worth little; one with no links is "
-    "worth nothing.\n"
-    "4. Every note you add must earn its retrieval slot: it competes with "
-    "the rest of the store in search, and a reader that retrieves it and "
-    "learns nothing has paid a step for it.\n"
-    "5. Keep the graph PARSIMONIOUS. Redundant notes compete in search and "
-    "bury each other: don't add a note whose content the graph already "
-    "carries; edit an existing note rather than duplicating it; delete any "
-    "redundancy you create; if the graph already serves this question's "
-    "class well, change NOTHING - a clean miss of the edit budget is better "
-    "than a redundant note. Organize and navigate; don't duplicate.\n"
-    "HOW you consolidate is your choice - links, navigation notes, edits, "
-    "cleanup; you are judged only by whether a non-reasoning future reader "
-    "could answer this class of question more easily.\n"
-    "Any note text you write must be a single short self-contained sentence "
-    "with full names, no pronouns. Embeddings are maintained for you "
-    "automatically.\n"
-    "When answering, submit exactly one short answer (a name / phrase / "
-    'number, or "unknown" if this universe cannot determine it); the result '
-    "reveals the gold answer and your F1."
+# Two skills, each with goal, means and a worked example. RETRIEVAL_SKILL is
+# used by BOTH train Phase 1 and the frozen-store exam, so the forward pass
+# and the test are the same policy on the same instructions -- the store is
+# then the only thing that differs between them. CURATION_SKILL is Phase 2
+# only; it never reaches a reader, so nothing it says can leak into a score.
+
+RETRIEVAL_SKILL = (
+    "You answer questions from a knowledge base you cannot change.\n"
+    "\nGOAL. Produce the correct short answer within your action budget. "
+    "A name, a phrase or a number - or \"unknown\" if this universe cannot "
+    "determine it. Answering costs nothing extra; running out of budget "
+    "scores zero, so do not keep searching once you can answer.\n"
+    "\nMEANS. The store is a graph of single-sentence notes.\n"
+    "  search(query) - the five notes whose text is most similar to your "
+    "query. It is similarity, not understanding: it finds notes that "
+    "SOUND like the query, so query with the words the note itself would "
+    "use (a full name, an attribute word), not with the question.\n"
+    "  read(id) - that note, AND the full text of every note linked to "
+    "it. Links are free information: reading one well-connected note can "
+    "return what several searches would have. If a search result looks "
+    "like an entry point for a group, reading it is usually worth a step.\n"
+    "  answer(text) - submit and end.\n"
+    "\nEXAMPLE (illustrative; these notes are not in your store). "
+    "Question: what is the hobby of the spouse of Mira Ashford?\n"
+    "  search(\"Mira Ashford spouse\") -> n41: Mira Ashford is married to "
+    "Tomas Ashford. (also n12, n88, ... less relevant)\n"
+    "  read(n41) -> n41 plus its links: n42: Tomas Ashford's hobby is "
+    "falconry. n43: Tomas Ashford's job is cooper.\n"
+    "  answer(\"falconry\")\n"
+    "The second hop cost a read rather than a search because the note was "
+    "linked. Where links are absent, search again with the name you just "
+    "learned.\n"
 )
 
-READER_SYSTEM = (
-    "Answer the question using search and read over a knowledge base of "
-    "single-sentence notes. Keep the answer short: a name, phrase or "
-    'number. If the answer cannot be determined from the notes, answer '
-    '"unknown". Submit it with answer().'
+CURATION_SKILL = (
+    "You are training a knowledge base on supervised question answering: "
+    "you answer a question, are shown the gold answer, and then edit the "
+    "store itself. The store is a graph of single-sentence notes, found "
+    "by semantic search over their text and linked to each other by id.\n"
+    "\nGOAL. Leave the store better for the NEXT question of this kind - "
+    "asked about a different entity - than it was for this one. "
+    "Generalizing is required, not optional: an iteration that leaves the "
+    "store no better for a sibling question has failed, even if you "
+    "answered correctly. That exact question will not be asked again, so "
+    "what you leave behind must be ACCESS STRUCTURE, not the answer you "
+    "just computed. An answer serves the one instance that produced it; "
+    "an index over some key serves every question entering through that "
+    "key, and an edge serves every chain that must make that hop, "
+    "whatever entity it concerns.\n"
+    "\nMEANS. search and read as before, plus add(text), edit(id, text), "
+    "delete(id), link(a, b), unlink(a, b), done(). Reading a note returns "
+    "that note AND the full text of every note linked to it, so a "
+    "well-linked entry point replaces a sequence of uncertain searches. "
+    "Build freely; there are five things you can create and all of them "
+    "are worth creating when they earn their place.\n"
+    "  NEW NOTES. (1) An INDEX note: one that exists to point at the "
+    "notes belonging to some key, named the way a searcher would phrase "
+    "that key. (2) A STATEMENT note: one that states a fact the store "
+    "does not already carry - an aggregation, a derived relation, a "
+    "summary of something scattered - worth adding when more than one "
+    "question would want it, not when it merely records the answer you "
+    "were just given.\n"
+    "  NEW LINKS. (3) statement to statement: the hop a chain had to "
+    "make, so the next reader traverses instead of searching. (4) index "
+    "to statement: what makes an index an index. (5) index to index: how "
+    "navigation acquires levels, so a two-hop question becomes two "
+    "reads.\n"
+    "\nSUGGESTED, NOT PRESCRIBED - you may find better. A question's kind "
+    "is usually fixed by what it makes a reader search for FIRST: a "
+    "person, a city, a job, a family. That first search is where search "
+    "is weakest, because the question names a class rather than a note, "
+    "so an index on that key tends to pay - named the way a searcher "
+    "would phrase the key, linked to the notes belonging to it. Indexes "
+    "are worth returning to: one you extend on a later question covers "
+    "more than one you abandon. An index whose links are incomplete is "
+    "worth little; one with no links is worth nothing. The gold answer is "
+    "your supervision - with it in hand you can find what the store "
+    "failed to surface, and a failed trajectory tells you more about the "
+    "store's gaps than a successful one.\n"
+    "\nEXAMPLE (illustrative). You were asked which cooper lives in "
+    "Fenmarch, searched \"cooper Fenmarch\", got five unrelated notes, and "
+    "ran out of budget. The gold is Tomas Ashford. Searching the gold "
+    "shows n43: Tomas Ashford's job is cooper, and n44: Tomas Ashford "
+    "lives in Fenmarch - both present all along, neither reachable from "
+    "what a reader would search first. The instance repair is to link n43 "
+    "and n44. The repair that generalizes is an entry point for the key "
+    "the reader searched: add(\"Residents of Fenmarch\") and link it to "
+    "n44 and to the notes of the other residents you can find - so the "
+    "next question about anyone in Fenmarch starts one read from the "
+    "answer. Next time Fenmarch comes up, extend that same note rather "
+    "than making another.\n"
+    "\nEvery note you add must earn its retrieval slot: it competes with "
+    "the whole store in search, and a reader that retrieves it and learns "
+    "nothing has paid a step for it. Keep the graph parsimonious - do not "
+    "add a note whose content the store already carries, edit rather than "
+    "duplicate, delete redundancy you create, and if the store already "
+    "serves this kind of question well, change NOTHING. Any note text you "
+    "write must be one short self-contained sentence with full names and "
+    "no pronouns; embeddings are maintained for you.\n"
 )
+
+# Phase 1 and the exam share the retrieval skill; the phase-1 task block adds
+# the one difference (its answer() result reveals the gold).
+TRAIN_SYSTEM = CURATION_SKILL          # backward compatibility for callers
+READER_SYSTEM = RETRIEVAL_SKILL
 
 
 def _fmt(d) -> str:
@@ -107,7 +148,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     p1_steps = 0
     for step in range(1, n1 + 1):
         p1_steps = step
-        d = _turn(policy, TRAIN_SYSTEM, mem, n1 - step + 1, "train_forward")
+        d = _turn(policy, RETRIEVAL_SKILL, mem, n1 - step + 1, "train_forward")
         if d.name == "answer":
             answer = str(d.inp.get("text", ""))
             f1v, emv = grade(answer, q.golds, q.unanswerable)
@@ -148,7 +189,7 @@ def train_iteration(store, policy, q, log, epoch, n1=N1, n2=N2, k=K) -> dict:
     p2_steps = 0
     for step in range(1, n2 + 1):
         p2_steps = step
-        d = _turn(policy, TRAIN_SYSTEM, mem, n2 - step + 1, "train_backward")
+        d = _turn(policy, CURATION_SKILL, mem, n2 - step + 1, "train_backward")
         if d.name == "done":
             result = "phase complete"
         elif d.name in MODE_TOOLS["train_backward"]:
@@ -186,7 +227,7 @@ def test_iteration(store, policy, q, log, split, epoch, m=M, k=K) -> dict:
     answer, steps = None, 0
     for step in range(1, m + 1):
         steps = step
-        d = _turn(policy, READER_SYSTEM, mem, m - step + 1, "test")
+        d = _turn(policy, RETRIEVAL_SKILL, mem, m - step + 1, "test")
         if d.name == "answer":
             answer = str(d.inp.get("text", ""))
             result = "submitted"                 # gold never appears in test

@@ -168,26 +168,29 @@ def test_memory_resets_per_iteration_and_survives_phase_transition():
 
 # ---------------- prompts ----------------
 
-def test_train_prompt_carries_node_model_indexing_and_parsimony():
-    assert "graph of single-sentence notes" in TRAIN_SYSTEM
-    # objectives are stated as GOALS; mechanism is the agent's choice
-    assert "2. Repair what the trajectory exposed" in TRAIN_SYSTEM
-    assert "a trajectory that failed tells you more" in TRAIN_SYSTEM
-    assert "3. GENERALIZE - this is required, not optional" in TRAIN_SYSTEM
-    for cue in ("ACCESS STRUCTURE, not the answer you just computed",
-                "Suggested, not prescribed - you may find better",
-                "what it makes a reader search for FIRST",
+def test_two_skills_carry_goal_means_and_example():
+    """Retrieval and curation are separate skills; Phase 1 and the exam share
+    the retrieval one, so the store is the only difference between them."""
+    from kb.loops import RETRIEVAL_SKILL, CURATION_SKILL
+    for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
+        assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
+    # retrieval: tools and the free-links fact, no editing vocabulary
+    for cue in ("search(query)", "read(id)", "answer(text)",
+                "the full text of every note linked to it"):
+        assert cue in RETRIEVAL_SKILL
+    for banned in ("add(", "link(a, b)", "index", "generaliz"):
+        assert banned not in RETRIEVAL_SKILL.lower().replace("linked", "")
+    # curation: generalization required, index suggested not prescribed
+    for cue in ("NEW NOTES.", "NEW LINKS.",
+                "(3) statement to statement", "(5) index to index",
+                "Generalizing is required, not optional",
+                "ACCESS STRUCTURE, not the answer you just computed",
+                "SUGGESTED, NOT PRESCRIBED",
                 "Indexes are worth returning to",
-                "returns that note AND the full text of every note linked to it",
                 "one with no links is worth nothing"):
-        assert cue in TRAIN_SYSTEM
-    assert "4. Every note you add must earn its retrieval slot" in TRAIN_SYSTEM
-    assert "5. Keep the graph PARSIMONIOUS" in TRAIN_SYSTEM
-    assert "Organize and navigate; don't duplicate." in TRAIN_SYSTEM
-    # dead vocabulary from the doc era must be gone
-    for stale in ("doc", "summar", "move_statement", "copy_statement"):
-        assert stale not in TRAIN_SYSTEM.lower()
-    assert "notes" in READER_SYSTEM and "doc" not in READER_SYSTEM.lower()
+        assert cue in CURATION_SKILL
+    assert "doc" not in CURATION_SKILL.lower()
+
 
 
 # ---------------- test iterations ----------------
