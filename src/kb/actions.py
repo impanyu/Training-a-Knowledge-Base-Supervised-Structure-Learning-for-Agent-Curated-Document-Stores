@@ -1,4 +1,4 @@
-"""The 11 actions (v9.6 node graph): ONE static tool schema, no per-node
+"""The 10 actions (v9.6 node graph): ONE static tool schema, no per-node
 variation, no dynamic schema. Phase gating is by schema subset per mode
 (MODE_TOOLS), never by runtime rejection; the loop keeps a runtime error
 string only as a safety net for scripted policies that go off-mode.
@@ -39,20 +39,13 @@ ACTION_SPECS: dict[str, dict] = {
     },
     # -------- sense --------
     "search": {
-        "description": ("Search the knowledge base by meaning; returns the "
-                        f"top-{SEARCH_K} notes as (id, text)."),
-        "input_schema": _schema({"query": _S}, ["query"]),
-    },
-    "search_topk": {
-        "description": ("Like search, but you choose how many notes come "
-                        "back: k defaults to five, the same as search and "
-                        "the same as the reader you are building for gets, "
-                        "and can be raised to sixty. Five cannot enumerate a "
-                        "set - the residents of a city come back as the same "
-                        "five however often you ask - so raise k when five "
-                        "is plainly not all of them. A set is closed when "
-                        "raising k further returns nothing new. Available "
-                        "while curating only."),
+        "description": ("Search the knowledge base by meaning. Returns the "
+                        f"k most similar notes as (id, text); k defaults to "
+                        f"{SEARCH_K} and may be raised to {TOPK_MAX} when "
+                        "five is plainly not the whole set - a city's "
+                        "residents come back as the same five however often "
+                        "you ask. A set is closed when raising k further "
+                        "returns nothing new."),
         "input_schema": {"type": "object",
                          "properties": {"query": _S,
                                         "k": {"type": "integer"}},
@@ -106,7 +99,7 @@ EDIT_ACTIONS = ("add", "edit", "delete", "link", "link_many", "unlink")
 # tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
-    "train_backward": ("search", "search_topk", "read") + EDIT_ACTIONS + ("done",),
+    "train_backward": ("search", "read") + EDIT_ACTIONS + ("done",),
     "test": ("search", "read", "answer"),
 }
 
@@ -130,22 +123,16 @@ def dispatch(store: Store, name: str, inp: dict) -> str:
 # ---------------- handlers ----------------
 
 def _h_search(store, inp):
-    hits = store.search(str(inp["query"]), k=SEARCH_K)
-    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no results)"
-
-
-def _h_search_topk(store, inp):
-    """Similarity search with an agent-chosen k. The reader is fixed at five;
-    the trainer needs more, because a set of twenty-nine cannot be recovered
-    five at a time."""
+    """One search for reader and trainer alike. k is optional so the reader's
+    default behaviour is unchanged, and raising it is what makes a set
+    recoverable at all: five notes cannot enumerate twenty-nine residents."""
     try:
         k = int(inp.get("k", SEARCH_K))
     except (TypeError, ValueError):
         return "ERROR: k must be an integer"
     k = max(1, min(k, TOPK_MAX))
     hits = store.search(str(inp["query"]), k=k)
-    body = "\n".join(f"- {nid}: {text}" for nid, text in hits)
-    return f"top {len(hits)} of k={k}:\n{body}" if hits else "(no hits)"
+    return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no hits)"
 
 
 def _h_read(store, inp):
@@ -211,7 +198,7 @@ def _h_unlink(store, inp):
 
 
 _HANDLERS = {
-    "search": _h_search, "search_topk": _h_search_topk, "read": _h_read,
+    "search": _h_search, "read": _h_read,
     "add": _h_add, "edit": _h_edit, "delete": _h_delete,
     "link": _h_link, "link_many": _h_link_many, "unlink": _h_unlink,
 }
