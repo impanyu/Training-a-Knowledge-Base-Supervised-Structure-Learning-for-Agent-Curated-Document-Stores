@@ -173,8 +173,11 @@ def test_train_prompt_carries_node_model_indexing_and_parsimony():
     # objectives are stated as GOALS; mechanism is the agent's choice
     assert "2. Repair what the trajectory exposed" in TRAIN_SYSTEM
     assert "a trajectory that failed tells you more" in TRAIN_SYSTEM
-    assert "3. Make the next question of this KIND cheaper" in TRAIN_SYSTEM
+    assert "3. GENERALIZE - this is required, not optional" in TRAIN_SYSTEM
     for cue in ("ACCESS STRUCTURE, not the answer you just computed",
+                "Suggested, not prescribed - you may find better",
+                "what it makes a reader search for FIRST",
+                "Indexes are worth returning to",
                 "returns that note AND the full text of every note linked to it",
                 "one with no links is worth nothing"):
         assert cue in TRAIN_SYSTEM
