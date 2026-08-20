@@ -15,6 +15,7 @@ from kb.store import Store, StoreError
 
 SEARCH_K = 5
 TOPK_MAX = 60            # k=60 recovers every set in this universe (measured)
+LINK_BATCH_MAX = 40      # the largest genuine key here is a 36-person city
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -179,6 +180,16 @@ def _h_link_many(store, inp):
     targets = [str(t).strip() for t in (inp.get("targets") or [])]
     if not targets:
         return "ERROR: targets is empty"
+    if len(targets) > LINK_BATCH_MAX:
+        # A batch this size is a search result, not a set: the largest real
+        # key in this universe has 36 members, so attaching sixty notes to
+        # one index means most of them are about something else. Rejected
+        # rather than truncated, so the choice of which belong stays with
+        # the agent.
+        return (f"ERROR: {len(targets)} targets is larger than any real set "
+                f"here (the biggest key has about 36 members), so this looks "
+                f"like a whole search result. Link only the notes that "
+                f"actually belong under this key.")
     ok, bad = [], []
     for t in targets:
         try:
