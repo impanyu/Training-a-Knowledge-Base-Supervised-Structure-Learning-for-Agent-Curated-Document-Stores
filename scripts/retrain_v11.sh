@@ -20,7 +20,8 @@ while pgrep -f "followup_experiments.sh" > /dev/null; do sleep 60; done
 
 echo "=== stage 1: 40-iteration pilot ==="
 python3 -m kb.train --universe data/v10L/universe.json --epochs 1 \
-  --train-size 40 --seed 0 --model gpt-5-mini --out runs/v11_pilot \
+  --train-size 40 --seed 0 --model gpt-5-mini --n1 15 --n2 25 --m 15 \
+  --out runs/v11_pilot \
   > runs/v11_pilot.log 2>&1
 
 python3 scripts/note_character.py --kb runs/v11_pilot/kb_epoch_1.json \
@@ -45,7 +46,8 @@ PY
 
 echo "=== stage 2: full run, 2 epochs x 150 questions ==="
 python3 -m kb.train --universe data/v10L/universe.json --epochs 2 \
-  --seed 0 --model gpt-5-mini --out runs/v11_main --eval-each-epoch \
+  --seed 0 --model gpt-5-mini --n1 15 --n2 25 --m 15 \
+  --out runs/v11_main --eval-each-epoch \
   > runs/v11_main.log 2>&1
 
 echo "=== frozen exams on the v11 store ==="

@@ -19,7 +19,12 @@ from kb.grader import grade
 from kb.memory import IterationMemory
 from kb.store import save_snapshot
 
-N1, N2, M, K = 15, 15, 15, 30
+# N1 (forward) and M (exam) are deliberately equal, so the training
+# forward pass and the frozen exam differ only in the store. N2 is
+# larger: the backward pass must both diagnose the trajectory and build
+# structure, and in the v10L run diagnosis consumed 79% of a 15-action
+# budget on failed questions, leaving 0.46 links per iteration.
+N1, N2, M, K = 15, 25, 15, 30
 
 # Two skills, each with goal, means and a worked example. RETRIEVAL_SKILL is
 # used by BOTH train Phase 1 and the frozen-store exam, so the forward pass
