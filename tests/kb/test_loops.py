@@ -86,7 +86,7 @@ def test_phase2_edits_dispatch_and_done_ends():
     assert p2[1]["result"] == f"linked {a} -> {b}"
     assert p2[2]["result"].startswith("ERROR:")
     assert p2[3]["action"] == "done" and p2[3]["result"] == "phase complete"
-    assert pol.seen[1][2] == ("search", "search_keyword", "read", "add",
+    assert pol.seen[1][2] == ("search", "search_topk", "read", "add",
                               "edit", "delete", "link", "link_many",
                               "unlink", "done")
 
@@ -187,7 +187,8 @@ def test_two_skills_carry_goal_means_and_example():
                 "AN INDEX POINTS; IT DOES NOT LIST",
                 "COMPLETENESS."):
         assert cue in CURATION_SKILL
-    for cue in ("search_keyword is different", "link_many costs ONE action",
+    for cue in ("search_topk is the same search with a k you choose",
+                "link_many costs ONE action",
                 "ONE note holds ONE statement"):
         assert cue in CURATION_SKILL
     assert "doc" not in CURATION_SKILL.lower()

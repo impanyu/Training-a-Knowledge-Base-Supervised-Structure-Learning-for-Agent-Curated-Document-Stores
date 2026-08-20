@@ -14,7 +14,7 @@ Invalid / dead ids -> "ERROR: ..." result, recorded like any result."""
 from kb.store import Store, StoreError
 
 SEARCH_K = 5
-KEYWORD_CAP = 40         # the largest legitimate key in this universe is ~36
+TOPK_MAX = 60            # k=60 recovers every set in this universe (measured)
 
 
 def _schema(props: dict, required: list[str]) -> dict:
@@ -43,18 +43,20 @@ ACTION_SPECS: dict[str, dict] = {
                         f"top-{SEARCH_K} notes as (id, text)."),
         "input_schema": _schema({"query": _S}, ["query"]),
     },
-    "search_keyword": {
-        "description": ("EVERY note whose text contains all of the given "
-                        "keywords, matched literally and case-insensitively "
-                        "- not a similarity ranking and not a top-k. This is "
-                        "how you enumerate a set completely: one call returns "
-                        "all of it, and the count tells you the set is "
-                        "closed. If more than 40 notes match, only "
-                        "the count comes back - that key is too broad to be "
-                        "an index. Available while curating only; the reader "
-                        "you are building for has similarity search alone, "
-                        "which is why it needs the structure you leave."),
-        "input_schema": _schema({"keywords": _SLIST}, ["keywords"]),
+    "search_topk": {
+        "description": ("Like search, but you choose how many notes come "
+                        "back: k defaults to five, the same as search and "
+                        "the same as the reader you are building for gets, "
+                        "and can be raised to sixty. Five cannot enumerate a "
+                        "set - the residents of a city come back as the same "
+                        "five however often you ask - so raise k when five "
+                        "is plainly not all of them. A set is closed when "
+                        "raising k further returns nothing new. Available "
+                        "while curating only."),
+        "input_schema": {"type": "object",
+                         "properties": {"query": _S,
+                                        "k": {"type": "integer"}},
+                         "required": ["query"]},
     },
     "read": {
         "description": ("Read one note: its text and its links, each rendered "
@@ -104,7 +106,7 @@ EDIT_ACTIONS = ("add", "edit", "delete", "link", "link_many", "unlink")
 # tool, so gating needs no runtime rejection.
 MODE_TOOLS: dict[str, tuple[str, ...]] = {
     "train_forward": ("search", "read", "answer"),
-    "train_backward": ("search", "search_keyword", "read") + EDIT_ACTIONS + ("done",),
+    "train_backward": ("search", "search_topk", "read") + EDIT_ACTIONS + ("done",),
     "test": ("search", "read", "answer"),
 }
 
@@ -132,26 +134,18 @@ def _h_search(store, inp):
     return "\n".join(f"- {nid}: {text}" for nid, text in hits) or "(no results)"
 
 
-def _h_search_keyword(store, inp):
-    """Exact substring match over every note, so a set can be closed in one
-    call. Similarity search cannot do this: the same query returns the same
-    five notes however often it is asked."""
-    kws = [str(k).strip().lower() for k in (inp.get("keywords") or []) if str(k).strip()]
-    if not kws:
-        return "ERROR: keywords is empty"
-    hits = [(nid, n.text) for nid, n in store.nodes.items()
-            if all(k in n.text.lower() for k in kws)]
-    if not hits:
-        return "(no notes contain all of: " + ", ".join(kws) + ")"
-    if len(hits) > KEYWORD_CAP:
-        # Deliberately no listing: a key this broad is not an index key, and
-        # returning hundreds of notes would flood the context for every
-        # later step. The count alone is the useful signal.
-        return (f"{len(hits)} notes match - too many to be one key, so none "
-                f"are shown. Narrow the keywords until the count is a set "
-                f"you would index (at most {KEYWORD_CAP}).")
-    body = "\n".join(f"- {nid}: {text}" for nid, text in sorted(hits))
-    return f"{len(hits)} notes match, all shown.\n{body}"
+def _h_search_topk(store, inp):
+    """Similarity search with an agent-chosen k. The reader is fixed at five;
+    the trainer needs more, because a set of twenty-nine cannot be recovered
+    five at a time."""
+    try:
+        k = int(inp.get("k", SEARCH_K))
+    except (TypeError, ValueError):
+        return "ERROR: k must be an integer"
+    k = max(1, min(k, TOPK_MAX))
+    hits = store.search(str(inp["query"]), k=k)
+    body = "\n".join(f"- {nid}: {text}" for nid, text in hits)
+    return f"top {len(hits)} of k={k}:\n{body}" if hits else "(no hits)"
 
 
 def _h_read(store, inp):
@@ -217,7 +211,7 @@ def _h_unlink(store, inp):
 
 
 _HANDLERS = {
-    "search": _h_search, "search_keyword": _h_search_keyword, "read": _h_read,
+    "search": _h_search, "search_topk": _h_search_topk, "read": _h_read,
     "add": _h_add, "edit": _h_edit, "delete": _h_delete,
     "link": _h_link, "link_many": _h_link_many, "unlink": _h_unlink,
 }
