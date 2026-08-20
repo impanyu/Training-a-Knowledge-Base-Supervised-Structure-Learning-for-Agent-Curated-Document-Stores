@@ -30,9 +30,9 @@ from kb.baseline_common import extract_all, entity_mentions  # noqa: E402
 # instance of an attribute. Written to cover both arms: KBGym renders
 # "X's job is cooper" while PhantomWiki renders "The occupation of X is
 # cooper", and the oracle should not care which universe it is given.
-PERSON_REL = {"spouse", "married to", "friend", "friends", "parent of",
-              "child of", "mother", "father", "husband", "wife", "son",
-              "sons", "daughter", "daughters", "brother", "brothers",
+PERSON_REL = {"spouse", "married to", "friend", "friend of", "friends",
+              "parent of", "child of", "mother", "father", "husband", "wife",
+              "son", "sons", "daughter", "daughters", "brother", "brothers",
               "sister", "sisters"}
 ATTR_LABEL = {"job": "People whose job is", "occupation": "People whose job is",
               "hobby": "People whose hobby is",
@@ -40,7 +40,7 @@ ATTR_LABEL = {"job": "People whose job is", "occupation": "People whose job is",
               "city": "People who live in the city of"}
 CHILD_REL = {"parent of", "son", "sons", "daughter", "daughters"}
 PARENT_REL = {"child of", "mother", "father"}
-FRIEND_REL = {"friend", "friends"}
+FRIEND_REL = {"friend", "friend of", "friends"}
 
 
 def main():
