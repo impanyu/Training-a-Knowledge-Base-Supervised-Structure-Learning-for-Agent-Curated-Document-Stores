@@ -4,6 +4,7 @@ deterministic test double. Adapted from ca.providers for kb's static
 9-action schema; kept import-independent of ca."""
 import json
 import sys
+import time
 from dataclasses import dataclass
 
 
@@ -78,10 +79,19 @@ class OpenAICompatPolicy:
         else:
             kwargs["max_tokens"] = self.max_tokens
             kwargs["temperature"] = self.temperature
-        try:
-            resp = self.client.chat.completions.create(**kwargs)
-        except Exception as e:
-            print(f"[llm-error] {e}", file=sys.stderr)
+        resp = None
+        for attempt in range(6):
+            try:
+                resp = self.client.chat.completions.create(**kwargs)
+                break
+            except Exception as e:
+                # A transient outage killed two multi-hour runs, so a failed
+                # call now backs off and retries rather than burning the step.
+                wait = min(60, 2 ** attempt)
+                print(f"[llm-error] {e} (attempt {attempt + 1}, "
+                      f"retrying in {wait}s)", file=sys.stderr)
+                time.sleep(wait)
+        if resp is None:
             return Decision("__noop__", {}, 0, 0)
         usage = resp.usage
         in_tok = getattr(usage, "prompt_tokens", 0) or 0
