@@ -138,7 +138,7 @@ CURATION_SKILL = (
     "were asked which cooper lives in Fenmarch, searched \"cooper "
     "Fenmarch\", got five unrelated notes and ran out of budget; the gold "
     "is Tomas Ashford. The question named two keys, the job and the city. "
-search_topk(\"lives in the city of "
+    "search_topk(\"lives in the city of "
     "Fenmarch\", k=40) returns twenty-nine residents and nothing else, "
     "and k=60 returns the same twenty-nine, so the set is closed; "
     "add(\"Residents of Fenmarch\") -> n90 and link_many(n90, [...]) "
