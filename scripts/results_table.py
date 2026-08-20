@@ -10,11 +10,21 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Everything measured under the shared retrieval skill (v11base_*); the
+# v10L_* arms were measured under the earlier reader and are not comparable
+# to these, so they are listed separately by --legacy.
 ARMS = [                       # label, m15 dir, m8 dir
+    ("B1 flat",        "v11base_b1_m15",       "v11base_b1_m8"),
+    ("B3 GraphRAG",    "v11base_graphrag_m15", "v11base_graphrag_m8"),
+    ("B5 HippoRAG2",   "v11base_hipporag_m15", "v11base_hipporag_m8"),
+    ("Oracle index",   "v11base_oracle_m15",   "v11base_oracle_m8"),
+    ("Ours (trained)", "v11_trained_m15",      "v11_trained_m8"),
+]
+LEGACY = [
     ("B1 flat",        "v10L_b1_m15",       "v10L_b1_m8"),
     ("B3 GraphRAG",    "v10L_graphrag_m15", "v10L_graphrag_m8"),
     ("B5 HippoRAG2",   "v10L_hipporag_m15", "v10L_hipporag_m8"),
-    ("Ours (trained)", "v10L_trained_m15",  "v10L_trained_m8"),
+    ("v10L trained",   "v10L_trained_m15",  "v10L_trained_m8"),
 ]
 RUNS = Path("runs")
 
@@ -38,12 +48,13 @@ def agg(rows, split):
                 unans=sum(1 for r in rs if r["status"] == "unanswered"))
 
 
-def e2():
-    print("E2  baseline table (150 questions: 100 test_in + 50 test_out)\n")
+def e2(arms=None, title="E2  baseline table (150 questions: 100 test_in + 50 test_out)"):
+    arms = arms or ARMS
+    print(title + "\n")
     hdr = f"{'method':<16}{'budget':<8}{'split':<10}{'n':>4}{'F1':>7}{'steps':>7}{'tok/q':>8}{'unans':>7}"
     print(hdr)
     print("-" * len(hdr))
-    for label, d15, d8 in ARMS:
+    for label, d15, d8 in arms:
         for budget, d in (("M=15", d15), ("M=8", d8)):
             rows = load(d)
             if rows is None:
@@ -57,20 +68,20 @@ def e2():
         print()
 
 
-def e3(train_run="v10L_dedup"):
+def e3(train_run="v11_main"):
     print("\nE3  three-layer generalization\n")
     tl = [json.loads(l) for l in open(RUNS / train_run / "train_log.jsonl")]
     for ep in sorted({r["epoch"] for r in tl}):
         rs = [r for r in tl if r["epoch"] == ep]
         print(f"  train-forward epoch {ep}: F1 {sum(r['f1'] for r in rs)/len(rs):.3f} "
               f"(n={len(rs)}; valid as retention from epoch 2)")
-    rows = load("v10L_trained_m15")
+    rows = load("v11_trained_m15")
     if rows:
         for split in ("test_in", "test_out"):
             a = agg(rows, split)
             print(f"  {split:<9}: F1 {a['f1']:.3f} (n={a['n']})")
         print("\n  per-category profile (trained vs B1, M=15)\n")
-        base = load("v10L_b1_m15")
+        base = load("v11base_b1_m15")
         bycat = defaultdict(lambda: {"t": [], "b": []})
         for r in rows:
             bycat[r["category"]]["t"].append(r["f1"])
@@ -85,14 +96,14 @@ def e3(train_run="v10L_dedup"):
             print(f"  {cat:<7}{len(t):>4}{bm:>8.2f}{tm:>9.2f}{tm-bm:>+8.2f}")
 
 
-def costs(train_run="v10L_dedup"):
+def costs(train_run="v11_main"):
     print("\nCosts\n")
     tl = [json.loads(l) for l in open(RUNS / train_run / "train_log.jsonl")]
     tin = sum(r["tokens_in"] for r in tl)
     tout = sum(r["tokens_out"] for r in tl)
     print(f"  training: {len(tl)} iterations, {tin+tout:,} tokens "
           f"({tin:,} in / {tout:,} out), {sum(r['seconds'] for r in tl)/3600:.1f} h")
-    tr, b1 = load("v10L_trained_m15"), load("v10L_b1_m15")
+    tr, b1 = load("v11_trained_m15"), load("v11base_b1_m15")
     if tr and b1:
         ct = sum(r["tokens_in"] + r["tokens_out"] for r in tr) / len(tr)
         cb = sum(r["tokens_in"] + r["tokens_out"] for r in b1) / len(b1)
@@ -106,5 +117,8 @@ def costs(train_run="v10L_dedup"):
 
 if __name__ == "__main__":
     e2()
+    if "--legacy" in sys.argv:
+        print()
+        e2(LEGACY, "Legacy arms (earlier reader; NOT comparable to the table above)")
     e3()
     costs()
