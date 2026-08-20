@@ -175,7 +175,7 @@ def test_two_skills_carry_goal_means_and_example():
     for skill in (RETRIEVAL_SKILL, CURATION_SKILL):
         assert "GOAL." in skill and "MEANS." in skill and "EXAMPLE" in skill
     # the curation example demonstrates each of the five buildable structures
-    for case in ("Step one, name the TYPE", "Step two, find the KEY",
+    for case in ("Step one, name the TYPE", "Step two, find the KEYS - plural here",
                  "Step three, locate ALL of them",
                  "(1) new INDEX note", "(2) new STATEMENT note",
                  "(3) statement to statement", "(4) index to statement",
@@ -202,6 +202,7 @@ def test_two_skills_carry_goal_means_and_example():
                 "an unfinished index is a debt, not an achievement",
                 "Its key can be too broad",
                 "FIT THE INDEX TO THE QUESTION TYPE",
+                "A type can have MORE THAN ONE key",
                 "Finish the one you started",
                 "Use the gold answer as a LOCATOR, not as material for a post-mortem",
                 "An index with no links is worth"):
