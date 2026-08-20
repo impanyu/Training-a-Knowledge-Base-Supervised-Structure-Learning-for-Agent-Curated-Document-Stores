@@ -47,7 +47,7 @@ def to_openai_tools(tools: list[dict]) -> list[dict]:
 class OpenAICompatPolicy:
     """One tool call per turn, tool_choice=required (spec §2/§5)."""
 
-    def __init__(self, model: str, max_tokens: int = 4096, temperature: float = 0.3):
+    def __init__(self, model: str, max_tokens: int = 12000, temperature: float = 0.3):
         import os
 
         from openai import OpenAI
@@ -82,6 +82,13 @@ class OpenAICompatPolicy:
         out_tok = getattr(usage, "completion_tokens", 0) or 0
         calls = resp.choices[0].message.tool_calls or []
         if not calls:
+            # A reasoning model that exhausts its completion budget while
+            # thinking returns no tool call at all: the step is lost and its
+            # tokens are spent for nothing, so the budget is set well above
+            # what a normal turn needs rather than trimmed to it.
+            if out_tok >= self.max_tokens - 8:
+                print(f"[llm-truncated] no tool call after {out_tok} tokens",
+                      file=sys.stderr)
             return Decision("__noop__", {}, in_tok, out_tok)
         call = calls[0]
         try:
@@ -91,5 +98,5 @@ class OpenAICompatPolicy:
         return Decision(call.function.name, args, in_tok, out_tok)
 
 
-def make_policy(model: str, max_tokens: int = 4096, temperature: float = 0.3):
+def make_policy(model: str, max_tokens: int = 12000, temperature: float = 0.3):
     return OpenAICompatPolicy(model, max_tokens, temperature)
