@@ -230,22 +230,21 @@ def test_link_changes_never_mark_dirty():
 
 # ---------------- dirty marking + batch re-embedding ----------------
 
-def test_refresh_reembeds_only_dirty_and_search_sees_the_edit():
+def test_a_read_of_the_index_never_sees_stale_embeddings():
+    """Writes batch, but searching flushes first. Deferring past a read made
+    an edit invisible to the very next query."""
     s = three_nodes()
     s.edit("s0003", "Omicron pi.")
-    # not re-embedded until refresh: the OLD text still matches
-    assert s.search("Epsilon zeta.", 1)[0][0] == "s0003"
-    n = s.refresh()
-    assert n == 1 and s.dirty == set()
+    assert s.dirty == {"s0003"}                # queued, not yet embedded
     hits = dict(s.search("Omicron pi.", 3))
-    assert hits["s0003"] == "Omicron pi."      # live text returned
-    assert s.refresh() == 0                    # nothing dirty
+    assert hits["s0003"] == "Omicron pi."      # the search flushed it
+    assert s.dirty == set()
+    assert s.refresh() == 0                    # nothing left over
 
 
-def test_added_note_becomes_searchable_at_refresh():
+def test_added_note_is_searchable_immediately():
     s = three_nodes()
     nid, _ = s.add("Sigma tau upsilon.")
-    s.refresh()
     assert s.search("Sigma tau upsilon.", 1)[0] == (nid, "Sigma tau upsilon.")
 
 

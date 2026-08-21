@@ -204,7 +204,8 @@ class Store:
         same fact. No-op when no judge is configured."""
         if self.judge is None:
             return None
-        col = self._col()
+        self.refresh()                 # a document added moments ago must be
+        col = self._col()              # visible, or duplicates slip through
         n = min(3 + (1 if exclude else 0), col.count())
         if n <= 0:
             return None
@@ -321,6 +322,7 @@ class Store:
 
     def search(self, query: str, k: int = 5) -> list[tuple[str, str]]:
         """Top-k (id, full text) by embedding similarity."""
+        self.refresh()                 # never read a stale index
         col = self._col()
         n = min(k, col.count())
         if n <= 0:
@@ -335,7 +337,20 @@ class Store:
     # ---------- maintenance (iteration end only) ----------
 
     def refresh(self) -> int:
-        """(Re)embed every dirty node in one batch; returns how many. With
+        """(Re)embed every dirty node in one batch; returns how many.
+
+        Writes still accumulate, but every read of the index flushes first
+        (see search and _near_duplicate). Batching is worth keeping - a
+        single note costs about 78 ms to embed against 24 ms amortised in a
+        batch - but deferring the flush past a read is not: it made a
+        document invisible to the search that followed it, and let two
+        statements of the same fact added in one iteration both survive,
+        because the gate queried an index the first one had not reached. The
+        size of that hole varied with how many edits an iteration happened to
+        make, which is a parameter we sweep, so it would have moved the
+        semantics of retrieval and deduplication underneath the experiment.
+
+        With
         summaries gone this is ALL the environment maintains."""
         ids = [nid for nid in sorted(self.dirty) if nid in self.nodes]
         if ids:
