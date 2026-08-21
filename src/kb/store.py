@@ -62,7 +62,8 @@ class LLMDuplicateJudge:
     PROMPT = ("Do these two sentences state the same fact? "
               "Answer yes or no.")
 
-    def __init__(self, model: str = "gpt-5-mini", max_tokens: int = 4):
+    def __init__(self, model: str = "gpt-5-mini", max_tokens: int = 500,
+                 reasoning_effort: str = "minimal"):
         import os
 
         from openai import OpenAI
@@ -70,6 +71,7 @@ class LLMDuplicateJudge:
                              max_retries=5)
         self.model = model
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         self.tokens_in = 0
         self.tokens_out = 0
 
@@ -80,7 +82,15 @@ class LLMDuplicateJudge:
                                 {"role": "user",
                                  "content": f"1. {text_a}\n2. {text_b}"}])
         if self.model.startswith("gpt-5") or self.model.startswith("o"):
+            # A reasoning model spends its completion budget thinking before
+            # it emits anything: at the 4 tokens this judge used to allow it
+            # returned empty every single time, which the caller read as "not
+            # a duplicate". The guard was wired up and inert. Measured on
+            # gpt-5-mini: 4 and 64 tokens both yield empty; 500 with minimal
+            # effort answers in about 10.
             kwargs["max_completion_tokens"] = self.max_tokens
+            if self.reasoning_effort:
+                kwargs["reasoning_effort"] = self.reasoning_effort
         else:
             kwargs["max_tokens"] = self.max_tokens
             kwargs["temperature"] = 0

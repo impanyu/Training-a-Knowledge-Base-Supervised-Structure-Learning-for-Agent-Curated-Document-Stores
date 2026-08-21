@@ -564,26 +564,23 @@ budgets; arms differ only in store preparation.}
 Arm & Preparation & Structure added & Build cost \\
 \midrule
 B1 flat & none & --- & 0 \\
-B3 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok \\
-B4 RAPTOR & offline, unsup. & summary hierarchy & --- \\
-B5 HippoRAG2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 \\
+B2 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok \\
+B3 HippoRAG2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 \\
 Ours & QA-supervised & links + nav docs & training run \\
 \bottomrule
 \end{tabular}
 \end{table}
-\textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B3,
+\textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B2,
 GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
 extraction, justified by template-shaped text), co-occurrence communities,
 one LLM-written community summary document per community linked to its
-members. \textbf{B4, RAPTOR-style}~\cite{raptor} (extended version):
-recursive embedding clustering with LLM summary documents per cluster,
-hierarchically linked. \textbf{B5, HippoRAG-2-style}~\cite{hipporag2}:
+members. \textbf{B2, HippoRAG-2-style}~\cite{hipporag2}:
 (subject, relation, object) triples per document, entity-sharing links
-between documents, per-entity hub documents. B3--B5 structure lands as
+between documents, per-entity hub documents. B2 and B2 structure lands as
 authored documents and links \emph{in our store format}, so the common
 budgeted reader can traverse it: we test their \emph{structure} under a fixed
 reader rather than their retrieval algorithms (a documented adaptation; e.g.\
-B5 forgoes Personalized PageRank).
+B3 forgoes Personalized PageRank).
 
 \subsection{Implementation}
 \textbf{Storage.} The store is held in memory as a dictionary from document
@@ -627,9 +624,15 @@ iteration (11.3M tokens, 10.1\,h, $\approx$\$8 at current pricing). Single
 seed (seed~0); seed replication is left to future work. The infrastructure
 deduplication guard is enabled: on add or edit the store embeds the candidate,
 takes the three nearest documents, and consults an LLM judge when cosine
-similarity exceeds $0.90$. It fired $\approx$30 times and declined every
-merge, so at this scale deduplication is carried by the parsimony objective
-rather than by the guard.
+similarity exceeds $0.90$. The judge is given a completion budget of 500
+tokens at minimal reasoning effort, which matters more than it sounds:
+a reasoning model spends its budget thinking before it emits anything, and
+at the four tokens an earlier version allowed, it returned an empty string
+on every call --- read by the caller as ``not a duplicate'', so the guard
+was wired up and inert. We measured this directly: 4 and 64 tokens both
+yield empty output, 500 with minimal effort answers in about ten. Any
+number reported here for merges therefore comes from a judge that actually
+answered.
 
 \subsection{Experiment Suite and Predictions}\label{sec:suite}
 \textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
@@ -637,7 +640,7 @@ epoch (epoch~0 = B1); final \texttt{test\_in}/\texttt{test\_out} pass on the
 last snapshot, at $M \in \{8, 15\}$. Prediction: non-inferior accuracy with
 fewer steps, and a leftward shift of the accuracy--budget curve (the trained
 store dominates at tight budgets). \textbf{E2.} The baseline table: F1,
-steps/question, build tokens, per-question tokens, for B1/B3/B4/B5/ours on
+steps/question, build tokens, per-question tokens, for B1/B2/B2/ours on
 both test splits. \textbf{E3} (log slicing). Three-layer generalization
 (train-forward from epoch~2 / \texttt{test\_in} / \texttt{test\_out}) and the
 per-category profile. Prediction: forward classes QC1--QC3 are saturated near
@@ -772,14 +775,14 @@ Store & Build & F1 & steps & F1 & steps & tok/q \\
 \midrule
 \multicolumn{7}{l}{\emph{budget $M{=}15$}}\\
 B1 flat & --- & 0.620 & 9.0 & 0.620 & 8.9 & 9.7k \\
-B3 GraphRAG-style & 488k tok & 0.570 & 9.3 & 0.640 & 9.1 & 10.5k \\
-B5 HippoRAG2-style & $\sim$0 & \textbf{0.660} & 9.3 & \textbf{0.700} & 7.9 & 11.1k \\
+B2 GraphRAG-style & 488k tok & 0.570 & 9.3 & 0.640 & 9.1 & 10.5k \\
+B3 HippoRAG2-style & $\sim$0 & \textbf{0.660} & 9.3 & \textbf{0.700} & 7.9 & 11.1k \\
 Ours (trained) & 11.3M tok & 0.630 & 9.0 & 0.660 & 8.3 & 9.7k \\
 \midrule
 \multicolumn{7}{l}{\emph{budget $M{=}8$}}\\
 B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
-B3 GraphRAG-style & 488k tok & 0.560 & 6.2 & 0.500 & 6.2 & 5.0k \\
-B5 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
+B2 GraphRAG-style & 488k tok & 0.560 & 6.2 & 0.500 & 6.2 & 5.0k \\
+B3 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
 Ours (trained) & 11.3M tok & \textbf{0.570} & 6.3 & 0.540 & 6.1 & 5.1k \\
 \bottomrule
 \end{tabular}
@@ -792,15 +795,15 @@ Every arm sits at $9.0$--$9.3$ steps/question at $M{=}15$: community
 summaries and entity indexes change \emph{what} the reader finds, not how
 long it searches, so cost reduction---our primary endpoint---is not a free
 by-product of offline structure. \textbf{(ii) Entity indexing is the
-accuracy frontier.} B5 leads both splits ($0.660$/$0.700$) at essentially
+accuracy frontier.} B3 leads both splits ($0.660$/$0.700$) at essentially
 zero build cost, making it the accuracy bar for the trained store.
-\textbf{(iii) Summaries can pollute.} B3 spends a 488k-token build to
+\textbf{(iii) Summaries can pollute.} B2 spends a 488k-token build to
 \emph{lose} $0.05$ F1 on \texttt{test\_in} relative to the flat store: its
 135 community summaries compete with source documents in retrieval and bury
 them---summary pollution arising inside a standard pipeline. At the tight budget ($M{=}8$) all stores degrade and the ordering
 compresses; no arm dominates. The trained store enters the table without
-dominating it: at $M{=}15$ it is above B1 and B3 on both splits and below
-B5's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
+dominating it: at $M{=}15$ it is above B1 and B2 on both splits and below
+B3's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
 \texttt{test\_out}. Crucially it shares the baselines' defining failure ---
 $\rho \approx 1$ against B1 at both budgets. That \emph{every} method here,
 supervised or not, lands within noise of the flat store
@@ -818,7 +821,7 @@ be recovered five at a time from a store that does not connect them. This
 predicts exactly where offline structure should pay, and the baselines
 confirm it. Partitioning our ten classes into those that need a set
 (QC4, QC6--QC8, QC10) and those answerable from a single document or a
-chain (QC1--QC3, QC5, QC9), B5's entity indexes lift the first group from
+chain (QC1--QC3, QC5, QC9), B3's entity indexes lift the first group from
 $0.388$ to $0.514$ F1 and the second group from $0.797$ to $0.797$ --- a
 gain of $+0.126$ where enumeration is required and of exactly zero
 where it is not. Per class the pattern is sharp: counts QC4 $+0.30$,
@@ -833,7 +836,7 @@ and a spike at exactly $M$ --- because a question the reader cannot resolve
 consumes the \emph{entire} budget by construction. The mean therefore
 decomposes as $\bar{s} = p_{\text{give-up}} M + (1 - p_{\text{give-up}})
 \bar{s}_{\text{answered}}$, and at $M{=}15$ the second term is nearly
-arm-invariant: $6.77$ (B1), $6.97$ (B3), $6.91$ (B5), $6.90$ (ours). The
+arm-invariant: $6.77$ (B1), $6.97$ (B2), $6.91$ (B3), $6.90$ (ours). The
 cleanest contrast is the paired one: on the 103 questions that
 \emph{both} B1 and the trained store answered, the trained store takes
 $6.48$ steps against B1's $6.57$ --- a $0.10$-step difference, i.e.\ none.
