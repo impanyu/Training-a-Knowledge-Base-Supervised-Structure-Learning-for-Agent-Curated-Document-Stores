@@ -45,6 +45,11 @@ python3 scripts/build_oracle_index.py --out data/v10L_oracle
 bash scripts/v11_full.sh        # 2 epochs x 150 questions, then every exam
 ```
 
+All calls go to the `gpt-5-mini` alias, which resolved to
+`gpt-5-mini-2025-08-07` for the reported runs. The alias moves; pin the
+snapshot with `--model gpt-5-mini-2025-08-07` to reproduce those numbers
+rather than whatever the alias points at when you read this.
+
 The script trains the store, runs the frozen-store exams at M = 15 and M = 8
 and on the train split, re-measures all baselines under the same reader, and
 writes the structural analyses. `OPENAI_API_KEY` (and `OPENAI_BASE_URL` if

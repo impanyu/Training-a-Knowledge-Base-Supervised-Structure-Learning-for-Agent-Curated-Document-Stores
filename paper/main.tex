@@ -612,7 +612,10 @@ from that point.
 
 \textbf{Models and budgets.} Trainer and reader are gpt-5-mini (temperature
 0.3, low reasoning effort, 12k completion tokens per turn), tool-forced
-decisions, static schemas. Budgets $N_1{=}M{=}15$ and $N_2{=}20$; the
+decisions, static schemas. The runs invoke the \texttt{gpt-5-mini} alias,
+which resolved to snapshot \texttt{gpt-5-mini-2025-08-07}; we record the
+snapshot rather than the alias because the alias will move, and the
+duplicate judge (below) is the same model at minimal reasoning effort. Budgets $N_1{=}M{=}15$ and $N_2{=}20$; the
 backward pass is longer because it must both locate a set and attach it. FIFO
 memory $K{=}30$. \texttt{search} returns five documents by default and up to
 sixty when asked, and \texttt{link\_many} attaches any number of documents in
