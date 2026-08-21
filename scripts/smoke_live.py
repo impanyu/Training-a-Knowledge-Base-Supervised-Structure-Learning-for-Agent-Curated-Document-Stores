@@ -42,13 +42,16 @@ check("policy returns a tool call", d.name != "__noop__",
 
 # 2. the duplicate judge actually answers, both ways
 j = LLMDuplicateJudge()
-same = j("Sylvie Ravenscroft's job is tailor.",
-         "The job of Sylvie Ravenscroft is tailor.")
-diff = j("Sylvie Ravenscroft's job is tailor.",
-         "Osric Kestrel's job is glassblower.")
-check("judge says yes to the same fact", same is True)
-check("judge says no to different facts", diff is False,
-      f"{j.tokens_out} out tokens for two calls")
+# Three votes each: the model is not deterministic here (reasoning models
+# reject a non-default temperature), so a single call makes this check flap.
+same = sum(j("Sylvie Ravenscroft's job is tailor.",
+             "The job of Sylvie Ravenscroft is tailor.") for _ in range(3))
+diff = sum(j("Sylvie Ravenscroft's job is tailor.",
+             "Osric Kestrel's job is glassblower.") for _ in range(3))
+check("judge says yes to the same fact", same >= 2, f"{same}/3")
+check("judge says no to different facts", diff <= 1, f"{3 - diff}/3 no")
+check("judge is not returning empty", j.tokens_out > 6 * 4,
+      f"{j.tokens_out} out tokens for six calls")
 
 # 3. paging walks a set instead of repeating page one
 store, _ = load_kb(UNIVERSE, UNIVERSE)

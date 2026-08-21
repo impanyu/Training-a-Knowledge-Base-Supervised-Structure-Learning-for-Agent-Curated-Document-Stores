@@ -59,8 +59,15 @@ class LLMDuplicateJudge:
     a multi-hour run, and accepting a near-duplicate is the recoverable
     mistake."""
 
-    PROMPT = ("Do these two sentences state the same fact? "
-              "Answer yes or no.")
+    # Terse prompts leave this genuinely ambiguous: two sentences about the
+    # same subject and attribute differ in wording but not in content, and
+    # the model flipped on roughly one call in seven. Reasoning models reject
+    # a non-default temperature, so the variance cannot be tuned away; saying
+    # plainly what "the same fact" means removes most of it.
+    PROMPT = ("Two sentences state the SAME fact if they assert the same "
+              "attribute or relation of the same entities, however "
+              "differently worded. They state DIFFERENT facts if any entity, "
+              "attribute or value differs. Answer with one word, yes or no.")
 
     def __init__(self, model: str = "gpt-5-mini", max_tokens: int = 500,
                  reasoning_effort: str = "minimal"):
