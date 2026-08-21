@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH="$PWD/src"
 
 echo "=== pw1 training: 2 epochs x 150 questions ==="
-python3 -m kb.train --universe data/pw1/universe.json --epochs 2 \
+python3 -m kb.train --universe data/pw1/universe.json --epochs 2 --train-size 100 \
   --seed 0 --model gpt-5-mini --n1 15 --n2 30 --m 15 \
   --out runs/pw1_main --eval-each-epoch > runs/pw1_main.log 2>&1
 
