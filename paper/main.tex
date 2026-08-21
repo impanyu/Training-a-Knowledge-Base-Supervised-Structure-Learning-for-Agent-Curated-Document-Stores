@@ -1109,7 +1109,14 @@ unsupervised agent operation on shared state.
 prose; phrasing regularity may flatter lexical matching (mitigated by embedding
 retrieval and by the planned official-PhantomWiki arm, whose generator we do not
 control). The reader and trainer share a model family, so structure tuned by the
-trainer may suit that family's search habits. Single seed in the basic version;
+trainer may suit that family's search habits. That family is also not the
+current one: \texttt{gpt-5-mini-2025-08-07} was the small reasoning model
+when these runs began, and several later generations exist. A stronger
+reader is the harder test for us, not the easier one --- the better it is at
+recovering a set by searching, the less an index can add --- so the effect
+of re-running on a current model is to shrink whatever margin we report,
+and we would expect the ordering among arms to survive rather than the
+magnitudes. Single seed in the basic version;
 single-agent by design (concurrent maintenance, with its conflict taxonomy, is the
 natural sequel); support-set diagnostics are unavailable on the external arm.
 Grading is token-F1 against short golds---adequate for entity answers, blunt for
