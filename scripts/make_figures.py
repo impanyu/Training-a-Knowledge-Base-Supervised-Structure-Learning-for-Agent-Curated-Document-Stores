@@ -70,15 +70,15 @@ links = [s["n_links"] for s in ser]
 authored = [s["authored_statements"] for s in ser]
 nodes_added = [s["n_nodes"] - ser[0]["n_nodes"] for s in ser]
 
-fig, (axa, axb) = plt.subplots(1, 2, figsize=(6.9, 2.4))
+fig, (axa, axb) = plt.subplots(1, 2, figsize=(6.9, 2.9))
 axa.plot(it, links, color=GREEN, lw=1.4, label="links")
 axa.plot(it, authored, color=VERM, lw=1.4, label="index documents")
 axa.plot(it, nodes_added, color=BLUE, lw=1.2, ls=":", label="net documents added")
 axa.axvline(100.5, color="0.6", ls="--", lw=0.8)
 axa.set_xlabel("training iteration")
 axa.set_ylabel("count")
-axa.legend(frameon=False, fontsize=7.5, loc="upper left")
-axa.set_title("(a) what the store accumulates", fontsize=9)
+axa.legend(frameon=False, fontsize=8.5, loc="upper left")
+axa.set_title("(a) what the store accumulates", fontsize=10)
 
 # (b) out-degree of every authored index in the final store
 final = json.load(open("/tmp/kbstate_200.json"))["store"]
@@ -88,7 +88,7 @@ import statistics
 axb.hist(degs, bins=range(0, max(degs) + 3), color=VERM, alpha=0.85, lw=0)
 axb.axvline(statistics.median(degs), color=BLUE, ls="--", lw=1.0)
 axb.text(statistics.median(degs) + 0.7, axb.get_ylim()[1] * 0.86,
-         f"median {statistics.median(degs):.0f}", fontsize=7, color=BLUE)
+         f"median {statistics.median(degs):.0f}", fontsize=8.5, color=BLUE)
 n_empty = sum(1 for d in degs if d == 0)
 axb.text(0.97, 0.72, f"{len(degs)} indexes\nmean {statistics.mean(degs):.1f}, "
          f"max {max(degs)}\n{n_empty} empty ({n_empty/len(degs):.0%})",
@@ -96,7 +96,7 @@ axb.text(0.97, 0.72, f"{len(degs)} indexes\nmean {statistics.mean(degs):.1f}, "
          color="0.25")
 axb.set_xlabel("out-degree of an index document")
 axb.set_ylabel("index documents")
-axb.set_title("(b) final out-degree distribution", fontsize=9)
+axb.set_title("(b) final out-degree distribution", fontsize=10)
 save(fig, "trajectory")
 
 

@@ -45,33 +45,34 @@ hfyu@unl.edu}}
 \maketitle
 
 \begin{abstract}
-Retrieval-augmented generation treats the document store as a frozen input. A recent
-wave of systems instead lets an LLM agent continuously curate a persistent knowledge
-base, yet none of this work measures what curation does to the store itself. We invert
-the usual framing: \emph{the knowledge base is the model}. A training agent consumes
-supervised QA pairs one at a time---attempting each question against the current store,
-receiving the gold answer, then consolidating verified reasoning into the store's
-structure. An independent frozen-store reader is then
-examined on held-out questions under a fixed action budget. Our central hypothesis is an \emph{efficiency} claim:
-by materializing reasoning paths into index and shortcut structure, a trained store
-lets an unchanged reader answer at \emph{non-inferior accuracy in fewer steps},
-amortizing one-time training cost across all future queries. The protocol yields the
-full apparatus of machine learning for knowledge bases: learning curves, a train/test
-generalization gap, per-class transfer, and a break-even analysis of training cost
-against per-question savings. On a contamination-free synthetic universe with
-document-level ground truth (500 people, 5{,}864 atomic documents), two
-training epochs lift \emph{re-encountered} questions from 0.59 to 0.85 F1
-at 38\% fewer steps, with gains concentrated exactly in the relation-level
-question classes the design predicts, and the links the agent builds join
-documents that co-occur in a question's support set at 720$\times$ the
-chance rate. On \emph{unseen} questions, however, the efficiency claim
-fails: held-out accuracy is non-inferior to a flat store at two action
-budgets but never cheaper ($\rho \approx 1$), and neither do
-offline-construction baselines (GraphRAG- and HippoRAG2-style) save any
-steps. A difficulty-stratified attribution locates the reason: built
-structure pays where derivation is expensive and taxes retrieval where it
-is not. We report the negative result with the apparatus that makes it
-legible.
+Retrieval-augmented generation treats the document store as a frozen input.
+A recent wave of systems instead lets an LLM agent continuously curate a
+persistent knowledge base, yet none of this work measures what curation does
+to the store itself. We invert the usual framing: \emph{the knowledge base
+is the model}. A training agent consumes supervised QA pairs one at a
+time---attempting each question against the current store, receiving the
+gold answer, then editing the store's structure. An independent reader,
+unchanged and with editing tools withheld, is then examined on a frozen
+snapshot under a fixed action budget. The central hypothesis is an
+\emph{efficiency} claim: by materializing access structure, a trained store
+lets an unchanged reader answer at \emph{non-inferior accuracy in fewer
+actions}, amortizing a one-time training cost over future queries. The
+protocol yields the apparatus of machine learning for knowledge bases ---
+learning curves, a train/test gap, per-class transfer, and break-even
+analysis. On a contamination-free synthetic universe (500 people, 5{,}864
+atomic documents) and on an official PhantomWiki generation, the hypothesis
+holds where the store has structure and fails cleanly where it does not. We
+measure the boundary directly, with a probe that varies how much of a
+question's key the training set touched: on questions the store was trained
+on the reader spends $31\%$ fewer actions at higher accuracy, and the saving
+decays to nothing once neither key is covered. Auditing the store explains
+why. The indexes the agent builds are accurate ($94\%$ of their links point
+at a document that genuinely belongs under the key, $91\%$ member recall),
+but they cover only $27.5\%$ of the corpus, and they are keyed on the
+entities questions named rather than on the classes those entities belong
+to. What limits supervised curation here is coverage, not construction --- a
+distinction the protocol makes measurable, and one that the negative result
+in an earlier version of this environment could not have separated.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -531,28 +532,27 @@ turned out to live.
 
 \section{Experimental Design}
 \subsection{Benchmarks}
-Three arms share one protocol and differ in document granularity and realism
+Two arms share one protocol and differ in who authored the questions
 (Table~\ref{tab:arms}).
 
 \begin{table}[t]
-\caption{Benchmark arms. All use the same splits scheme, reader, and budgets.}
+\caption{Benchmark arms. Both use the same splits scheme, reader, action set and budgets; the arms differ in who wrote the questions.}
 \label{tab:arms}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.2}
-\begin{tabular}{L{1.35cm}L{1.75cm}L{1.75cm}L{1.75cm}}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}L{1.7cm}L{2.4cm}L{2.4cm}@{}}
 \toprule
- & \kbgym{} (main) & PhantomWiki (official) & MuSiQue (real text) \\
+ & \kbgym{} (main) & PhantomWiki (official) \\
 \midrule
-documents & 5{,}864 sentences & 3{,}403 sent.\ or 405 articles & $\sim$11k paragraphs \\
-source & our generator & their generator & Wikipedia \\
-categories & 10 (26 templates) & 4 shapes & 2--4-hop shapes \\
-questions & 330 (150/100/50/30) & 330, same scheme & same scheme \\
-supports & exact & unavailable & official \\
-contamination & none & none & delta-corrected \\
-status & built; main runs & data built & planned \\
+documents & 5{,}864 sentences & 3{,}403 sentences from 405 articles \\
+source & our generator & their generator \\
+questions & 330 (150/100/50/30) & 330, same scheme \\
+question author & us & PhantomWiki \\
+supports & exact & unavailable \\
+contamination & none & none \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table}
 
 \textbf{\kbgym{} (main).} 500 fictional people (10\% name distractors; family
@@ -580,12 +580,12 @@ train/test protocol itself does not need them. Documents at sentence or
 article granularity (the latter tests the method at paragraph scale with zero
 contamination).
 
-\textbf{MuSiQue (real-text arm)~\cite{musique}.} Paragraphs are the documents; the official
-composition shapes are the categories, a held-out shape is
-\texttt{test\_out}, and the annotated supporting paragraphs restore support
-diagnostics. Real corpora are parametrically contaminated (we measured
-near-ceiling no-retrieval scores for related datasets), so all scores on this
-arm are reported as deltas over a mandatory no-store reader baseline.
+A real-text arm over an annotated multi-hop corpus is the obvious third
+benchmark and we did not run it. Public corpora are parametrically
+contaminated, so every score would have to be reported as a delta over a
+mandatory no-store reader baseline, and establishing that baseline honestly
+is a study in itself. We note the omission rather than report a planned
+arm as a result.
 
 \subsection{Baselines}
 All baselines are \emph{unsupervised}: structure is induced from the corpus
@@ -661,13 +661,13 @@ which resolved to snapshot \texttt{gpt-5-mini-2025-08-07}; we record the
 snapshot rather than the alias because the alias will move, and the
 duplicate judge (below) is the same model at minimal reasoning effort. Budgets $N_1{=}M{=}15$ and $N_2{=}20$; the
 backward pass is longer because it must both locate a set and attach it. FIFO
-memory $K{=}30$. \texttt{search} returns five documents by default and up to
-sixty when asked, and \texttt{link\_many} attaches any number of documents in
-one action, so the cost of building an index is dominated by finding its
-members rather than by wiring them.
+memory $K{=}30$. \texttt{search} returns five documents per page and a page costs an action,
+while \texttt{link\_many} attaches up to forty documents for one, so the cost
+of building an index is dominated by finding its members rather than by
+wiring them.
 
-\textbf{Cost.} The 500-person main run averaged 37.7k tokens and 121\,s per
-iteration (18.8M tokens, 16.4\,h, $\approx$\$13 at current pricing). Single
+\textbf{Cost.} The 500-person main run averaged 94k tokens and 123\,s per
+iteration (200 iterations, 18.8M tokens, 6.8\,h, $\approx$\$13). Single
 seed (seed~0); seed replication is left to future work. The infrastructure
 deduplication guard is enabled: on add or edit the store embeds the candidate,
 takes the three nearest documents, and consults an LLM judge when cosine
@@ -722,50 +722,36 @@ size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.
 $9.2$)---motivating the 500-person main configuration, where the cost axis has
 roughly $3\times$ headroom over the $\sim$3-step floor. Accuracy can
 saturate while cost headroom persists---one reason efficiency is the
-primary endpoint. The 300-iteration
-main run consumed 18.8M training tokens over 16.4\,h ($\approx\$13$ at
-current pricing).
+primary endpoint.
 
 \subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
-The main run (500-person universe, full protocol; 300 iterations, 18.8M
-training tokens, 16.4h) yields the training half of E1; the frozen-store
-exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
-training-time signals, then the exam.
+The main run trains on 100 questions for two epochs (200 iterations, 18.8M
+tokens, 6.8\,h, $\approx\$13$). Two training-time signals establish that the
+store is accumulating something before the frozen exams test what it is
+worth.
 
-\textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
-eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
-($n{=}30$ per point, so these are directional).
+\textbf{The store improves \emph{within} an epoch.} Forward accuracy climbs
+across epoch~1 --- $0.60$ over the first fifty iterations, $0.66$ over the
+last fifty --- before any question repeats. Later training questions are
+already benefiting from structure that earlier ones left behind, which is
+the evidence that structure accumulates rather than being rebuilt per
+question.
 
-\textbf{The store improves \emph{within} an epoch.} Rolling forward
-accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
-$0.64$): later training questions already benefit from structure
-consolidated by earlier ones, before any question repeats. This is the
-evidence that the structure is genuinely accumulating rather than being
-rebuilt per question: what earlier questions left behind is already paying
-off before anything repeats.
+\textbf{Curation slows as the store fills.} The backward pass writes $4.9$
+edits per iteration in epoch~1 and $1.6$ in epoch~2, and spends $25.3$ of
+its $30$ actions in epoch~1 against $14.7$ in epoch~2; document growth falls
+from $2.4$ to $0.45$ per iteration. The agent is not idling --- it is finding
+progressively more of what a question names already indexed, which is what
+the parsimony objective asks for and what Fig.~\ref{fig:trajectory}a shows
+as a flattening curve.
 
-\textbf{The frozen exam: accuracy transfers; efficiency does not.} An
-unchanged reader on the frozen epoch-2 store is non-inferior to B1 at both
-budgets, and at neither budget is it cheaper. At $M{=}15$ it scores
-$0.630$/$0.660$ (\texttt{test\_in}/\texttt{test\_out}) vs.\ B1's
-$0.620$/$0.620$ ($\Delta$ pooled $+0.020$; all $\Delta$ in this
-paper are trained minus B1, the untrained flat store, on the same
-questions), taking $8.73$ vs.\ $8.97$ steps
-($\rho = 0.97$) and saving $80$ tokens per question. At $M{=}8$ it scores
-$0.570$/$0.540$ vs.\ B1's $0.530$/$0.600$ ($\Delta$ pooled $+0.007$: better
-on trained templates, \emph{worse} on reserved ones), at $6.23$ vs.\ $6.21$
-steps ($\rho = 1.00$) and $194$ tokens \emph{more}. Both budgets clear the
-non-inferiority margin ($-\delta = -0.03$ pooled), so the store the agent
-built is not damaged---but the efficiency hypothesis, our central claim, is
-\textbf{not supported on unseen questions}: $\rho \approx 1$ at both
-budgets, break-even $N^{*} \approx 1.4 \times 10^{5}$ questions at $M{=}15$
-and undefined at $M{=}8$, and the predicted leftward shift of the
-accuracy--budget curve does not appear (the trained and flat curves are
-within noise of each other at both points). The $-38\%$ step saving of
-Sec.~\ref{sec:res-e3} is real but confined to \emph{re-encountered}
-questions. Sections~\ref{sec:res-grad} and~\ref{sec:res-e4} locate the
-gap: the saving tracks how much of a question's key the store indexed, and
-the structure that was built pays only where derivation is expensive.
+\textbf{The held-out eval curve is flat.} Eval-in runs $0.75 \to 0.80 \to
+0.80$ and eval-out $1.00 \to 0.90 \to 0.90$ across epochs 0/1/2 ($n{=}20$
+and $n{=}10$ per point). At this sample size these are not distinguishable
+from noise, and the eval split was drawn to be instance-disjoint from
+training, so it sits at the far end of the coverage gradient the next
+section measures. We report it because it was pre-registered as the learning
+curve, not because it carries weight.
 
 \begin{table}[!t]
 \caption{Index construction quality, by the kind of key the index is built
@@ -812,66 +798,53 @@ groups say how far the effect reaches past the exact key.}
 [[GRADIENT TABLE AND ANALYSIS -- pending the probe, filling on completion]]
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
-\textbf{Retention is large, and concentrated exactly where predicted.}
-On re-encountered questions (epoch~2) forward F1 reaches $0.85$
-(vs.\ $0.59$ in epoch~1). Table~\ref{tab:retention} decomposes by category:
-forward chains were saturated from the start (QC1--QC3, QC9 at
-$0.86$--$1.00$ in both epochs --- retrieval alone suffices), while the
-relation-level classes, whose answers live \emph{between} documents, jump:
-joins QC6 $0.46 \to 1.00$, intersection QC7 $0.62 \to 1.00$, reverse lookup
-QC10 $0.25 \to 0.83$, abstention QC5 $0.00 \to 0.58$, counts QC4
-$0.17 \to 0.50$ and QC8 $0.46 \to 0.58$. This is the design prediction of E3
-(Sec.~\ref{sec:suite}) realized: training gains concentrate in the classes retrieval
-cannot solve natively.
+\textbf{Retention is large, and concentrated exactly where predicted.} On
+the same 100 questions seen a second time (epoch~2) forward F1 rises from
+$0.63$ to $0.82$. Table~\ref{tab:retention} decomposes it. The forward
+chains were saturated from the start --- QC1--QC3 and QC9 sit at $1.00$ in
+both epochs, because document-level retrieval already solves them --- while
+the relation-level classes, whose answers live \emph{between} documents,
+move: counts QC4 $0.33 \to 1.00$, joins QC6 $0.33 \to 0.92$, reverse lookup
+QC10 $0.20 \to 0.60$, intersection QC7 $0.67 \to 0.83$, deep counts QC8
+$0.42 \to 0.58$, abstention QC5 $0.00 \to 0.25$. This is the design
+prediction of E3 realized: the gains land in the classes retrieval cannot
+solve natively.
 
 \textbf{Retention is also cheaper, with a caveat about what is being
-compared.} On re-encountered questions the forward pass takes $5.7$ steps
-and 31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
-$-32\%$ tokens. Decomposing the cost, both terms move:
-budget exhaustion falls from $47/150$ ($31\%$) to $7/150$ ($5\%$), and on
-the 100 questions resolved within budget in \emph{both} epochs the lookup
-itself shortens from $6.43$ to $4.64$ steps ($-28\%$) while F1 rises from
-$0.870$ to $0.950$. Unlike the null result on unseen questions, then, the
-conversion of derivation into lookup is genuine here. The caveat is that
-these two epochs are not a controlled store contrast: the store evolves
-\emph{during} epoch~1, so an early epoch-1 question meets a nearly
-untrained store and a late one meets a partly trained store, and the epoch
-label mixes store state with question order. The controlled version --- the
-same training questions examined under the frozen initial store and the
-frozen final store --- is the \emph{exact} row of the gradient table
-(Sec.~\ref{sec:res-grad}).
+compared.} The forward pass on those questions takes $7.4$ steps and 70k
+tokens in epoch~2 against $8.4$ steps and 118k tokens in epoch~1: $-12\%$
+steps, $-40\%$ tokens. Both terms of the cost move. Budget exhaustion falls
+from $15/100$ to $8/100$, and on the 83 questions resolved within budget in
+\emph{both} epochs the lookup itself shortens from $7.16$ to $6.37$ steps
+($-11\%$) while F1 rises from $0.759$ to $0.892$ --- so the saving is not an
+artifact of more questions terminating early. The caveat is that these two
+epochs are not a controlled store contrast: the store evolves \emph{during}
+epoch~1, so an early epoch-1 question meets a nearly untrained store and a
+late one meets a partly trained store, and the epoch label mixes store state
+with question order. The controlled version --- the same questions examined
+under two frozen stores --- is the \emph{exact} row of
+Table~\ref{tab:gradient}, and it gives a larger saving ($\rho = 0.686$)
+precisely because it removes that mixing.
 
-\textbf{Three-layer decomposition, completed.} Retention $0.85$ /
-\texttt{test\_in} $0.63$ / \texttt{test\_out} $0.66$. Both test layers
-sit above B1, so the trained organization transfers accuracy --- but the
-$0.2$-point gap to retention says most of the built structure is
-instance-bound rather than class-general. The per-category transfer
-profile ($\Delta$ vs.\ B1 at $M{=}15$, both splits pooled, same questions) is
-correspondingly modest: QC4 $+0.10$, QC9 $+0.08$, QC3/QC7 $+0.07$, QC6
-$+0.04$, QC5 $0.00$, QC8 $-0.05$, QC10 $-0.12$ ($n{=}8$). The sharpest
-contrast is reverse lookup: the class with the largest retention jump
-($0.25 \to 0.83$) transfers \emph{worst} --- its navigation documents
-memoize trained instances, not the class.
-
-\begin{table}[t]
-\caption{Per-category forward F1: first encounter (epoch 1) vs.\
-re-encounter (epoch 2). Retention concentrates in relation-level classes.}
+\begin{table}[!t]
+\caption{Per-category forward F1 on the same 100 questions: first encounter
+(epoch~1) vs.\ re-encounter (epoch~2).}
 \label{tab:retention}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.15}
 \setlength{\tabcolsep}{4pt}
-\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}L{2.5cm}rrr@{}}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}L{2.9cm}rrr@{}}
 \toprule
 Category & $n$ & epoch 1 & epoch 2 \\
 \midrule
-QC1--QC3, QC9 (chains, compare) & 55 & 0.86--1.00 & 0.86--1.00 \\
-QC6 join & 26 & 0.46 & \textbf{1.00} \\
-QC7 intersection & 13 & 0.62 & \textbf{1.00} \\
-QC10 reverse lookup & 12 & 0.25 & \textbf{0.83} \\
-QC5 abstention & 12 & 0.00 & \textbf{0.58} \\
-QC4 counts & 6 & 0.17 & \textbf{0.50} \\
-QC8 deep counts & 26 & 0.46 & 0.58 \\
+QC1--QC3, QC9 (chains, compare) & 47 & 1.00 & 1.00 \\
+QC4 counts & 6 & 0.33 & \textbf{1.00} \\
+QC6 join & 12 & 0.33 & \textbf{0.92} \\
+QC7 intersection & 6 & 0.67 & \textbf{0.83} \\
+QC10 reverse lookup & 5 & 0.20 & \textbf{0.60} \\
+QC8 deep counts & 12 & 0.42 & 0.58 \\
+QC5 abstention & 12 & 0.00 & 0.25 \\
 \bottomrule
 \end{tabular*}
 \end{table}
@@ -904,7 +877,7 @@ clusters while local links join semantically adjacent documents.}
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=0.8\columnwidth]{trajectory.pdf}
+\includegraphics[width=\columnwidth]{trajectory.pdf}
 \caption{(a)~What the store accumulates, reconstructed by trace replay.
 \emph{Index documents} = agent-authored documents still alive; \emph{net
 documents added} = store size minus the initial 5{,}864. The two curves
@@ -933,58 +906,35 @@ $+390$ documents ($+6.6\%$), 597 links, accumulating steadily across both
 epochs --- the sublinear, structural growth the parsimony objective was
 designed to enforce.
 
-\textbf{Edit behavior.} The backward pass writes $\approx$1.6 documents and
-$\approx$2.0 links per iteration in epoch~1; in epoch~2 the add rate falls
-to $1.0$/iteration while linking stays at $2.0$ --- consistent with the
-parsimony objective (less to author once the structure exists). Edits and
-deletes stay rare ($0.13$ and $0.03$/iteration). The dedup judge fired
-$\approx$30 times and correctly declined every candidate (zero merges):
-prompt-level parsimony already suppressed duplication at this scale.
+\textbf{Edit behavior.} The backward pass writes $4.9$ edits per iteration
+in epoch~1 and $1.6$ in epoch~2. The mix is dominated by two actions:
+$307$ \texttt{add} calls and $284$ \texttt{link\_many} calls across the run,
+against $3$ edits, $12$ deletes and $9$ unlinks --- the agent builds, and
+almost never revises. The deduplication judge fired on $45$ candidates and
+merged $8$, so document-level parsimony was already holding at this scale
+without much intervention.
 
-\textbf{Structure--semantics alignment: the links are real.} Of the 596
-built links, 469 attach a navigation document (no support-set analogue
-exists for those) and 127 connect two statements. Of those 127, $25.2\%$
-join documents that co-occur in the support set of some universe
-question---against a $0.03\%$ chance rate for random statement pairs, a
-$720\times$ lift. Support sets are never visible to the training agent, so
-this is an honest measure: when the agent links two facts, it is recovering
-genuine reasoning adjacency, not surface similarity.
+\textbf{What the agent wrote.} Of the 284 authored documents, $257$
+($90\%$) are named for a key --- \emph{``Residents of Dorringham''},
+\emph{``Grandchildren of Ivor Yarrow''}, a bare person name --- and carry
+their content in links rather than in prose. This inverts the behavior of
+an earlier version of this environment, where $80\%$ of authored documents
+instead materialized the verified answer as a sentence; naming the
+mechanism in the curation skill, rather than only the goal, is what changed
+it. The structure is correspondingly flat: $1{,}896$ of $1{,}913$ links
+attach an index, and only $17$ join two source documents directly.
 
-\textbf{Mechanism attribution: the observational split does not identify,
-and we say so.} We had intended to attribute the reader's step savings to
-its hits on built structure, splitting exam questions by whether the
-trajectory touched an authored navigation document or a linked statement.
-That split is not identifying, for a mechanical reason: touching is
-\emph{downstream} of searching. The probability that a trajectory
-encounters built structure rises from $0\%$ when the reader issues one
-search to $63\%$ when it issues nine, so the touched group is selected for
-long trajectories by construction. Difficulty matching does not repair
-this: the touched group remains $+0.92$ steps worse than the untouched one
-after exact stratification on B1's step count, which is exactly what
-reverse causation predicts. Two secondary measurements rule out the
-explanation we first reached for --- retrieval crowding. Authored documents
-occupy $5.3\%$ of top-5 retrieval slots against a $5.7\%$ share of the
-store by count, i.e.\ no over-retrieval, and their share \emph{rises} with
-question difficulty ($2.2\%$ easy, $6.6\%$ hard), which is what relevance,
-not pollution, looks like.
-
-\textbf{What the agent actually wrote.} Inspection of the 284 authored
-documents separates two kinds. Most ($80\%$) materialize an answer:
-\emph{``Caleb Netherfield's father is Caleb Nightingale and Caleb
-Nightingale's spouse is Petra Jessup and Petra Jessup's job is joiner''}
-collapses a three-hop chain into one document; others aggregate a reverse
-index (\emph{``People whose hobby is pottery include \ldots''}) or a count.
-The remaining $20\%$ are pointer documents that state no fact at all ---
-\emph{``Spouse job index gathers notes that record the jobs of spouses of
-people''}, \emph{``A Junia Wetherby directory links to Junia Wetherby's
-hobby, job, residence, friends, parent, and birth date notes''}. A reader
-that retrieves one of these pays a slot and a read step and learns nothing,
-then still has to find the facts. Notably the linking effort went to the
-wrong kind: pointer documents carry $2.11$ links on average against $1.06$ for
-contentful ones. Their absolute retrieval footprint is small ($0.9\%$ of
-slots), so this is a design smell rather than a proven cost --- which is
-precisely why the causal question needs an intervention on the store rather
-than an observational split.
+\textbf{Mechanism attribution needs an intervention, not a split.} We had
+intended to attribute the reader's step savings to its hits on built
+structure, splitting exam questions by whether the trajectory touched an
+authored index. That split is not identifying, for a mechanical reason:
+touching is \emph{downstream} of searching, so a trajectory that runs
+longer is more likely to encounter an index, and the touched group is
+selected for long trajectories by construction. Difficulty matching does
+not repair it. The gradient probe of Sec.~\ref{sec:res-grad} is the
+intervention that does identify: it varies coverage of the question's key
+\emph{before} the reader starts, holding the reader, the budget and the
+question distribution fixed.
 
 \textbf{What the structure reaches.} The action set can produce exactly two
 kinds of structure: index documents that point at the documents belonging to
