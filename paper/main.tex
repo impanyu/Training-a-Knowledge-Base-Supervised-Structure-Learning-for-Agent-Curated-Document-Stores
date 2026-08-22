@@ -751,8 +751,8 @@ corpus they span. What separates us from B3 is therefore not the quality of
 the structure but how much of the corpus carries any.
 
 \begin{table}[!t]
-\caption{What a point of corpus coverage buys, pooled over all 120 probe
-questions. Each arm's gain over the untrained flat store, divided by the
+\caption{What a point of corpus coverage buys. Each arm's gain over the
+untrained flat store, pooled over all 120 probe questions, divided by the
 share of the corpus its indexes reach. The offline arms index everything;
 ours indexes the part its training questions named.}
 \label{tab:percoverage}
@@ -762,8 +762,7 @@ ours indexes the part its training questions named.}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrr@{}}
 \toprule
-Store & coverage & actions saved & F1 gained \\
- & & \multicolumn{2}{c}{per point of coverage} \\
+Store & coverage & actions / pt & F1 / pt \\
 \midrule
 B1 flat & 0\% & --- & --- \\
 B2 GraphRAG & 100\% & $0.003$ & $-0.0002$ \\
