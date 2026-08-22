@@ -838,17 +838,60 @@ structure transfers as accuracy on questions the flat store cannot finish,
 and as step savings only on the questions it was trained on. Reporting one
 number for ``does it generalize'' would have hidden both halves.
 
-\textbf{Against unsupervised construction we are level at best.} B3's
-entity indexes save steps in every group ($\rho$ between $0.71$ and $0.78$),
-because they were built over the whole corpus without regard to any
-question. A paired comparison on the same questions puts us level with B3 on
-the trained group (difference $-0.87$ steps, CI $[-2.40, +0.57]$) and behind
-it everywhere else (CIs excluding zero in all three). Supervised curation
-buys, for 18.8M tokens, an advantage on the training distribution that an
-unsupervised lexical pass gets everywhere for nothing. That is the honest
-comparison, and it is the strongest argument in the paper for why the
-\emph{class}-keyed protocol of Sec.~\ref{sec:disc} is the experiment worth
-running next.
+\subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
+B3 is left out of Table~\ref{tab:gradient} because coverage is not a
+variable for it: its entity index reaches $100\%$ of the corpus in every
+group, so a gradient defined by what training touched cannot be applied to
+it. The comparison it does support is efficiency per unit of coverage, and
+that comparison is favourable.
+
+Pooled over all 120 probe questions, B1 answers in $9.8$ actions at F1
+$0.725$. B3, indexing the whole corpus, reaches $7.3$ actions and $0.908$;
+our store, indexing $27.6\%$ of it, reaches $8.7$ and $0.817$. Per point of
+corpus coverage that is $0.039$ actions saved and $+0.0033$ F1 for us
+against $0.025$ and $+0.0018$ for B3 --- $1.6\times$ and $1.8\times$ more per
+point covered. B2, which also covers everything, returns $0.003$ actions and
+\emph{negative} F1 per point: coverage alone is not the mechanism, and
+community summaries are the wrong structure regardless of how much of the
+corpus they span. What separates us from B3 is therefore not the quality of
+the structure but how much of the corpus carries any.
+
+\textbf{Coverage is bounded by the training set, not by the method.}
+Fig.~\ref{fig:coverage} makes the distinction visible. Through epoch~1 the
+reachable share of the corpus grows almost linearly in questions consumed,
+at $0.25$ points per question. Epoch~2 re-asks the same hundred questions
+and the curve flattens immediately --- $24.8\%$ to $27.6\%$ over a hundred
+further iterations. Nothing saturated; the supply of new keys ran out.
+Extending the epoch-1 slope reaches full coverage at roughly $400$ distinct
+training questions and $\approx 48$M tokens, one order of magnitude of
+training away rather than a change of method. That projection is a lower
+bound: the largest keys are hit first, so later questions cover less each,
+and we state it as an extrapolation rather than a result.
+
+\textbf{The protocol is already the online one.} Training consumes questions
+one at a time and edits in place; nothing in the loop needs the question set
+in advance, and the frozen-store exam is a measurement device rather than a
+deployment constraint. A store curated against live traffic would therefore
+accumulate coverage on exactly the keys its users ask about --- the
+distribution where, by Table~\ref{tab:gradient}, coverage is worth the most.
+Offline construction cannot follow a query distribution it never sees. We
+did not run that experiment: separating a training phase from a frozen exam
+is what makes the generalization question answerable at all, and an
+always-learning store cannot be said to have been tested on anything. The
+two readings are complementary, and the online one is the deployment we
+think this protocol is actually for.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{coverage.pdf}
+\caption{Corpus coverage against training. Epoch~1 consumes a hundred new
+questions and coverage grows linearly in them; epoch~2 re-asks the same
+hundred and the curve flattens, so what bounds coverage is the number of
+distinct questions seen, not the method reaching its limit. The dotted line
+extends the epoch-1 slope to the $100\%$ that offline construction starts
+from.}
+\label{fig:coverage}
+\end{figure}
 
 \begin{table}[!t]
 \caption{The key-coverage gradient. $\rho$ = actions relative to the
@@ -870,12 +913,12 @@ B1 flat & 1.000 & 1.000 & 1.000 & 1.000 \\
  & \emph{(0.700)} & \emph{(0.600)} & \emph{(0.767)} & \emph{(0.833)} \\
 B2 GraphRAG & 0.909 & 0.984 & 1.036 & 0.947 \\
  & \emph{(0.633)} & \emph{(0.567)} & \emph{(0.833)} & \emph{(0.800)} \\
-B3 HippoRAG2 & 0.777$^{*}$ & \textbf{0.720}$^{*}$ & \textbf{0.779}$^{*}$ & \textbf{0.708}$^{*}$ \\
- & \emph{(0.867)} & \emph{(0.900)} & \emph{(0.967)} & \emph{(0.900)} \\
 Ours (trained) & \textbf{0.686}$^{*}$ & 0.935 & 1.032 & 0.904$^{*}$ \\
  & \emph{(0.800)} & \emph{(0.767)} & \emph{(0.867)} & \emph{(0.833)} \\
 \midrule
 \multicolumn{5}{@{}l}{$n=30$ per group; same reader, action set and budget $M{=}15$.}\\
+\multicolumn{5}{@{}l}{B3 is compared separately (Sec.~\ref{sec:res-perlink}): it}\\
+\multicolumn{5}{@{}l}{indexes the whole corpus, so coverage is not a variable for it.}\\
 \bottomrule
 \end{tabular*}
 \end{table}

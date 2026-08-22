@@ -63,6 +63,51 @@ def gradient_curve():
 gradient_curve()
 
 
+# ---------- Fig: coverage, measured and projected ----------
+def coverage_projection():
+    """How much of the corpus an index reaches, against training questions.
+
+    Epoch 1 consumes 100 new questions and the curve is close to linear in
+    them. Epoch 2 re-asks the same 100 and the curve flattens, which is the
+    evidence that coverage is bounded by the number of DISTINCT questions
+    seen rather than by the method saturating. The projection extends the
+    epoch-1 slope; it is a lower bound, since the largest keys are hit first.
+    """
+    import numpy as np
+    pts = []
+    for N in ITERS:
+        st = json.load(open(f"runs/v11_main/snaps/kb_{N}.json"))["store"]
+        seeds = set(st["origins"])
+        reach = {t for n in st["nodes"] if n["id"] not in seeds
+                 for t in (n.get("links") or []) if t in seeds}
+        pts.append((N, 100 * len(reach) / len(seeds)))
+    e1 = [(n, c) for n, c in pts if n <= 100]        # new questions
+    e2 = [(n, c) for n, c in pts if n >= 100]        # repeats
+
+    fig, ax = plt.subplots(figsize=(3.5, 2.6))
+    slope = e1[-1][1] / e1[-1][0]
+    xp = np.array([0, 100 / slope])
+    ax.plot(xp, slope * xp, color="0.6", ls=":", lw=1.2,
+            label=f"projection ({slope:.2f}% per question)")
+    ax.axhline(100, color=BLUE, lw=1.2, ls="--")
+    ax.text(58, 102.5, "offline construction (B2, B3): 100%",
+            fontsize=6.4, color=BLUE)
+    ax.plot([n for n, _ in e1], [c for _, c in e1], "o-", color=VERM, lw=1.6,
+            ms=3.6, label="epoch 1 (new questions)")
+    ax.plot([n for n, _ in e2], [c for _, c in e2], "s-", color=ORANGE,
+            lw=1.6, ms=3.4, label="epoch 2 (the same 100, repeated)")
+    ax.annotate(f"{100/slope:.0f} distinct questions", xy=(100 / slope, 100),
+                xytext=(-6, -26), textcoords="offset points", fontsize=6.4,
+                color="0.35", ha="right")
+    ax.set_xlabel("training iterations (one question each)")
+    ax.set_ylabel("corpus reachable from an index (%)")
+    ax.set_ylim(0, 112)
+    ax.legend(frameon=False, fontsize=6.4, loc="center right")
+    save(fig, "coverage")
+
+coverage_projection()
+
+
 # ---------- Fig: store trajectory + final out-degree ----------
 ser = [json.loads(l) for l in open(RUN / "series.jsonl")]
 it = list(range(len(ser)))
