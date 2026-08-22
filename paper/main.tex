@@ -617,19 +617,16 @@ because it was pre-registered, not because it carries weight.
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{learning.pdf}
-\caption{Six frozen snapshots of one training run, read two ways. The
-reader, action set, budget and questions are identical at every point, so
-the only thing varying is the store. \emph{(a, b)} Cost and accuracy per
-question group against training iteration: \emph{trained on this question}
-improves steadily, \emph{neither key seen} does not move, and the two
-intermediate groups say how far the effect reaches past the exact key.
-\emph{(c, d)} The same runs pooled, against the share of the corpus the
-store's indexes reach --- the one axis the offline baselines also sit on,
-at $100\%$. Reading left to right is reading the training run forwards. Our curve stops
-at $27.6\%$ because training stopped, not because the trend did: the shaded
-band is corpus the hundred training questions never named. The distance to
-B3 is distance along that axis, not a difference in what a point of coverage
-is worth (Table~\ref{tab:percoverage}).}
+\caption{Six frozen snapshots from epoch~1, read two ways. The reader,
+action set, budget and questions are identical at every point, so the only
+thing varying is the store. \emph{(a, b)} Cost and accuracy per question
+group against training iteration: the trained group improves while the three
+untrained groups do not, and the ordering is already visible within a single
+epoch. \emph{(c, d)} The same runs pooled, against the share of the corpus
+the store's indexes reach --- the quantity training actually buys. Accuracy
+rises steadily with coverage; cost falls more noisily. Coverage reaches
+$24.8\%$ by the end of the epoch, and the second epoch (Sec.~E2) adds the
+remaining cost saving without adding accuracy.}
 \label{fig:learning}
 \end{figure*}
 

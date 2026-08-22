@@ -82,14 +82,6 @@ def gradient_and_coverage():
             fs.append(sum(r["f1"] for r in rows) / len(rows))
         if not xs:
             continue
-        p = "runs/grad_trained/test_log.jsonl"
-        if os.path.exists(p):
-            fin = [json.loads(l) for l in open(p)
-                   if json.loads(l).get("split") == split]
-            if fin:
-                xs.append(200)
-                ys.append(sum(r["steps"] for r in fin) / len(fin))
-                fs.append(sum(r["f1"] for r in fin) / len(fin))
         for ax, vals in ((a_s, ys), (a_f, fs)):
             ax.plot(xs, vals, marker=marker, ls=ls, color=color, lw=1.4,
                     ms=3.4, label=label)
@@ -117,28 +109,17 @@ def gradient_and_coverage():
     final = arm("grad_trained")          # epoch-2 store, 27.6% coverage
     if final:
         xs.append(27.6); ys.append(final[0]); fs.append(final[1])
-    b2, b3 = arm("grad_graphrag"), arm("grad_hipporag")
     for ax, vals, j in ((b_s, ys, 0), (b_f, fs, 1)):
         if xs:
             ax.plot(xs, vals, "o-", color=VERM, lw=1.6, ms=4, label="ours")
             # the curve stops because training stopped, not because data is
             # missing: 100 questions reach 27.6% of the corpus
-            ax.axvspan(xs[-1], 100, color="0.5", alpha=0.07, lw=0)
-            ax.annotate("", xy=(97, vals[-1]), xytext=(xs[-1] + 2, vals[-1]),
-                        arrowprops=dict(arrowstyle="->", color=VERM, lw=1.0,
-                                        ls=(0, (3, 3)), alpha=0.75))
-            ax.text((xs[-1] + 100) / 2, vals[-1],
-                    "not trained\nthis far", ha="center", va="bottom",
-                    fontsize=5.8, color="0.35")
-        if b3:
-            ax.plot([100], [b3[j]], "^", color=BLUE, ms=6, label="B3 HippoRAG2")
-        if b2:
-            ax.plot([100], [b2[j]], "s", color="0.45", ms=5, label="B2 GraphRAG")
-        ax.set_xlim(-4, 108)
+
+        ax.set_xlim(-1.5, 29.5)
 
     for ax in (a_s, a_f):
         ax.set_xlabel("training iteration (frozen snapshot)")
-        ax.set_xticks(ITERS + [200])
+        ax.set_xticks(ITERS)
     for ax in (b_s, b_f):
         ax.set_xlabel("corpus reachable from an index (%)")
     for ax in (a_s, b_s):
@@ -150,7 +131,6 @@ def gradient_and_coverage():
     b_s.set_title("(c) cost vs coverage, pooled", fontsize=8.5)
     b_f.set_title("(d) accuracy vs coverage, pooled", fontsize=8.5)
     a_s.legend(frameon=False, fontsize=6.4, loc="lower left")
-    b_s.legend(frameon=False, fontsize=6.4, loc="upper right")
     fig.subplots_adjust(hspace=0.52, wspace=0.28)
     save(fig, "learning")
 
