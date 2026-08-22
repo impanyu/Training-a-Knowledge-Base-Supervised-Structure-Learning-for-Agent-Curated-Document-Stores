@@ -687,27 +687,30 @@ number reported here for merges therefore comes from a judge that actually
 answered.
 
 \subsection{Experiment Suite and Predictions}\label{sec:suite}
-\textbf{E1 (headline).} Learning curve: eval-split F1 and steps after each
-epoch (epoch~0 = B1); final \texttt{test\_in}/\texttt{test\_out} pass on the
-last snapshot, at $M \in \{8, 15\}$. Prediction: non-inferior accuracy with
-fewer steps, and a leftward shift of the accuracy--budget curve (the trained
-store dominates at tight budgets). \textbf{E2.} The baseline table: F1,
-steps/question, build tokens, per-question tokens, for B1/B2/B2/ours on
-both test splits. \textbf{E3} (log slicing). Three-layer generalization
-(train-forward from epoch~2 / \texttt{test\_in} / \texttt{test\_out}) and the
-per-category profile. Prediction: forward classes QC1--QC3 are saturated near
-1.0 at $M{=}15$ (they are the non-inferiority floor, not the headroom);
-gains concentrate in aggregation (QC4/QC8), joins (QC6), intersection (QC7)
-and reverse lookup (QC10), whose answers live in relations between documents;
-QC5 abstention is expected unchanged. \textbf{E4} (trace mining). (i)
-edit-type mix per epoch; (ii) store-size trajectory from replay (the
-parsimony objective predicts sublinear growth); (iii) morphology of authored navigation documents
-(out-degree distribution, what they gather); (iv) structure--semantics
-alignment: the share of built links connecting documents that co-occur in
-some support set (supports are invisible to the agent, making the measure
-honest); (v) mechanism attribution: correlation between a reader's step
-savings and its hits on authored navigation documents and trained links.
-Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
+\textbf{E1.} Training dynamics: within-epoch accuracy, the edit mix per
+epoch, and the per-epoch eval curve. Prediction: structure accumulates, so
+later training questions benefit from what earlier ones left behind, and
+curation activity falls as the store fills.
+
+\textbf{E2 (headline).} The key-coverage gradient. Four question groups,
+equal size, differing only in how much of the question the training set
+touched: the trained question itself; a new question of a trained template
+whose two keys both appeared in training; one key; neither. All four are
+examined on the same frozen store by the same reader under the same budget,
+alongside B1, B2 and B3. Prediction: $\rho$ rises monotonically from the
+exact group towards $1$, and the rate at which it rises \emph{is} the
+transfer radius --- the quantity a train/test split reports as a single
+pass or fail.
+
+\textbf{E3.} Retention and its per-category profile. Prediction: forward
+classes QC1--QC3 and QC9 are saturated at $M{=}15$ and form the
+non-inferiority floor, not the headroom; gains concentrate in aggregation
+(QC4, QC8), joins (QC6), intersection (QC7) and reverse lookup (QC10),
+whose answers live in relations between documents.
+
+\textbf{E4.} Store audit: what the agent wrote, what its indexes reach, and
+how accurate they are, scored against the universe rather than by string
+match. Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Experiment Results}\label{sec:prelim}
 All results below are from the final environment (Sec.~\ref{sec:env})
@@ -800,7 +803,82 @@ groups say how far the effect reaches past the exact key.}
 \label{fig:learning}
 \end{figure}
 
-[[GRADIENT TABLE AND ANALYSIS -- pending the probe, filling on completion]]
+How far does built structure reach? A train/test split answers that with a
+single number, which conflates two very different failures: a store that
+memorized its training questions and a store that generalizes but was never
+given enough of the corpus to cover the test set. We separate them by
+constructing four question groups that differ only in how much of the
+question the training set touched. \kbgym{} is generated, so the full
+instance pool of every template is available: from it we sample, for the six
+two-slot trained templates, thirty questions whose \emph{both} keys appeared
+in some training question, thirty with exactly one, and thirty with neither,
+plus thirty of the training questions themselves. All four groups are then
+examined on the same frozen store, by the same reader, under the same budget
+--- only coverage varies.
+
+Table~\ref{tab:gradient} is the result and Fig.~\ref{fig:learning} its
+training-time version. The step saving is real and it is narrow. On the
+questions the store trained on, the reader spends $31\%$ fewer actions
+($\rho = 0.686$, CI $[0.52, 0.84]$) at higher accuracy than on the untrained
+flat store. One step away --- same template, both keys indexed, different
+question --- the saving is gone ($\rho = 0.935$, CI spanning $1$), and it
+does not return. Coverage of the keys is therefore \emph{not} what buys the
+saving; having answered that exact question before is.
+
+\textbf{The transfer radius depends on which endpoint you ask about.}
+Splitting each group by whether the flat store exhausted its budget
+separates two effects that the pooled $\rho$ hides. Where B1 runs out of
+actions, the trained store both finishes sooner and answers better, and this
+persists past the exact key: F1 rises $0.30 \to 0.50$ on the trained
+questions, $0.18 \to 0.55$ at two keys covered, and $0.00 \to 0.60$ at one.
+Where B1 already finishes comfortably, the trained store is slightly
+\emph{slower} off the trained set ($\rho = 1.08$ and $1.17$), because its
+indexes occupy retrieval slots on questions that did not need them. Built
+structure transfers as accuracy on questions the flat store cannot finish,
+and as step savings only on the questions it was trained on. Reporting one
+number for ``does it generalize'' would have hidden both halves.
+
+\textbf{Against unsupervised construction we are level at best.} B3's
+entity indexes save steps in every group ($\rho$ between $0.71$ and $0.78$),
+because they were built over the whole corpus without regard to any
+question. A paired comparison on the same questions puts us level with B3 on
+the trained group (difference $-0.87$ steps, CI $[-2.40, +0.57]$) and behind
+it everywhere else (CIs excluding zero in all three). Supervised curation
+buys, for 18.8M tokens, an advantage on the training distribution that an
+unsupervised lexical pass gets everywhere for nothing. That is the honest
+comparison, and it is the strongest argument in the paper for why the
+\emph{class}-keyed protocol of Sec.~\ref{sec:disc} is the experiment worth
+running next.
+
+\begin{table}[!t]
+\caption{The key-coverage gradient. $\rho$ = actions relative to the
+untrained flat store on the same questions; $^{*}$ marks a bootstrap 95\%
+CI excluding $1$. Groups differ only in how much of the question the
+training set touched.}
+\label{tab:gradient}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
+\toprule
+Store & \multicolumn{4}{c}{$\rho$ (F1) by coverage of the question's keys} \\
+\cmidrule(lr){2-5}
+ & trained on & both keys & one key & neither \\
+\midrule
+B1 flat & 1.000 & 1.000 & 1.000 & 1.000 \\
+ & \emph{(0.700)} & \emph{(0.600)} & \emph{(0.767)} & \emph{(0.833)} \\
+B2 GraphRAG & 0.909 & 0.984 & 1.036 & 0.947 \\
+ & \emph{(0.633)} & \emph{(0.567)} & \emph{(0.833)} & \emph{(0.800)} \\
+B3 HippoRAG2 & 0.777$^{*}$ & \textbf{0.720}$^{*}$ & \textbf{0.779}$^{*}$ & \textbf{0.708}$^{*}$ \\
+ & \emph{(0.867)} & \emph{(0.900)} & \emph{(0.967)} & \emph{(0.900)} \\
+Ours (trained) & \textbf{0.686}$^{*}$ & 0.935 & 1.032 & 0.904$^{*}$ \\
+ & \emph{(0.800)} & \emph{(0.767)} & \emph{(0.867)} & \emph{(0.833)} \\
+\midrule
+\multicolumn{5}{@{}l}{$n=30$ per group; same reader, action set and budget $M{=}15$.}\\
+\bottomrule
+\end{tabular*}
+\end{table}
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.} On
@@ -975,6 +1053,17 @@ the curator struggles with; breadth is. The failure that remains is
 silence rather than error --- the $43$ empty indexes are stubs like
 \emph{``Delphine Thistlewood''} or \emph{``Felix Marchbanks is a person''},
 opened by an agent that ran out of backward budget before filling them.
+
+\textbf{Break-even.} On the trained group the store saves $5{,}466$
+answering tokens per question ($13.7$k against $8.2$k), so the 18.8M-token
+training run repays itself after $N^{*} \approx 3{,}400$ questions
+(Eq.~\ref{eq:breakeven}). That number is only meaningful within the
+population where the saving exists: it prices re-asking, not generalization,
+and a deployment whose queries drift off the trained keys never reaches it.
+Read the other way, it says the mechanism is not disqualified by its cost ---
+a store answering a few thousand repeat questions on the keys it was trained
+on is already ahead --- and that the thing standing between this and a
+generally useful result is coverage, not economics.
 
 \textbf{The ablation that would settle it.} Holding reader, questions and
 budget fixed and removing structure from the store gives the missing

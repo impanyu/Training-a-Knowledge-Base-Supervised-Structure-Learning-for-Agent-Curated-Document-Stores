@@ -80,6 +80,7 @@ def main():
     ap.add_argument("--group", default=None, help="exact | share2 | share1 | share0")
     ap.add_argument("--qid", default=None)
     ap.add_argument("--n", type=int, default=1)
+    ap.add_argument("--rank", choices=["median", "best"], default="median")
     ap.add_argument("--universe", default="data/grad_b1/universe.json")
     a = ap.parse_args()
 
@@ -92,9 +93,13 @@ def main():
         picks = [a.qid]
     else:
         cand = [q for q in RA if q in RB and RA[q].get("split") == a.group]
-        # the clearest cases first: where the step gap is largest
+        # the MEDIAN case, not the best one: sorting by step gap and taking
+        # the extreme would show the group at its most flattering, which is
+        # exactly the thing a qualitative example should not do
         cand.sort(key=lambda q: RA[q]["steps"] - RB[q]["steps"])
-        picks = cand[:a.n]
+        mid = len(cand) // 2
+        picks = cand[mid:mid + a.n] if a.n == 1 else cand[
+            max(0, mid - a.n // 2):max(0, mid - a.n // 2) + a.n]
 
     for qid in picks:
         if qid not in TA or qid not in TB:
