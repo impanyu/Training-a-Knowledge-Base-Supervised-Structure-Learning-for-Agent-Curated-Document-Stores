@@ -68,11 +68,16 @@ on the reader spends $31\%$ fewer actions at higher accuracy, and the saving
 decays to nothing once neither key is covered. Auditing the store explains
 why. The indexes the agent builds are accurate ($94\%$ of their links point
 at a document that genuinely belongs under the key, $91\%$ member recall),
-but they cover only $27.5\%$ of the corpus, and they are keyed on the
-entities questions named rather than on the classes those entities belong
-to. What limits supervised curation here is coverage, not construction --- a
-distinction the protocol makes measurable, and one that the negative result
-in an earlier version of this environment could not have separated.
+but they cover only $27.6\%$ of the corpus, because a hundred training
+questions name only so many keys. Coverage grows linearly in \emph{new}
+questions and stops the moment training starts repeating them, so the store
+is undertrained rather than saturated: per point of corpus coverage it
+already buys $1.6\times$ the action saving and $1.8\times$ the accuracy of an
+offline entity index that covers everything, and closing the gap is a matter
+of roughly four times more training questions rather than a different
+method. What limits supervised curation here is coverage, not construction
+--- a distinction this protocol makes measurable and a train/test split
+cannot.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -866,15 +871,16 @@ community summaries are the wrong structure regardless of how much of the
 corpus they span. What separates us from B3 is therefore not the quality of
 the structure but how much of the corpus carries any.
 
-\textbf{Coverage is bounded by the training set, not by the method.}
-Fig.~\ref{fig:coverage} makes the distinction visible. Through epoch~1 the
+\textbf{The store is undertrained, not saturated.} This is the central
+qualification on every number in this paper, and Fig.~\ref{fig:coverage}
+is the evidence for it. Through epoch~1 the
 reachable share of the corpus grows almost linearly in questions consumed,
 at $0.25$ points per question. Epoch~2 re-asks the same hundred questions
 and the curve flattens immediately --- $24.8\%$ to $27.6\%$ over a hundred
 further iterations. Nothing saturated; the supply of new keys ran out.
 Extending the epoch-1 slope reaches full coverage at roughly $400$ distinct
-training questions and $\approx 48$M tokens, one order of magnitude of
-training away rather than a change of method. That projection is a lower
+training questions and $\approx 48$M tokens --- about four times the
+training we ran, rather than a change of method. That projection is a lower
 bound: the largest keys are hit first, so later questions cover less each,
 and we state it as an extrapolation rather than a result.
 
@@ -894,53 +900,61 @@ think this protocol is actually for.
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{coverage.pdf}
-\caption{Corpus coverage against training. Epoch~1 consumes a hundred new
-questions and coverage grows linearly in them; epoch~2 re-asks the same
-hundred and the curve flattens, so what bounds coverage is the number of
-distinct questions seen, not the method reaching its limit. The dotted line
-extends the epoch-1 slope to the $100\%$ that offline construction starts
-from.}
+\caption{What coverage buys. Each orange point is one frozen epoch-1
+snapshot of our store, placed at the share of the corpus its indexes reach;
+the offline arms index everything and sit at $100\%$. Reading left to right
+along our curve is reading the training run forwards. The gap to B3 is a gap
+in how far along this axis the arm sits, not in the value of a point of
+coverage --- per point we buy more of both (Table~\ref{tab:gradient}).}
 \label{fig:coverage}
 \end{figure}
 
 \begin{table*}[!t]
-\caption{The key-coverage gradient, with each arm's corpus coverage. $\rho$
-is actions relative to the untrained flat store on the same questions, F1 in
-parentheses; $^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$.
-Groups differ only in how much of the question the training set touched, so
-the gradient is a property of \emph{our} arm: the offline arms index
-everything and sit at one point. The last two columns divide each arm's
-pooled gain over B1 by the share of the corpus it indexes.}
+\caption{The key-coverage gradient, with each arm's corpus coverage.
+$\rho$ = actions relative to the untrained flat store on the same questions;
+$^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. The four groups
+differ only in how much of the question the training set touched, so the
+gradient is a property of \emph{our} arm: the offline arms index everything,
+for which every group is the same store. The last two columns divide each
+arm's pooled gain over B1 by the share of the corpus it indexes. Best per column in bold: B3 leads every raw comparison, ours leads both coverage-normalized ones and the trained group.}
 \label{tab:gradient}
 \centering
 \small
 \renewcommand{\arraystretch}{1.2}
-\setlength{\tabcolsep}{6pt}
-\begin{tabular}{lcccccrr}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lc cccc cccc rr}
 \toprule
- & & \multicolumn{4}{c}{$\rho$ (F1) by coverage of the question's keys}
+ & & \multicolumn{4}{c}{$\rho$: actions relative to B1}
+   & \multicolumn{4}{c}{F1}
    & \multicolumn{2}{c}{per point of coverage} \\
-\cmidrule(lr){3-6}\cmidrule(lr){7-8}
-Store & coverage & trained on & both keys & one key & neither
+\cmidrule(lr){3-6}\cmidrule(lr){7-10}\cmidrule(lr){11-12}
+Store & cov.
+ & trained & both & one & neither
+ & trained & both & one & neither
  & actions & F1 \\
 \midrule
-B1 flat & 0\% & 1.000 \emph{(0.700)} & 1.000 \emph{(0.600)}
- & 1.000 \emph{(0.767)} & 1.000 \emph{(0.833)} & --- & --- \\
-B2 GraphRAG & 100\% & 0.909 \emph{(0.633)} & 0.984 \emph{(0.567)}
- & 1.036 \emph{(0.833)} & 0.947 \emph{(0.800)} & $0.003$ & $-0.0002$ \\
-B3 HippoRAG2 & 100\% & 0.777$^{*}$ \emph{(0.867)} & 0.720$^{*}$ \emph{(0.900)}
- & 0.779$^{*}$ \emph{(0.967)} & 0.708$^{*}$ \emph{(0.900)}
+B1 flat & 0\%
+ & 1.000 & 1.000 & 1.000 & 1.000
+ & 0.700 & 0.600 & 0.767 & 0.833 & --- & --- \\
+B2 GraphRAG & 100\%
+ & 0.909 & 0.984 & 1.036 & 0.947
+ & 0.633 & 0.567 & 0.833 & 0.800 & $0.003$ & $-0.0002$ \\
+B3 HippoRAG2 & 100\%
+ & 0.777$^{*}$ & \textbf{0.720}$^{*}$ & \textbf{0.779}$^{*}$ & \textbf{0.708}$^{*}$
+ & \textbf{0.867} & \textbf{0.900} & \textbf{0.967} & \textbf{0.900}
  & $0.025$ & $+0.0018$ \\
-Ours (trained) & 27.6\% & \textbf{0.686}$^{*}$ \emph{(0.800)} & 0.935 \emph{(0.767)}
- & 1.032 \emph{(0.867)} & 0.904$^{*}$ \emph{(0.833)}
+Ours (trained) & 27.6\%
+ & \textbf{0.686}$^{*}$ & 0.935 & 1.032 & 0.904$^{*}$
+ & 0.800 & 0.767 & 0.867 & 0.833
  & $\mathbf{0.039}$ & $\mathbf{+0.0033}$ \\
 \bottomrule
 \end{tabular}
 
 \vspace{2pt}
 {\footnotesize $n=30$ per group; identical reader, action set and budget
-$M{=}15$ throughout. Pooled over all 120 probe questions B1 answers in $9.8$
-actions at F1 $0.725$, B3 in $7.3$ at $0.908$, ours in $8.7$ at $0.817$.}
+$M{=}15$ throughout. Pooled over all 120 probe questions, B1 answers in
+$9.8$ actions at F1 $0.725$, B3 in $7.3$ at $0.908$, and ours in $8.7$ at
+$0.817$.}
 \end{table*}
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
