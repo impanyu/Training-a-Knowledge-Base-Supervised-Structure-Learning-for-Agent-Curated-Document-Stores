@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 BLUE, ORANGE, VERM, GREEN, PURPLE = "#0072B2", "#E69F00", "#D55E00", "#009E73", "#9A5EA8"
-RUN = Path("runs/v10L_dedup")
+RUN = Path("runs/v11_main")
 OUT = Path("paper/figs")
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -50,8 +50,8 @@ ax1.legend(frameon=False, fontsize=7.5)
 ax1.set_title("(a) held-out eval by epoch", fontsize=9)
 
 ax2.plot(range(W, W + len(roll)), roll, color=GREEN, lw=1.4)
-ax2.axvline(150.5, color="0.6", ls="--", lw=0.8)
-ax2.text(152, 0.08, "epoch 2\n(re-encountered\nquestions)", fontsize=7, color="0.35")
+ax2.axvline(100.5, color="0.6", ls="--", lw=0.8)
+ax2.text(102, 0.08, "epoch 2\n(re-encountered\nquestions)", fontsize=7, color="0.35")
 ax2.set_xlabel("training iteration")
 ax2.set_ylabel(f"forward F1 (rolling {W})")
 ax2.set_ylim(0, 1.0)
@@ -69,7 +69,7 @@ fig, ax = plt.subplots(figsize=(3.4, 2.4))
 ax.plot(it, links, color=GREEN, lw=1.4, label="links")
 ax.plot(it, authored, color=VERM, lw=1.4, label="authored documents")
 ax.plot(it, nodes_added, color=BLUE, lw=1.2, ls=":", label="net documents added")
-ax.axvline(150.5, color="0.6", ls="--", lw=0.8)
+ax.axvline(100.5, color="0.6", ls="--", lw=0.8)
 ax.set_xlabel("training iteration")
 ax.set_ylabel("count")
 ax.legend(frameon=False, fontsize=7.5, loc="upper left")
@@ -79,7 +79,7 @@ save(fig, "trajectory")
 # ---------- Fig: network evolution (semantic layout, all nodes) ----------
 def network_evolution():
     pos = json.load(open("/tmp/kbnet_pos.json"))
-    CHECKS = (0, 60, 120, 180, 240, 300)
+    CHECKS = (0, 40, 80, 120, 160, 200)
     fig, axes = plt.subplots(2, 3, figsize=(7.0, 4.6))
     for ax, N in zip(axes.flat, CHECKS):
         st = json.load(open(f"/tmp/kbstate_{N}.json"))["store"]["nodes"]
