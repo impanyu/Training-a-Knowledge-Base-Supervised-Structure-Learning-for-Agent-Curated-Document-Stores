@@ -6,8 +6,6 @@
 \usepackage{booktabs}
 \usepackage{array}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{tikz}
@@ -465,32 +463,6 @@ all}; on public corpora, a reader's score conflates the store with the weights, 
 $\approx 0$, so every point of reader performance is earned through the store.
 
 \section{Training Protocol}
-\begin{algorithm}[t]
-\caption{Training a knowledge base (reader and editor tool sets as defined
-in Sec.~\ref{sec:actions})}
-\label{alg:train}
-\begin{algorithmic}[1]
-\State evaluate reader on \texttt{eval} \Comment{epoch-0 baseline (= B1)}
-\For{epoch $= 1 \dots E$}
-  \For{$(q, a^{*})$ in shuffled \texttt{train}}
-    \State reset short-term memory; task $\gets q$
-    \For{step $= 1 \dots N_1$}  \Comment{forward}
-      \State $d \gets$ policy(reader tools)
-      \If{$d = \texttt{answer}(\hat a)$}
-        \State reveal $a^{*}$, F1$(\hat a, a^{*})$; \textbf{break}
-      \EndIf
-    \EndFor
-    \For{step $= 1 \dots N_2$}  \Comment{backward}
-      \State $d \gets$ policy(editor tools)
-      \If{$d = \texttt{done}$} \textbf{break} \EndIf
-    \EndFor
-    \State refresh dirty embeddings; log
-  \EndFor
-  \State snapshot; evaluate reader on \texttt{eval} \Comment{curve point}
-\EndFor
-\State exam: frozen store, test splits, budget $M$
-\end{algorithmic}
-\end{algorithm}
 
 Phase 1 uses exactly the reader's toolset and budget, so train-forward accuracy is
 directly comparable to test accuracy. The single-shot \texttt{answer} reveals the gold
@@ -687,31 +659,15 @@ yield empty output, 500 with minimal effort answers in about ten. Any
 number reported here for merges therefore comes from a judge that actually
 answered.
 
-\subsection{Experiment Suite and Predictions}\label{sec:suite}
-\textbf{E1.} Training dynamics: within-epoch accuracy, the edit mix per
-epoch, and the per-epoch eval curve. Prediction: structure accumulates, so
-later training questions benefit from what earlier ones left behind, and
-curation activity falls as the store fills.
-
-\textbf{E2 (headline).} The key-coverage gradient. Four question groups,
-equal size, differing only in how much of the question the training set
-touched: the trained question itself; a new question of a trained template
-whose two keys both appeared in training; one key; neither. All four are
-examined on the same frozen store by the same reader under the same budget,
-alongside B1, B2 and B3. Prediction: $\rho$ rises monotonically from the
-exact group towards $1$, and the rate at which it rises \emph{is} the
-transfer radius --- the quantity a train/test split reports as a single
-pass or fail.
-
-\textbf{E3.} Retention and its per-category profile. Prediction: forward
-classes QC1--QC3 and QC9 are saturated at $M{=}15$ and form the
-non-inferiority floor, not the headroom; gains concentrate in aggregation
-(QC4, QC8), joins (QC6), intersection (QC7) and reverse lookup (QC10),
-whose answers live in relations between documents.
-
-\textbf{E4.} Store audit: what the agent wrote, what its indexes reach, and
-how accurate they are, scored against the universe rather than by string
-match. Break-even $N^{*}$ (Eq.~\ref{eq:breakeven}) closes the analysis.
+\subsection{Experiment Suite}\label{sec:suite}
+Four experiments follow, each stated with the prediction it was designed to
+falsify. E1 reads the training dynamics; E2, the headline, is the
+key-coverage gradient, whose prediction is that $\rho$ rises monotonically
+from the trained group towards $1$ and that the rate at which it rises
+\emph{is} the transfer radius; E3 decomposes retention by question class,
+predicting that gains concentrate in the relation-level classes retrieval
+cannot solve natively; E4 audits the store itself. Break-even $N^{*}$
+(Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Experiment Results}\label{sec:prelim}
 All results below are from the final environment (Sec.~\ref{sec:env})
@@ -1137,75 +1093,60 @@ would otherwise license.
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
 
 \section{Discussion and Limitations}\label{sec:disc}
-\textbf{Curation is a boundary, not a slogan.} Our results suggest
-curation creates value where organization is lacking and pollution where it
-is not: training helps on the disorganized main condition, while
-GraphRAG-style summaries added to an already-searchable store regress
-accuracy (Sec.~\ref{sec:res-grad}). The difference is carried by
-whether the optimizer knows when \emph{not} to edit.
-The train/test protocol makes this boundary measurable; downstream-only evaluation
-cannot see a store being slowly ruined while individual answers still look fine.
+\textbf{What limits the method is coverage, not construction.} The indexes
+the agent builds are accurate ($94\%$ precision, $91\%$ member recall), so
+the reading that this procedure simply fails to produce usable structure
+does not survive the final environment. What it does not do is build
+\emph{enough}: a quarter of the corpus sits under an index, and it is the
+quarter the training questions named. Two mechanisms are implicated, both
+actionable. The backward budget cannot populate a thirty-member index in one
+iteration, and nothing asks the agent to \emph{return} to an existing index
+and extend it, so $43$ were opened and abandoned. More fundamentally the
+agent indexes the key a question names rather than the class it belongs to:
+it builds ``Friends of Delphine Grimsby'' when asked about her, never
+``friends, for everyone''. A protocol that scores an index by completeness
+over a class, and rewards extending one over creating another, is the
+obvious next experiment. Curation also has a boundary in the other
+direction: GraphRAG-style summaries added to an already-searchable store
+\emph{lose} accuracy, so value comes from knowing when not to edit, and a
+train/test protocol is what makes that boundary visible --- downstream-only
+evaluation cannot see a store being slowly ruined while individual answers
+still look fine.
 
-\textbf{Reading the boundary.} \emph{What limits the method is coverage, not
-construction.} Sec.~\ref{sec:res-e4} shows the indexes the agent builds are
-accurate ($94\%$ precision, $91\%$ member recall), so the earlier reading ---
-that the procedure simply fails to build usable structure --- does not
-survive the final environment. What it does not do is build \emph{enough}:
-only $27.5\%$ of source documents sit under any index, and that quarter is
-the population the training questions named. The gradient of
-Sec.~\ref{sec:res-grad} is the direct consequence. Two mechanisms are
-implicated, both actionable. The backward budget (15 actions) cannot
-populate a thirty-member index in one iteration, and nothing in the protocol
-asks the agent to \emph{return} to an existing index and extend it, so
-$43$ indexes were opened and abandoned. More fundamentally, the agent
-indexes the key a question names rather than the class it belongs to: it
-builds ``Friends of Delphine Grimsby'' when asked about Delphine Grimsby,
-never ``friends, for everyone''. A protocol that scores an index by its
-completeness over a class, and that rewards extending an existing index over
-creating a new one, is the obvious next experiment; we state it as the
-concrete next step rather than claim the hypothesis is settled.
+\textbf{Deployment, and the online variant.} The abstraction targets agent
+fleets maintaining shared repositories and wikis, where our failure ledger
+maps onto real incidents: duplicated near-copies burying each other is the
+lost-update problem, authored-without-provenance content is the hallucinated
+fix, a deleted last instance is knowledge loss during refactoring. We
+separate training from a frozen exam because that separation is what makes
+the generalization question answerable --- a store edited during evaluation
+cannot be said to have been tested on anything --- but nothing in the method
+requires it. The loop already answers before it edits, so the same agent
+could curate against live traffic, treating a correction, a follow-up or a
+click as the label the gold supplies here, and would then concentrate
+coverage on the distribution it actually serves, which
+Sec.~\ref{sec:res-grad} shows is where coverage is worth most. What that
+variant needs is not a different curator but a different measurement:
+with the store moving underneath, held-out accuracy stops being well
+defined and the honest alternative is prequential.
 
-\textbf{Deployment reading.} The abstraction targets a real configuration: agent
-fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
-ledger maps directly onto production incidents---duplicated near-copies burying each
-other is the lost-update problem; authored-without-provenance content is the
-hallucinated fix; a deleted last instance is knowledge loss during refactoring. The
-break-even point $N^{*}$ answers the deployment question in units operators use:
-after how many queries does curation pay for itself. Our preliminary runs
-(Sec.~\ref{sec:design}) double as a default-behavior audit: an agent given
-a maintenance objective but no parsimony objective degraded the asset it was
-tending while every individual action looked constructive---a caution for
-unsupervised agent operation on shared state.
-
-\textbf{Threats to validity.} Template-rendered language is simpler than natural
-prose; phrasing regularity may flatter lexical matching (mitigated by embedding
-retrieval and by the planned official-PhantomWiki arm, whose generator we do not
-control). The reader and trainer share a model family, so structure tuned by the
-trainer may suit that family's search habits. That family is also not the
-current one: \texttt{gpt-5-mini-2025-08-07} was the small reasoning model
-when these runs began, and several later generations exist. A stronger
-reader is the harder test for us, not the easier one --- the better it is at
-recovering a set by searching, the less an index can add --- so the effect
-of re-running on a current model is to shrink whatever margin we report,
-and we would expect the ordering among arms to survive rather than the
-magnitudes. Single seed in the basic version;
-single-agent by design (concurrent maintenance, with its conflict taxonomy, is the
-natural sequel); support-set diagnostics are unavailable on the external arm.
-Grading is token-F1 against short golds---adequate for entity answers, blunt for
-free-form ones; the environment avoids the latter by construction.
-
-\textbf{An online variant.} We deliberately separate a training phase from a
-frozen-store examination, because that separation is what makes the
-generalization question answerable at all: a store edited during evaluation
-cannot be said to have been tested on anything. Nothing in the method
-requires it. The training loop already answers a question before it edits,
-so the same agent could curate against live traffic, treating whatever
-feedback a deployment provides---a correction, a follow-up, a click---as the
-label the gold answer supplies here. What such a variant would need is not a
-different curator but a different measurement: with the store changing
-underneath, held-out accuracy stops being well defined, and the honest
-alternative is a prequential one, scoring each question before the edits it
-provokes.
+\textbf{Threats to validity.} Template-rendered language is simpler than
+natural prose and its regularity may flatter lexical matching; the official
+PhantomWiki arm, whose generator we do not control, is the partial answer.
+Reader and trainer share a model family, so structure tuned by one may suit
+the other's search habits, and that family is not the current one:
+\texttt{gpt-5-mini-2025-08-07} was the small reasoning model when these runs
+began. A stronger reader is the harder test for us, not the easier one ---
+the better it is at recovering a set by searching, the less an index adds ---
+so re-running on a current model should shrink the margins we report while
+leaving the ordering among arms intact. The key-coverage gradient is
+measured on \kbgym{} alone, because it needs a generator that can enumerate
+a template's full instance pool; replicating it externally is the first item
+for a revision. Single seed, single agent by design (concurrent maintenance
+and its conflict taxonomy are the natural sequel), support-set diagnostics
+unavailable on the external arm, and grading is token-F1 against short golds
+--- adequate for entity answers, blunt for free-form ones, which this
+environment avoids by construction.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
