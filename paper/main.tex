@@ -174,12 +174,12 @@ reasoning for further training; our forward/backward iteration inherits that
 predict-then-learn shape, with the store rather than the weights as the
 learned object.
 
-\textbf{Agent-maintained stores and agent memory.} Self-evolving LLM-wiki
-retrieval~\cite{llmwiki-rar} has an agent write and update wiki pages during
-question answering; streaming knowledge compilation~\cite{llmwiki-stream}
-maintains a time-evolving wiki under a document stream; STORM~\cite{storm}
-generates Wikipedia-style articles by multi-perspective research --- one-shot
-authorship rather than continual maintenance. A parallel line accumulates experience
+\textbf{Agent-maintained stores and agent memory.} Recent systems have an agent
+write and update wiki pages during question answering, or maintain a
+time-evolving wiki under a document
+stream~\cite{llmwiki-rar,llmwiki-stream,karpathy-llmwiki};
+STORM~\cite{storm} generates Wikipedia-style articles by multi-perspective
+research --- one-shot authorship rather than continual maintenance. A parallel line accumulates experience
 across episodes --- external memory paging~\cite{memgpt}, linked long-term
 note stores~\cite{mem0,amem}, reflection over an event
 stream~\cite{generative-agents}, skill
@@ -590,26 +590,14 @@ cannot solve natively; E4 audits the store itself. Break-even $N^{*}$
 (Eq.~\ref{eq:breakeven}) closes the analysis.
 
 \section{Experiment Results}\label{sec:prelim}
-All results below are from the final environment (Sec.~\ref{sec:env})
-and the main run, keyed to the suite of Sec.~\ref{sec:suite}:
-the calibration that fixed the main configuration
-(Sec.~\ref{sec:res-calib}), then the learning curve (E1,
-Sec.~\ref{sec:res-e1}), the key-coverage gradient that carries the main
-result (E2, Sec.~\ref{sec:res-grad}), retention and its per-category
-profile (E3, Sec.~\ref{sec:res-e3}), and trace mining (E4,
-Sec.~\ref{sec:res-e4}).
-
-\subsection{Calibration and Cost Profile}\label{sec:res-calib}
-Reader difficulty was calibrated by probes on untrained stores: forward named-entity
-chains are natively easy for document-level retrieval at any tested scale (F1
-$1.0$); headroom concentrates in the relation-level classes and grows with universe
-size (untrained F1 $0.83$ at 120 people vs.\ $0.67$ at 500, mean steps $6.7$ vs.\
-$9.2$)---motivating the 500-person main configuration, where the cost axis has
-roughly $3\times$ headroom over the $\sim$3-step floor. Accuracy can
-saturate while cost headroom persists---one reason efficiency is the
-primary endpoint.
+All results are from the final environment and the main run.
 
 \subsection{E1: Training Dynamics}\label{sec:res-e1}
+The 500-person configuration was chosen by probing untrained stores: forward
+chains are natively easy at any scale (F1 $1.0$), while the relation-level
+classes leave headroom that grows with the universe (untrained F1 $0.83$ at
+120 people against $0.67$ at 500, mean steps $6.7$ against $9.2$), so the
+cost axis has roughly $3\times$ room above its $\sim$3-step floor.
 The main run trains on 100 questions for two epochs (200 iterations, 18.8M
 tokens, 6.8\,h, $\approx\$13$). Two signals establish that the store
 accumulates before the frozen exams test what it is worth. Forward accuracy
