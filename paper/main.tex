@@ -707,24 +707,40 @@ and as step savings only on the questions it was trained on. Reporting one
 number for ``does it generalize'' would have hidden both halves.
 
 \textbf{The same shape on questions we did not write.} \kbgym{} is our
-generator, so the gradient could in principle be an artifact of question
-templates chosen by the same people who designed the method. The
-PhantomWiki arm answers that: its universe (3{,}403 documents from 405
-articles) and all of its questions come from a generator we do not control,
-and the protocol runs unchanged. Training there consumed 200 iterations and
-14.9M tokens, and the endpoints reproduce. On the hundred questions training
-consumed, the reader spends $\rho = 0.769$ of the actions it needs on the
-untrained store (CI $[0.68, 0.86]$) at F1 $0.728 \to 0.880$; on held-out
-questions from the same split it spends $\rho = 1.042$ (CI $[0.93, 1.15]$)
-at F1 $0.780 \to 0.760$, and across the full test split $\rho = 0.983$. Both
-the saving on trained questions and its disappearance one step away are
-therefore properties of the method rather than of our question design.
-The full coverage gradient is not available on this arm: constructing it
-requires enumerating a template's entire instance pool, and PhantomWiki
-ships the 480 questions its generator produced rather than the pool behind
-them. The arm also carries no offline-construction baselines --- only the
-untrained store --- so the comparison of the previous section is
-\kbgym{}-only.
+generator, so the gradient could be an artifact of templates chosen by the
+people who designed the method. The PhantomWiki arm answers that: its
+universe (3{,}403 documents from 405 articles) and every one of its
+questions come from a generator we do not control, and the protocol runs
+unchanged (200 iterations, 14.9M tokens). Its questions carry at most one
+key, so the gradient there has three points rather than four, and they
+align with \kbgym{}'s:
+
+\begin{center}\small
+\begin{tabular}{lccc}
+\toprule
+$\rho$ (F1) & trained on & one key & neither \\
+\midrule
+\kbgym{} & 0.686$^{*}$ \emph{(0.800)} & 1.032 \emph{(0.867)} & 0.904$^{*}$ \emph{(0.833)} \\
+PhantomWiki & 0.769$^{*}$ \emph{(0.880)} & 0.914 \emph{(0.807)} & 1.029 \emph{(0.718)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The trained group is the only cell significant on both benchmarks
+(CIs $[0.52,0.84]$ and $[0.68,0.86]$), and accuracy rises on both
+($0.700 \to 0.800$ and $0.728 \to 0.880$). The two middle cells disagree in
+their ordering across benchmarks, which is the honest reading of that
+region: there is no reliable partial transfer, only a saving where the
+question was trained and none where it was not. On PhantomWiki the
+uncovered group is worse than neutral --- F1 falls $0.765 \to 0.718$ --- as
+indexes for other keys occupy retrieval slots that question needed. Coverage
+is not merely absent outside the trained set; it is mildly costly, which is
+the sharpest argument for extending it rather than accepting a quarter of
+the corpus. The full four-point gradient is unavailable on this arm because
+constructing one requires enumerating a template's entire instance pool and
+PhantomWiki ships the questions its generator produced rather than the pool
+behind them; the arm also carries no offline-construction baselines, so the
+comparison below is \kbgym{}-only.
 
 \subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
 B3 answers in fewer actions and at higher F1 than we do, and it does so
