@@ -18,12 +18,18 @@
 
 \begin{document}
 
-\title{Training a Knowledge Base:\\Supervised Structure Learning for Agent-Curated Document Stores\\
-\thanks{Draft v0.2 --- August 2026. Results marked preliminary are being re-established on the final environment.}}
+\title{Training a Knowledge Base:\\Supervised Structure Learning for Agent-Curated Document Stores}
 
-\author{\IEEEauthorblockN{Anonymous Author}
-\IEEEauthorblockA{\textit{Affiliation withheld} \\
-email withheld}}
+\author{\IEEEauthorblockN{Yu Pan}
+\IEEEauthorblockA{\textit{Department of Biological Systems Engineering} \\
+\textit{University of Nebraska--Lincoln}\\
+Lincoln, NE, USA \\
+yu.pan@unl.edu}
+\and
+\IEEEauthorblockN{Hongfeng Yu}
+\IEEEauthorblockA{\textit{University of Nebraska--Lincoln} \\
+Lincoln, NE, USA \\
+hfyu@unl.edu}}
 
 \maketitle
 
@@ -127,84 +133,68 @@ break-even analysis of when training a store pays for itself.
 \end{enumerate}
 
 \section{Related Work}
-\subsection{Retrieval-Augmented Generation}
-Classic RAG retrieves from a frozen corpus with a learned dense retriever and
-generates conditioned on the results~\cite{rag-lewis,dpr,realm,fid}. The
-corpus is an input, never an output: nothing the system learns at answer time
-flows back into the store. Our work targets exactly this missing backward
-edge.
+\textbf{Retrieval-augmented generation and agentic retrieval.} Classic RAG
+retrieves from a frozen corpus with a learned dense retriever and generates
+conditioned on the results~\cite{rag-lewis,dpr,realm,fid}: the corpus is an
+input, never an output. Agentic RAG moves retrieval into the reasoning loop
+--- ReAct interleaves reasoning with tool calls~\cite{react}, IRCoT
+interleaves chain-of-thought with retrieval~\cite{ircot}, Self-Ask
+decomposes into sub-questions~\cite{selfask}, FLARE retrieves on low
+generation confidence~\cite{flare}, Self-RAG learns when to retrieve and how
+to judge what returns~\cite{selfrag}, and recent systems frame the
+retrieve-or-reason decision as an MDP~\cite{deeprag} or train the search
+policy with RL~\cite{searchr1,agentic-rag-survey}. Our reader \emph{is} such
+a loop. The distinction is which side learns: that line improves the
+query-side policy against a fixed corpus; we hold the policy fixed and train
+the store. The axes are orthogonal and composable.
 
-\subsection{Agent-Maintained Knowledge Bases}
-Self-evolving LLM-wiki retrieval~\cite{llmwiki-rar} has a single agent write and
-update wiki pages during question answering, outperforming static RAG on multi-hop
-benchmarks; streaming knowledge compilation~\cite{llmwiki-stream} maintains a
-time-evolving wiki under a document stream. STORM~\cite{storm} generates
-Wikipedia-style articles with multi-perspective research agents---one-shot
-authorship rather than continual maintenance. The published systems evaluate
-downstream task scores only:
-the wiki itself is never measured, there is no train/test split, and the evaluation
-corpora (HotpotQA, MuSiQue) are parametrically contaminated. Our protocol adds the
-missing measurement layer.
-
-\subsection{Agentic Retrieval}
-Agentic RAG moves retrieval into the reasoning loop: ReAct interleaves
-reasoning with tool calls~\cite{react}, IRCoT interleaves chain-of-thought
-with retrieval~\cite{ircot}, Self-Ask decomposes into sub-questions before
-searching~\cite{selfask}, FLARE retrieves when generation confidence
-drops~\cite{flare}, Self-RAG learns when to retrieve and how to judge what
-returns~\cite{selfrag}, and recent systems frame the retrieve-or-reason
-decision as an MDP (DeepRAG~\cite{deeprag}) or train the search policy with
-reinforcement learning (Search-R1~\cite{searchr1}; surveyed
-in~\cite{agentic-rag-survey}). Our reader \emph{is} an agentic-RAG loop---budgeted
-iterative search-and-read. The distinction is which side of the loop learns: that line
-improves the \emph{query-side policy} against a fixed corpus; we hold the policy fixed
-and train the \emph{store}. The axes are orthogonal and composable; our budget sweep
-measures exactly what a better store buys an unchanged agentic reader.
-
-\subsection{Offline Structure Construction}
-GraphRAG~\cite{graphrag}, RAPTOR~\cite{raptor}, LightRAG~\cite{lightrag}, and
+\textbf{Building structure over a corpus.} GraphRAG~\cite{graphrag},
+RAPTOR~\cite{raptor}, LightRAG~\cite{lightrag}, and
 HippoRAG~\cite{hipporag,hipporag2} build entity graphs, summary hierarchies,
-or PageRank-linked knowledge graphs over a corpus \emph{before} any question
-arrives. These are our strongest baselines and the natural
-contrast: their structure is unsupervised and built blind to the query distribution;
-ours is carved incrementally by the questions actually asked.
-
-\subsection{Agent Memory and Experience Accumulation}
-A rich line lets agents accumulate experience across episodes: MemGPT pages
-context in and out of external memory~\cite{memgpt}; Mem0 and A-MEM maintain
-linked long-term note stores~\cite{mem0,amem}; generative agents retrieve and
-reflect over an event stream~\cite{generative-agents}; Voyager grows a skill
-library~\cite{voyager}; Reflexion, ExpeL, and Agent Workflow Memory distill
-verbal feedback, cross-task insights, and reusable workflows,
-respectively~\cite{reflexion,expel,awm}; Dynamic Cheatsheet and ACE evolve a
-test-time strategy memory or context playbook~\cite{cheatsheet,ace}. In all
-of these the artifact is a prompt or a private memory serving one agent; ours
-is a shared, inspectable document store whose content is
-ground-truth-checkable and whose curation quality is itself the measured
-outcome.
-
-\subsection{Memory Evaluation and Contamination Control}
-LongMemEval and successors probe assistant memory with QA over past sessions,
-typically via LLM judges~\cite{longmemeval}; LoCoMo evaluates very-long-term
-conversational memory~\cite{locomo}; MemDelta documents hidden confounds and
-argues for controlled baselines~\cite{memdelta}, supporting our no-store
-baseline discipline. Multi-hop QA datasets---HotpotQA~\cite{hotpotqa},
-MuSiQue~\cite{musique}, 2WikiMultiHopQA~\cite{twowiki}---supply real-text
-questions with annotated support, but their public corpora are parametrically
-contaminated for current models. PhantomWiki~\cite{phantomwiki} generates
-contamination-free fictional universes with programmatically exact answers;
-our generator follows its recipe, and SQuAD-style normalization~\cite{squad}
-provides the grading.
-
-\subsection{Knowledge Editing}
-ROME and MEMIT edit factual associations \emph{inside model
-weights}~\cite{rome,memit}. We pursue the non-parametric complement: facts
-live in an external store the agent can inspect, reorganize, and be audited
-on---no gradient access, full provenance, and edits that transfer across
-models. STaR-style bootstrapping~\cite{star} keeps only verified reasoning
-for further training; our forward/backward iteration inherits that
+or PageRank-linked knowledge graphs \emph{before} any question arrives.
+These are our strongest baselines and the natural contrast: their structure
+is unsupervised and built blind to the query distribution, ours is carved
+incrementally by the questions actually asked. On the parametric side, ROME
+and MEMIT edit factual associations inside model weights~\cite{rome,memit};
+we pursue the non-parametric complement --- facts live in an external store
+that can be inspected, reorganized, and audited, with edits that transfer
+across models. STaR-style bootstrapping~\cite{star} keeps only verified
+reasoning for further training; our forward/backward iteration inherits that
 predict-then-learn shape, with the store rather than the weights as the
 learned object.
+
+\textbf{Agent-maintained stores and agent memory.} Self-evolving LLM-wiki
+retrieval~\cite{llmwiki-rar} has an agent write and update wiki pages during
+question answering; streaming knowledge compilation~\cite{llmwiki-stream}
+maintains a time-evolving wiki under a document stream; STORM~\cite{storm}
+generates Wikipedia-style articles by multi-perspective research --- one-shot
+authorship rather than continual maintenance. A parallel line accumulates
+experience across episodes: MemGPT pages context in and out of external
+memory~\cite{memgpt}; Mem0 and A-MEM maintain linked long-term note
+stores~\cite{mem0,amem}; generative agents retrieve and reflect over an event
+stream~\cite{generative-agents}; Voyager grows a skill library~\cite{voyager};
+Reflexion, ExpeL, and Agent Workflow Memory distill verbal feedback,
+cross-task insights, and reusable workflows~\cite{reflexion,expel,awm};
+Dynamic Cheatsheet and ACE evolve a test-time strategy memory or context
+playbook~\cite{cheatsheet,ace}. In these the artifact is a prompt or a
+private memory serving one agent; ours is a shared, inspectable document
+store whose curation quality is itself the measured outcome.
+
+\textbf{Measuring memory without contamination.} The published curation
+systems report downstream task scores only: the store itself is never
+measured, there is no train/test split over questions, and the evaluation
+corpora are parametrically contaminated. LongMemEval and successors probe
+assistant memory with QA over past sessions~\cite{longmemeval};
+LoCoMo evaluates very-long-term conversational memory~\cite{locomo};
+MemDelta documents hidden confounds and argues for controlled
+baselines~\cite{memdelta}, supporting our no-store baseline discipline.
+Multi-hop QA datasets --- HotpotQA~\cite{hotpotqa}, MuSiQue~\cite{musique},
+2WikiMultiHopQA~\cite{twowiki} --- supply real-text questions with annotated
+support, but their public corpora are contaminated for current models.
+PhantomWiki~\cite{phantomwiki} generates contamination-free fictional
+universes with programmatically exact answers; our generator follows its
+recipe, and SQuAD-style normalization~\cite{squad} provides the grading.
+Our protocol adds the missing measurement layer.
 
 \definecolor{okblue}{HTML}{0072B2}
 \definecolor{okorange}{HTML}{E69F00}
