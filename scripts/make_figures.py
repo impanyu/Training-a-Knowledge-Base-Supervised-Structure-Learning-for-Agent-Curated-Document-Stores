@@ -82,6 +82,14 @@ def gradient_and_coverage():
             fs.append(sum(r["f1"] for r in rows) / len(rows))
         if not xs:
             continue
+        p = "runs/grad_trained/test_log.jsonl"
+        if os.path.exists(p):
+            fin = [json.loads(l) for l in open(p)
+                   if json.loads(l).get("split") == split]
+            if fin:
+                xs.append(200)
+                ys.append(sum(r["steps"] for r in fin) / len(fin))
+                fs.append(sum(r["f1"] for r in fin) / len(fin))
         for ax, vals in ((a_s, ys), (a_f, fs)):
             ax.plot(xs, vals, marker=marker, ls=ls, color=color, lw=1.4,
                     ms=3.4, label=label)
@@ -106,12 +114,13 @@ def gradient_and_coverage():
         r = [json.loads(l) for l in open(p)]
         return sum(x["steps"] for x in r) / len(r), sum(x["f1"] for x in r) / len(r)
 
+    final = arm("grad_trained")          # epoch-2 store, 27.6% coverage
+    if final:
+        xs.append(27.6); ys.append(final[0]); fs.append(final[1])
     b2, b3 = arm("grad_graphrag"), arm("grad_hipporag")
     for ax, vals, j in ((b_s, ys, 0), (b_f, fs, 1)):
         if xs:
             ax.plot(xs, vals, "o-", color=VERM, lw=1.6, ms=4, label="ours")
-            ax.plot([xs[-1], 100], [vals[-1], vals[-1]], ls=":", color=VERM,
-                    lw=1.1, alpha=0.6)
         if b3:
             ax.plot([100], [b3[j]], "^", color=BLUE, ms=6, label="B3 HippoRAG2")
         if b2:
@@ -120,7 +129,7 @@ def gradient_and_coverage():
 
     for ax in (a_s, a_f):
         ax.set_xlabel("training iteration (frozen snapshot)")
-        ax.set_xticks(ITERS)
+        ax.set_xticks(ITERS + [200])
     for ax in (b_s, b_f):
         ax.set_xlabel("corpus reachable from an index (%)")
     for ax in (a_s, b_s):

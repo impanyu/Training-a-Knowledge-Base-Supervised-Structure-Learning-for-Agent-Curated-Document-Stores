@@ -463,6 +463,8 @@ all}; on public corpora, a reader's score conflates the store with the weights, 
 $\approx 0$, so every point of reader performance is earned through the store.
 
 \section{Training Protocol}
+Fig.~\ref{fig:protocol} gives the shape of one iteration and of the exam
+that follows.
 
 Phase 1 uses exactly the reader's toolset and budget, so train-forward accuracy is
 directly comparable to test accuracy. The single-shot \texttt{answer} reveals the gold
@@ -957,117 +959,63 @@ a spike at zero: $43$ indexes ($15\%$) were opened and never filled.}
 \end{figure}
 
 
-\subsection{E4: Trace Mining---Edit Behavior and Store Morphology}\label{sec:res-e4}
-\textbf{Where the structure lives.} Figure~\ref{fig:network} maps the
-store's evolution across its semantic space (every document drawn; position
-= t-SNE of the document embedding, so the clusters visible at iteration~0
-are the universe's natural topic groups). Navigation documents appear
-throughout the map; hub directories --- the dense orange cluster --- fan out
-into the topic clusters, and short local links connect semantically adjacent
-documents: the store visibly acquires an access layer it was born without.
-Fig.~\ref{fig:trajectory}a quantifies the same growth from trace replay:
-$+287$ documents ($+4.9\%$) and $1{,}913$ links, nearly all of it laid down
-in epoch~1 --- the sublinear, structural growth the parsimony objective was
-designed to enforce.
+\subsection{E4: What the Agent Built}\label{sec:res-e4}
+\textbf{Shape and cost of curation.} Fig.~\ref{fig:network} maps the store's
+evolution across its semantic space: structure grows from nothing into a
+navigation layer, hub indexes fanning out into topic clusters. Trace replay
+puts numbers on it (Fig.~\ref{fig:trajectory}a): $+287$ documents
+($+4.9\%$) and $1{,}913$ links, nearly all laid down in epoch~1. The
+backward pass is dominated by two actions --- $307$ \texttt{add} and $284$
+\texttt{link\_many} calls across the run, against $3$ edits, $12$ deletes
+and $9$ unlinks --- so the agent builds and almost never revises. The
+deduplication judge fired on $45$ candidates and merged $8$; document-level
+parsimony was already holding at this scale.
 
-\textbf{Edit behavior.} The backward pass writes $4.9$ edits per iteration
-in epoch~1 and $1.6$ in epoch~2. The mix is dominated by two actions:
-$307$ \texttt{add} calls and $284$ \texttt{link\_many} calls across the run,
-against $3$ edits, $12$ deletes and $9$ unlinks --- the agent builds, and
-almost never revises. The deduplication judge fired on $45$ candidates and
-merged $8$, so document-level parsimony was already holding at this scale
-without much intervention.
-
-\textbf{What the agent wrote, and whether it is an index.} Calling every
-authored document an index would beg the question, so we classify the 287 of
-them by three checkable properties: it must carry at least one link;
-its sentence must not enumerate its own members (the shape the curation
-skill forbids, tested by resolving the key's true member set from the
-universe and looking for those names in the text); and its key must be
-resolvable at all. On that test $242$ ($84.3\%$) are genuine indexes ---
-their text is the name of a key and their content is in their links --- $43$
+\textbf{Are they indexes?} Calling every authored document an index would
+beg the question, so we classify the 287 by three checkable properties: at
+least one link; a sentence that does not enumerate its own members (the
+shape the curation skill forbids, tested by resolving the key's true member
+set from the universe and looking for those names in the text); and a
+resolvable key. On that test $242$ ($84.3\%$) are genuine indexes, $43$
 ($15.0\%$) are empty stubs like \emph{``Delphine Thistlewood''}, and $2$ are
-materialized answers. Coverage is insensitive to the distinction ($27.6\%$
-counting every authored document, $27.5\%$ counting only the genuine
-indexes), because stubs have no links to contribute.
+materialized answers. That $84\%$ is itself a result: in an earlier version
+of this environment the same protocol produced the opposite shape, $80\%$ of
+authored documents stating the verified answer as a sentence, which serves
+the one question that produced it. The difference is that the curation skill
+now names the mechanism (``an index points; it does not list'') rather than
+only the goal.
 
-That $84\%$ is itself a result. In an earlier version of this environment
-the same protocol produced the opposite shape --- $80\%$ of authored
-documents stated the verified answer as a sentence, which serves the one
-question that produced it and nothing else. The difference is that the
-curation skill now names the mechanism (``an index points; it does not
-list'') rather than only the goal (``organize for the question's class'').
-The structure is correspondingly flat: $1{,}896$ of $1{,}913$ links attach an
-index and only $17$ join two source documents, so the agent builds entry
-points readily and levels almost never.
+\textbf{Accurate, but narrow.} Table~\ref{tab:idxquality} scores every index
+whose key resolves. A link is correct if it points at a document about a
+genuine member of the key, resolved against the universe rather than by
+string match --- the grandchildren of a person are recorded as ``\emph{X} is
+a child of \emph{Y}'' and never name the grandparent, so a string-match test
+scores a correct two-hop index at zero, and an earlier version of this
+analysis reported exactly that artifact. Resolved properly, precision is
+$94\%$ and member recall $91\%$ over 217 scorable indexes. Quality tracks
+the arity of the key, not its depth: attribute indexes over a city or hobby
+are near-perfect ($98\%$, $95$--$96\%$ recall) and carry the most links,
+while relational indexes are smaller and noisier and two-hop relations are
+\emph{not} worse than one-hop ($87\%$ vs.\ $78\%$). Depth is not what the
+curator struggles with; breadth is. Structurally the layer is flat:
+$1{,}896$ of $1{,}913$ links attach an index, $100$ join two indexes and
+$17$ join two source documents, so entry points are built readily and levels
+almost never --- and \textbf{$1{,}611$ of $5{,}864$ source documents
+($27.5\%$) are reachable from an index in one read}. That is the binding
+constraint of Sec.~\ref{sec:res-grad}, restated as a property of the store.
 
-\textbf{Mechanism attribution needs an intervention, not a split.} We had
-intended to attribute the reader's step savings to its hits on built
-structure, splitting exam questions by whether the trajectory touched an
-authored index. That split is not identifying, for a mechanical reason:
-touching is \emph{downstream} of searching, so a trajectory that runs
-longer is more likely to encounter an index, and the touched group is
-selected for long trajectories by construction. Difficulty matching does
-not repair it. The gradient probe of Sec.~\ref{sec:res-grad} is the
-intervention that does identify: it varies coverage of the question's key
-\emph{before} the reader starts, holding the reader, the budget and the
-question distribution fixed.
-
-\textbf{What the structure reaches.} The action set can produce exactly two
-kinds of structure: index documents that point at the documents belonging to
-their key, and edges between documents that already exist (fact-to-fact, or
-index-to-index, which is how navigation acquires levels). Profiling the
-trained store by those classes says how far the built structure carries. The
-284 authored indexes have mean out-degree $6.7$ (median $5$, max $33$); $43$
-($15\%$) carry no links at all and $128$ ($45\%$) carry fewer than five. The
-store holds $1{,}796$ index-to-fact edges, $100$ index-to-index edges and
-$17$ fact-to-fact edges: the agent builds entry points far more readily than
-it builds levels, so the navigation layer is broad and flat rather than
-hierarchical. \textbf{$1{,}611$ of $5{,}864$ source documents ($27.5\%$) are
-reachable from some index in a single read.} That figure is the binding
-constraint on transfer: the reachable quarter is concentrated on the keys the
-training questions named, which is exactly the population on which the
-gradient of Sec.~\ref{sec:res-grad} shows a saving, and the unreachable
-three quarters is why the saving does not survive a change of key.
-
-\textbf{The indexes that do exist are accurate.} Table~\ref{tab:idxquality}
-scores every index whose key can be resolved. A link counts as correct if it
-points at a document about a genuine member of the key, resolved against the
-universe rather than by string match: the grandchildren of a person are
-recorded as ``\emph{X} is a child of \emph{Y}'' and never name the
-grandparent, so a string-match test scores a correct two-hop index at zero,
-and an earlier version of this analysis reported exactly that artifact.
-Resolved properly, precision is $94\%$ and member recall $91\%$ across the
-217 scorable indexes. Quality tracks the arity of the key rather than its
-depth: attribute indexes over a city or a hobby are near-perfect ($98\%$
-precision, $95$--$96\%$ recall) and carry the most links, while the
-relational indexes are both smaller and noisier, and two-hop relations are
-\emph{not} worse than one-hop ones ($87\%$ vs.\ $78\%$). Depth is not what
-the curator struggles with; breadth is. The failure that remains is
-silence rather than error --- the $43$ empty indexes are stubs like
-\emph{``Delphine Thistlewood''} or \emph{``Felix Marchbanks is a person''},
-opened by an agent that ran out of backward budget before filling them.
-
-\textbf{Break-even.} On the trained group the store saves $5{,}466$
-answering tokens per question ($13.7$k against $8.2$k), so the 18.8M-token
-training run repays itself after $N^{*} \approx 3{,}400$ questions
-(Eq.~\ref{eq:breakeven}). That number is only meaningful within the
-population where the saving exists: it prices re-asking, not generalization,
-and a deployment whose queries drift off the trained keys never reaches it.
-Read the other way, it says the mechanism is not disqualified by its cost ---
-a store answering a few thousand repeat questions on the keys it was trained
-on is already ahead --- and that the thing standing between this and a
-generally useful result is coverage, not economics.
-
-\textbf{The ablation that would settle it.} Holding reader, questions and
-budget fixed and removing structure from the store gives the missing
-counterfactual: the trained store minus its 284 authored documents ($17$
-statement-to-statement links retained), and minus its links (authored
-documents retained). We report the confound rather than the attribution it
-would otherwise license.
-
-\emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
-reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
+\textbf{Break-even, and what would settle the mechanism.} On the trained
+group the store saves $5{,}466$ answering tokens per question ($13.7$k
+against $8.2$k), so the 18.8M-token run repays itself after $N^{*} \approx
+3{,}400$ questions (Eq.~\ref{eq:breakeven}) --- a figure that prices
+re-asking within the covered population, not generalization. We had intended
+to attribute the step savings to hits on built structure by splitting exam
+questions on whether the trajectory touched an index, and report that this
+split does not identify: touching is \emph{downstream} of searching, so a
+longer trajectory is more likely to encounter an index and the touched group
+is selected for difficulty by construction. The gradient probe is the
+intervention that does identify, because it varies coverage of the
+question's key \emph{before} the reader starts.
 
 \section{Discussion and Limitations}\label{sec:disc}
 \textbf{What limits the method is coverage, not construction.} The indexes
