@@ -844,11 +844,16 @@ and as step savings only on the questions it was trained on. Reporting one
 number for ``does it generalize'' would have hidden both halves.
 
 \subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
-The right-hand columns of Table~\ref{tab:gradient} carry the comparison the
-gradient cannot make. A gradient defined by what training touched is a
-property of our arm alone: the offline arms index the entire corpus, so
-every group is, for them, the same store. Setting their results beside their
-coverage is the fair reading, and it is favourable.
+B3 leads every raw comparison in Table~\ref{tab:gradient}, and it does so
+from $100\%$ coverage against our $27.6\%$: it indexes every entity in the
+corpus, while a hundred training questions name only a quarter of it. Where
+our indexes exist we lead --- the trained group is ours at $\rho = 0.686$
+against $0.777$ --- and where they do not we fall back to the flat store
+while B3 does not, which is what the three right-hand $\rho$ columns record.
+A gradient defined by what training touched is in any case a property of our
+arm alone; for an arm that indexes everything, all four groups are the same
+store. The comparison that treats both fairly divides each arm's gain by the
+coverage that produced it.
 
 \emph{Coverage} counts a source document as covered when at least one
 authored index links to it directly, and is reported as a share of the
@@ -865,11 +870,37 @@ $0.725$. B3, indexing the whole corpus, reaches $7.3$ actions and $0.908$;
 our store, indexing $27.6\%$ of it, reaches $8.7$ and $0.817$. Per point of
 corpus coverage that is $0.039$ actions saved and $+0.0033$ F1 for us
 against $0.025$ and $+0.0018$ for B3 --- $1.6\times$ and $1.8\times$ more per
-point covered. B2, which also covers everything, returns $0.003$ actions and
+point covered. The accuracy ratio is robust to how the probe is composed
+($1.7$--$2.2\times$ on each group taken alone); the action ratio is not, and
+inverts to $0.6\times$ if the trained group is dropped, so it is worth
+whatever a deployment's overlap with its training questions makes it worth. B2, which also covers everything, returns $0.003$ actions and
 \emph{negative} F1 per point: coverage alone is not the mechanism, and
 community summaries are the wrong structure regardless of how much of the
 corpus they span. What separates us from B3 is therefore not the quality of
 the structure but how much of the corpus carries any.
+
+\begin{table}[!t]
+\caption{What a point of corpus coverage buys, pooled over all 120 probe
+questions. Each arm's gain over the untrained flat store, divided by the
+share of the corpus its indexes reach. The offline arms index everything;
+ours indexes the part its training questions named.}
+\label{tab:percoverage}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrr@{}}
+\toprule
+Store & coverage & actions saved & F1 gained \\
+ & & \multicolumn{2}{c}{per point of coverage} \\
+\midrule
+B1 flat & 0\% & --- & --- \\
+B2 GraphRAG & 100\% & $0.003$ & $-0.0002$ \\
+B3 HippoRAG2 & 100\% & $0.025$ & $+0.0018$ \\
+Ours (trained) & 27.6\% & $\mathbf{0.039}$ & $\mathbf{+0.0033}$ \\
+\bottomrule
+\end{tabular*}
+\end{table}
 
 \textbf{The store is undertrained, not saturated.} This is the central
 qualification on every number in this paper, and Fig.~\ref{fig:coverage}
@@ -909,69 +940,35 @@ coverage --- per point we buy more of both (Table~\ref{tab:gradient}).}
 \label{fig:coverage}
 \end{figure}
 
-\begin{table*}[!t]
-\caption{The key-coverage gradient, with each arm's corpus coverage.
-$\rho$ = actions relative to the untrained flat store on the same questions;
-$^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. The four groups
-differ only in how much of the question the training set touched, so the
-gradient is a property of \emph{our} arm alone: the offline arms index
-everything, and for them every group is the same store.
-\textbf{Read the coverage column with the rest.} B3 leads the raw
-comparisons, and it does so from $100\%$ coverage against our $27.6\%$ ---
-it indexes every entity in the corpus, while a hundred training questions
-name only a quarter of it. Where our indexes exist we lead: the trained
-group is ours by a clear margin ($\rho = 0.686$ against $0.777$). Where they
-do not, we fall back to the flat store and B3 does not, which is what the
-three right-hand $\rho$ columns record. Normalizing each arm's pooled gain
-by the coverage that produced it removes the asymmetry, and there we lead on
-both endpoints: $1.6\times$ B3's action saving and $1.8\times$ its accuracy
-gain per point of corpus indexed, computed over all 120 probe questions. The
-accuracy ratio is robust to the mix (1.7--$2.2\times$ on every group taken
-alone); the action ratio is not, and falls to $0.6\times$ if the trained
-group is dropped entirely --- it is worth what the query distribution's
-overlap with training makes it worth. The gap in the raw columns is a gap in
-how much has been trained rather than in what a point of training buys:
-coverage grows linearly in new training questions
-(Fig.~\ref{fig:coverage}) and this run consumed a hundred of them.}
+\begin{table}[!t]
+\caption{The key-coverage gradient. Groups differ only in how much of the
+question the training set touched. $\rho$ = actions relative to the
+untrained flat store on the same questions, so lower is cheaper;
+$^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. $n=30$ per group,
+identical reader, action set and budget $M{=}15$. B3 indexes the whole
+corpus, for which all four groups are the same store, and is compared
+separately in Table~\ref{tab:percoverage}.}
 \label{tab:gradient}
 \centering
-\small
-\renewcommand{\arraystretch}{1.2}
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{lc cccc cccc rr}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
- & & \multicolumn{4}{c}{$\rho$: actions relative to B1}
-   & \multicolumn{4}{c}{F1}
-   & \multicolumn{2}{c}{per point of coverage} \\
-\cmidrule(lr){3-6}\cmidrule(lr){7-10}\cmidrule(lr){11-12}
-Store & cov.
- & trained & both & one & neither
- & trained & both & one & neither
- & actions & F1 \\
+Store & trained on & both keys & one key & neither \\
 \midrule
-B1 flat & 0\%
- & 1.000 & 1.000 & 1.000 & 1.000
- & 0.700 & 0.600 & 0.767 & 0.833 & --- & --- \\
-B2 GraphRAG & 100\%
- & 0.909 & 0.984 & 1.036 & 0.947
- & 0.633 & 0.567 & 0.833 & 0.800 & $0.003$ & $-0.0002$ \\
-B3 HippoRAG2 & 100\%
- & 0.777$^{*}$ & \textbf{0.720}$^{*}$ & \textbf{0.779}$^{*}$ & \textbf{0.708}$^{*}$
- & \textbf{0.867} & \textbf{0.900} & \textbf{0.967} & \textbf{0.900}
- & $0.025$ & $+0.0018$ \\
-Ours (trained) & 27.6\%
- & \textbf{0.686}$^{*}$ & 0.935 & 1.032 & 0.904$^{*}$
- & 0.800 & 0.767 & 0.867 & 0.833
- & $\mathbf{0.039}$ & $\mathbf{+0.0033}$ \\
+\multicolumn{5}{@{}l}{\emph{$\rho$: actions relative to B1}}\\
+\quad B1 flat & 1.000 & 1.000 & 1.000 & 1.000 \\
+\quad B2 GraphRAG & 0.909 & 0.984 & 1.036 & 0.947 \\
+\quad Ours (trained) & \textbf{0.686}$^{*}$ & \textbf{0.935} & \textbf{1.032} & \textbf{0.904}$^{*}$ \\
+\addlinespace[2pt]
+\multicolumn{5}{@{}l}{\emph{F1}}\\
+\quad B1 flat & 0.700 & 0.600 & 0.767 & \textbf{0.833} \\
+\quad B2 GraphRAG & 0.633 & 0.567 & 0.833 & 0.800 \\
+\quad Ours (trained) & \textbf{0.800} & \textbf{0.767} & \textbf{0.867} & \textbf{0.833} \\
 \bottomrule
-\end{tabular}
-
-\vspace{2pt}
-{\footnotesize $n=30$ per group; identical reader, action set and budget
-$M{=}15$ throughout. Pooled over all 120 probe questions, B1 answers in
-$9.8$ actions at F1 $0.725$, B3 in $7.3$ at $0.908$, and ours in $8.7$ at
-$0.817$.}
-\end{table*}
+\end{tabular*}
+\end{table}
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.} On
