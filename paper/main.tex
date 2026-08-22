@@ -630,7 +630,7 @@ because it was pre-registered, not because it carries weight.
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{learning.pdf}
+\includegraphics[width=0.88\textwidth]{learning.pdf}
 \caption{Six frozen snapshots of one training run, read two ways. The
 reader, action set, budget and questions are identical at every point, so
 the only thing varying is the store. \emph{(a, b)} Cost and accuracy per
@@ -876,7 +876,7 @@ precisely because it removes that mixing.
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{network.pdf}
+\includegraphics[width=0.86\textwidth]{network.pdf}
 \caption{The document network the agent built. \emph{Top:} the store at
 three points in training; every document is drawn, and position is a t-SNE
 projection of its embedding under the same function the store indexes with,
@@ -902,7 +902,7 @@ clusters while local links join semantically adjacent documents.}
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=\columnwidth]{trajectory.pdf}
+\includegraphics[width=0.92\columnwidth]{trajectory.pdf}
 \caption{(a)~What the store accumulates, reconstructed by trace replay.
 \emph{Index documents} = agent-authored documents still alive; \emph{net
 documents added} = store size minus the initial 5{,}864. The two curves
@@ -1041,20 +1041,15 @@ alternative is prequential.
 \textbf{Threats to validity.} Template-rendered language is simpler than
 natural prose and its regularity may flatter lexical matching; the official
 PhantomWiki arm, whose generator we do not control, is the partial answer.
-Reader and trainer share a model family, so structure tuned by one may suit
-the other's search habits, and that family is not the current one:
-\texttt{gpt-5-mini-2025-08-07} was the small reasoning model when these runs
-began. A stronger reader is the harder test for us, not the easier one ---
-the better it is at recovering a set by searching, the less an index adds ---
-so re-running on a current model should shrink the margins we report while
-leaving the ordering among arms intact. The key-coverage gradient is
-measured on \kbgym{} alone, because it needs a generator that can enumerate
-a template's full instance pool; replicating it externally is the first item
-for a revision. Single seed, single agent by design (concurrent maintenance
-and its conflict taxonomy are the natural sequel), support-set diagnostics
-unavailable on the external arm, and grading is token-F1 against short golds
---- adequate for entity answers, blunt for free-form ones, which this
-environment avoids by construction.
+Reader and trainer share a model family
+(\texttt{gpt-5-mini-2025-08-07}, the small reasoning model when these runs
+began), so structure tuned by one may suit the other's habits; a stronger
+reader is the harder test for us, not the easier one, since the better it is
+at recovering a set by searching the less an index adds. The four-point
+gradient is \kbgym{}-only because it needs a generator that can enumerate a
+template's instance pool. Single seed; single agent by design; support-set
+diagnostics unavailable on the external arm; grading is token-F1 against
+short golds.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
