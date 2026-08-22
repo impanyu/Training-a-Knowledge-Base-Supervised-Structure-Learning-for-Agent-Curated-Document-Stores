@@ -34,7 +34,9 @@ CURVE = [("exact", "trained on this question", VERM, "o", "-"),
          ("share2", "both keys seen", ORANGE, "s", "-"),
          ("share1", "one key seen", BLUE, "^", "--"),
          ("share0", "neither key seen", "0.45", "v", ":")]
-ITERS = [0, 20, 40, 60, 80, 100]        # epoch 1 only: epoch 2
+ITERS = [0, 20, 40, 60, 80, 100]
+MIN_ROWS = 120  # all four groups complete: kb.test fills splits in order,
+                # so a partial file has some groups at n=0 and others at n=30        # epoch 1 only: epoch 2
                                         # repeats the same questions
                                         # and adds no new keys
 
@@ -63,8 +65,10 @@ def gradient_curve():
             p = f"runs/curve_{N}/test_log.jsonl"
             if not os.path.exists(p):
                 continue
-            rows = [json.loads(l) for l in open(p)
-                    if json.loads(l).get("split") == split]
+            allrows = [json.loads(l) for l in open(p)]
+            if len(allrows) < MIN_ROWS:
+                continue
+            rows = [r for r in allrows if r.get("split") == split]
             if not rows:
                 continue
             xs.append(N)
@@ -106,7 +110,7 @@ def coverage_outcome():
         if not os.path.exists(p):
             continue
         rows = [json.loads(l) for l in open(p)]
-        if not rows:
+        if len(rows) < MIN_ROWS:
             continue
         xs.append(_coverage(N))
         ys.append(sum(r["steps"] for r in rows) / len(rows))

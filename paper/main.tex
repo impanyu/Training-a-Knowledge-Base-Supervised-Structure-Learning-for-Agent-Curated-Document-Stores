@@ -118,22 +118,30 @@ one-time cost of curation is repaid by per-question savings.
 
 \textbf{Contributions.}
 \begin{enumerate}
-\item \textbf{Agent-trained knowledge bases.} We propose letting an LLM agent
-\emph{train} a document store under the standard machine-learning training
-paradigm, with the knowledge base playing the role of the model: supervised
-(question, answer) pairs are consumed one at a time over multiple epochs; each
-iteration runs a forward pass (answer the question from the current store) and
-a backward pass (with the revealed gold in hand, \emph{edit the store
-itself}---adding, rewriting, deleting, and linking documents; building index
-and navigation documents---so the question's class becomes easier for a future
-reader); held-out performance is the loss. The knowledge base, not the model
-weights, is the learned object, and the structure is carved incrementally by
-the questions actually asked rather than induced from the corpus alone. In
-machine-learning terms the contrast with offline graph construction
-(GraphRAG, RAPTOR, HippoRAG) is exact: those are \emph{unsupervised} ---
-structure inferred from the corpus with no labels and no notion of what will
-be asked --- while ours is \emph{supervised}: (question, answer) pairs are
-the labels, and structure is optimized against verified answers.
+\item \textbf{Agent-trained knowledge bases, and why supervision is the
+efficient way to spend structure.} We let an LLM agent \emph{train} a
+document store under the standard machine-learning paradigm, the knowledge
+base playing the role of the model: supervised (question, answer) pairs are
+consumed one at a time; each iteration runs a forward pass (answer from the
+current store) and a backward pass (with the gold revealed, \emph{edit the
+store}---adding, deleting and linking documents, building index documents);
+held-out performance is the loss. The contrast with offline construction
+(GraphRAG, RAPTOR, HippoRAG) is exact in machine-learning terms: those are
+\emph{unsupervised}, inferring structure from the corpus with no labels and
+no notion of what will be asked, while (question, answer) pairs are our
+labels and structure is optimized against verified answers. The advantage
+this buys is measurable and it is one of efficiency, not of ceiling. Per
+point of corpus indexed, supervised curation returns $1.6\times$ the action
+saving and $1.8\times$ the accuracy of an unsupervised entity index that
+covers everything, because it spends its structure where questions actually
+go: $1{,}913$ links against $196{,}112$, and $94\%$ of ours point at a
+document that genuinely belongs under its key. Our absolute numbers trail
+that baseline only because a hundred training questions reach a quarter of
+the corpus, and coverage grows linearly in questions consumed --- the gap is
+training volume, not method. Supervision also composes with deployment in a
+way offline construction cannot: the loop consumes questions one at a time
+and edits in place, so a store can keep learning from live traffic and
+concentrate its structure on the query distribution it actually serves.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
@@ -147,9 +155,6 @@ answers and support sets; deterministic, integer-exact store metrics and no
 LLM judge in any measurement --- grading is SQuAD normalization against
 programmatic golds, and the one LLM judge in the system guards
 deduplication inside the store, never a reported number.
-\item \textbf{Cost as a first-class outcome}: accuracy, store size,
-training cost, and per-question answering cost reported together, with a
-break-even analysis of when training a store pays for itself.
 \end{enumerate}
 
 \section{Related Work}
