@@ -1073,15 +1073,28 @@ almost never revises. The deduplication judge fired on $45$ candidates and
 merged $8$, so document-level parsimony was already holding at this scale
 without much intervention.
 
-\textbf{What the agent wrote.} Of the 284 authored documents, $257$
-($90\%$) are named for a key --- \emph{``Residents of Dorringham''},
-\emph{``Grandchildren of Ivor Yarrow''}, a bare person name --- and carry
-their content in links rather than in prose. This inverts the behavior of
-an earlier version of this environment, where $80\%$ of authored documents
-instead materialized the verified answer as a sentence; naming the
-mechanism in the curation skill, rather than only the goal, is what changed
-it. The structure is correspondingly flat: $1{,}896$ of $1{,}913$ links
-attach an index, and only $17$ join two source documents directly.
+\textbf{What the agent wrote, and whether it is an index.} Calling every
+authored document an index would beg the question, so we classify the 287 of
+them by three checkable properties: it must carry at least one link;
+its sentence must not enumerate its own members (the shape the curation
+skill forbids, tested by resolving the key's true member set from the
+universe and looking for those names in the text); and its key must be
+resolvable at all. On that test $242$ ($84.3\%$) are genuine indexes ---
+their text is the name of a key and their content is in their links --- $43$
+($15.0\%$) are empty stubs like \emph{``Delphine Thistlewood''}, and $2$ are
+materialized answers. Coverage is insensitive to the distinction ($27.6\%$
+counting every authored document, $27.5\%$ counting only the genuine
+indexes), because stubs have no links to contribute.
+
+That $84\%$ is itself a result. In an earlier version of this environment
+the same protocol produced the opposite shape --- $80\%$ of authored
+documents stated the verified answer as a sentence, which serves the one
+question that produced it and nothing else. The difference is that the
+curation skill now names the mechanism (``an index points; it does not
+list'') rather than only the goal (``organize for the question's class'').
+The structure is correspondingly flat: $1{,}896$ of $1{,}913$ links attach an
+index and only $17$ join two source documents, so the agent builds entry
+points readily and levels almost never.
 
 \textbf{Mechanism attribution needs an intervention, not a split.} We had
 intended to attribute the reader's step savings to its hits on built
