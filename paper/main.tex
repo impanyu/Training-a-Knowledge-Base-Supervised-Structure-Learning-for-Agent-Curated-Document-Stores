@@ -925,10 +925,14 @@ do not, we fall back to the flat store and B3 does not, which is what the
 three right-hand $\rho$ columns record. Normalizing each arm's pooled gain
 by the coverage that produced it removes the asymmetry, and there we lead on
 both endpoints: $1.6\times$ B3's action saving and $1.8\times$ its accuracy
-gain per point of corpus indexed. The gap in the raw columns is a gap in how
-much has been trained, not in what a point of training buys; coverage grows
-linearly in new training questions (Fig.~\ref{fig:coverage}) and this run
-consumed a hundred of them.}
+gain per point of corpus indexed, computed over all 120 probe questions. The
+accuracy ratio is robust to the mix (1.7--$2.2\times$ on every group taken
+alone); the action ratio is not, and falls to $0.6\times$ if the trained
+group is dropped entirely --- it is worth what the query distribution's
+overlap with training makes it worth. The gap in the raw columns is a gap in
+how much has been trained rather than in what a point of training buys:
+coverage grows linearly in new training questions
+(Fig.~\ref{fig:coverage}) and this run consumed a hundred of them.}
 \label{tab:gradient}
 \centering
 \small
