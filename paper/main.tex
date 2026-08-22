@@ -13,6 +13,20 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,fit}
 \usepackage{url}
+
+% Float placement: the paper carries nine floats, and LaTeX's defaults are
+% tight enough that they queue up and land at the end. Allow a page to be
+% mostly floats and let more of them share one page.
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.6}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.72}
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\dblfloatpagefraction}{0.72}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
+\setcounter{dbltopnumber}{2}
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 \newcommand{\kbgym}{KBGym}
 
@@ -436,41 +450,39 @@ Every intermediate store state is reconstructible by replaying the edit trace
 (validated byte-exact against epoch snapshots), giving per-iteration store
 trajectories for analysis at no storage cost.
 
-\begin{table}[t]
-\caption{Credit assignment: Phase-2 diagnosis and repair, determined by the Phase-1
-trajectory plus the revealed gold. No oracle localization is provided.}
-\label{tab:credit}
-\centering
-\small
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{L{2.5cm}L{5.2cm}}
-\toprule
-Trajectory diagnosis & Repair \\
-\midrule
-Needed fact never surfaced & directed re-search \emph{with the answer in hand}; link
-from where the blind search wandered to where the fact lives \\
-Fact read but chain unassembled & materialize the chain as links; optionally author a
-navigation document for the class \\
-Conflicting documents found & resolve using the gold as arbiter (delete or edit the
-loser) \\
-Class-level gap (same failure would recur on siblings) & build/extend an index document
-gathering same-class material \\
-\bottomrule
-\end{tabular}
-\end{table}
+What the backward pass is told is deliberately uniform: no oracle
+localization, and no branching on how the forward pass failed. The agent
+receives its own trajectory, the gold answer, its F1, and one of three
+coarse outcomes (budget exhausted, answered wrongly, answered correctly),
+followed by the same instruction in every case --- name the keys this
+question mentioned, the people, places, jobs, hobbies and relations it
+named, and make sure each has a complete index document: build what is
+missing, extend what is partial, change nothing if they are already
+complete.
 
-The training agent's objectives, stated as goals (mechanisms are its choice):
-(1)~answer correctly; (2)~consolidate verified reasoning into structure; (3)~organize
-for the question's \emph{class}---build or extend index/navigation documents so unseen
-instances of the class resolve in fewer steps; (4)~keep the store
-\emph{parsimonious}: duplicated facts compete in search and bury each other; delete
-redundancy you create; if the store already serves the class, change nothing.
-Objective~(4) encodes the lesson of preliminary runs on an earlier
-environment variant, in which an agent trained \emph{without} it quintupled
-an already-organized store and regressed the reader by 17 F1 points while
-every individual edit looked constructive. Credit assignment needs no oracle: a wrong answer plus the
-revealed gold lets the agent re-search \emph{with the answer in hand}, and the repair
-is determined by the trajectory difference.
+The curation skill supplies the standing constraints rather than a
+procedure. An index \emph{points}; its members belong in its links, never
+recited in its sentence, so the index survives the facts changing under it.
+One key at a time: a question naming four keys and a budget that closes one
+should close one, because an index of twenty-nine members is worth more than
+four of three, and an unreached key is picked up by the next question naming
+it. Precision before completeness: search returns what is similar, not what
+belongs, so linking a whole result set destroys the certainty an index
+exists to provide. Completeness is then a promise --- a reader that finds an
+index stops searching, so a partial index does not merely underperform, it
+makes the reader confidently count nine where there are fourteen. And an
+index under which the store holds nothing is deleted rather than left
+standing, since it would cost a retrieval slot and return nothing.
+Parsimony governs all of it: duplicated documents compete in search and bury
+each other. That last constraint encodes the lesson of preliminary runs on
+an earlier environment variant, in which an agent trained \emph{without} it
+quintupled an already-organized store and regressed the reader by 17 F1
+points while every individual edit looked constructive.
+
+Credit assignment needs no oracle: a wrong answer plus the revealed gold
+lets the agent re-search \emph{with the answer in hand}, and what to repair
+follows from the difference between where it searched and where the answer
+turned out to live.
 
 \section{Experimental Design}
 \subsection{Benchmarks}
@@ -675,7 +687,7 @@ training tokens, 16.4h) yields the training half of E1; the frozen-store
 exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
 training-time signals, then the exam.
 
-\begin{figure}[t]
+\begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{learning.pdf}
 \caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
@@ -722,22 +734,28 @@ questions. Sections~\ref{sec:res-grad} and~\ref{sec:res-e4} locate the
 gap: the saving tracks how much of a question's key the store indexed, and
 the structure that was built pays only where derivation is expensive.
 
-\begin{table}[t]
-\caption{Index construction quality, by the kind of key the index is built on.}
+\begin{table}[!t]
+\caption{Index construction quality, by the kind of key the index is built
+on, with one example of each.}
 \label{tab:idxquality}
 \centering
 \scriptsize
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.1}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
 Key the index is built on & $n$ & deg. & prec. & recall \\
 \midrule
 attribute: city & 8 & 26.4 & 98\% & 95\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Residents of Dorringham''}} \\[1pt]
 attribute: hobby / job & 54 & 12.7 & 98\% & 96\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``People whose hobby is astronomy''}} \\[1pt]
 single-entity hub & 91 & 8.0 & 95\% & 90\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Bennett Coldwater''}} \\[1pt]
 relation, two-hop & 10 & 3.9 & 87\% & 55\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Grandchildren of Ivor Yarrow''}} \\[1pt]
 relation, one-hop & 54 & 3.4 & 78\% & 73\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Friends of Delphine Grimsby''}} \\
 \midrule
 all scored indexes & 217 & 8.5 & 94\% & 91\% \\
 \bottomrule
@@ -812,7 +830,7 @@ QC8 deep counts & 26 & 0.46 & 0.58 \\
 \end{tabular*}
 \end{table}
 
-\begin{figure*}[t]
+\begin{figure*}[!t]
 \centering
 \includegraphics[width=0.92\textwidth]{network.pdf}
 \caption{The document network the agent built. \emph{Top:} the store at
@@ -838,7 +856,7 @@ clusters while local links join semantically adjacent documents.}
 \end{figure*}
 
 
-\begin{figure}[t]
+\begin{figure}[!t]
 \centering
 \includegraphics[width=0.8\columnwidth]{trajectory.pdf}
 \caption{(a)~What the store accumulates, reconstructed by trace replay.
