@@ -121,6 +121,15 @@ def gradient_and_coverage():
     for ax, vals, j in ((b_s, ys, 0), (b_f, fs, 1)):
         if xs:
             ax.plot(xs, vals, "o-", color=VERM, lw=1.6, ms=4, label="ours")
+            # the curve stops because training stopped, not because data is
+            # missing: 100 questions reach 27.6% of the corpus
+            ax.axvspan(xs[-1], 100, color="0.5", alpha=0.07, lw=0)
+            ax.annotate("", xy=(97, vals[-1]), xytext=(xs[-1] + 2, vals[-1]),
+                        arrowprops=dict(arrowstyle="->", color=VERM, lw=1.0,
+                                        ls=(0, (3, 3)), alpha=0.75))
+            ax.text((xs[-1] + 100) / 2, vals[-1],
+                    "not trained\nthis far", ha="center", va="bottom",
+                    fontsize=5.8, color="0.35")
         if b3:
             ax.plot([100], [b3[j]], "^", color=BLUE, ms=6, label="B3 HippoRAG2")
         if b2:
