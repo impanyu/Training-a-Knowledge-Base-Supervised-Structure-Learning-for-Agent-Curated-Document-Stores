@@ -150,14 +150,11 @@ deduplication inside the store, never a reported number.
 \textbf{Retrieval-augmented generation and agentic retrieval.} Classic RAG
 retrieves from a frozen corpus with a learned dense retriever and generates
 conditioned on the results~\cite{rag-lewis,dpr,realm,fid}: the corpus is an
-input, never an output. Agentic RAG moves retrieval into the reasoning loop
---- ReAct interleaves reasoning with tool calls~\cite{react}, IRCoT
-interleaves chain-of-thought with retrieval~\cite{ircot}, Self-Ask
-decomposes into sub-questions~\cite{selfask}, FLARE retrieves on low
-generation confidence~\cite{flare}, Self-RAG learns when to retrieve and how
-to judge what returns~\cite{selfrag}, and recent systems frame the
-retrieve-or-reason decision as an MDP~\cite{deeprag} or train the search
-policy with RL~\cite{searchr1,agentic-rag-survey}. Our reader \emph{is} such
+input, never an output. Agentic RAG moves retrieval into the reasoning loop, interleaving it with
+reasoning~\cite{react,ircot}, sub-question
+decomposition~\cite{selfask}, confidence-triggered
+retrieval~\cite{flare,selfrag}, or a learned retrieve-or-reason
+policy~\cite{deeprag,searchr1,agentic-rag-survey}. Our reader \emph{is} such
 a loop. The distinction is which side learns: that line improves the
 query-side policy against a fixed corpus; we hold the policy fixed and train
 the store. The axes are orthogonal and composable.
@@ -735,17 +732,14 @@ behind them; the arm also carries no offline-construction baselines, so the
 comparison below is \kbgym{}-only.
 
 \subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
-B3 answers in fewer actions and at higher F1 than we do, and it does so
-from $100\%$ coverage against our $27.6\%$: it indexes every entity in the
-corpus, while a hundred training questions name only a quarter of it. Where
-our indexes exist we lead --- the trained group is ours at $\rho = 0.686$
-against $0.777$ --- and where they do not we fall back to the flat store
-while B3 does not: its $\rho$ holds between $0.71$ and $0.78$ in all four
-groups, ours only in the trained one.
-A gradient defined by what training touched is in any case a property of our
-arm alone; for an arm that indexes everything, all four groups are the same
-store. The comparison that treats both fairly divides each arm's gain by the
-coverage that produced it.
+B3 answers in fewer actions and at higher F1 than we do, from $100\%$
+coverage against our $27.6\%$: it indexes every entity in the corpus, while a
+hundred training questions name a quarter of it. Its $\rho$ holds between
+$0.71$ and $0.78$ in all four groups; ours beats it where our indexes exist
+($0.686$ against $0.777$ on the trained group) and falls back to the flat
+store where they do not. A gradient defined by what training touched is in
+any case a property of our arm alone, so the comparison that treats both
+fairly divides each arm's gain by the coverage that produced it.
 
 \emph{Coverage} counts a source document as covered when at least one
 authored index links to it directly, and is reported as a share of the
@@ -1031,22 +1025,18 @@ train/test protocol is what makes that boundary visible --- downstream-only
 evaluation cannot see a store being slowly ruined while individual answers
 still look fine.
 
-\textbf{Deployment, and the online variant.} The abstraction targets agent
-fleets maintaining shared repositories and wikis, where our failure ledger
-maps onto real incidents: duplicated near-copies burying each other is the
-lost-update problem, authored-without-provenance content is the hallucinated
-fix, a deleted last instance is knowledge loss during refactoring. We
-separate training from a frozen exam because that separation is what makes
-the generalization question answerable --- a store edited during evaluation
-cannot be said to have been tested on anything --- but nothing in the method
-requires it. The loop already answers before it edits, so the same agent
-could curate against live traffic, treating a correction, a follow-up or a
-click as the label the gold supplies here, and would then concentrate
-coverage on the distribution it actually serves, which
-Sec.~\ref{sec:res-grad} shows is where coverage is worth most. What that
-variant needs is not a different curator but a different measurement:
-with the store moving underneath, held-out accuracy stops being well
-defined and the honest alternative is prequential.
+\textbf{Deployment, and the online variant.} The abstraction targets agent fleets
+maintaining shared repositories, where our failure ledger maps onto real
+incidents: duplicated near-copies burying each other is the lost-update
+problem, authored content without provenance is the hallucinated fix, a
+deleted last instance is knowledge loss during refactoring. We separate
+training from a frozen exam because that is what makes the generalization
+question answerable --- a store edited during evaluation cannot be said to
+have been tested on anything --- but nothing in the method requires it, and
+the online variant sketched in Sec.~\ref{sec:res-perlink} needs a different
+\emph{measurement} rather than a different curator: with the store moving
+underneath, held-out accuracy stops being well defined and the honest
+alternative is prequential.
 
 \textbf{Threats to validity.} Template-rendered language is simpler than
 natural prose and its regularity may flatter lexical matching; the official
