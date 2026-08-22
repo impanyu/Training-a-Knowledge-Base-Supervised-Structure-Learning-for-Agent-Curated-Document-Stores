@@ -652,9 +652,10 @@ All results below are from the final environment (Sec.~\ref{sec:env})
 and the main run, keyed to the suite of Sec.~\ref{sec:suite}:
 the calibration that fixed the main configuration
 (Sec.~\ref{sec:res-calib}), then the learning curve (E1,
-Sec.~\ref{sec:res-e1}), the baseline table (E2, Sec.~\ref{sec:res-e2}),
-retention and its per-category profile (E3, Sec.~\ref{sec:res-e3}), and
-trace mining (E4, Sec.~\ref{sec:res-e4}).
+Sec.~\ref{sec:res-e1}), the key-coverage gradient that carries the main
+result (E2, Sec.~\ref{sec:res-grad}), retention and its per-category
+profile (E3, Sec.~\ref{sec:res-e3}), and trace mining (E4,
+Sec.~\ref{sec:res-e4}).
 
 \begin{figure}[t]
 \centering
@@ -753,9 +754,41 @@ and undefined at $M{=}8$, and the predicted leftward shift of the
 accuracy--budget curve does not appear (the trained and flat curves are
 within noise of each other at both points). The $-38\%$ step saving of
 Sec.~\ref{sec:res-e3} is real but confined to \emph{re-encountered}
-questions. Sections~\ref{sec:res-e2} and~\ref{sec:res-e4} locate the gap:
-no baseline saves steps either, and the structure that was built pays only
-where derivation is expensive.
+questions. Sections~\ref{sec:res-grad} and~\ref{sec:res-e4} locate the
+gap: the saving tracks how much of a question's key the store indexed, and
+the structure that was built pays only where derivation is expensive.
+
+\begin{table}[t]
+\caption{Index construction quality on the final store, by the kind of key
+the index is built on. A link counts as correct if it points at a document
+about a genuine member of the key, resolved from the universe rather than by
+string match --- the grandchildren of a person are recorded as ``\emph{X} is
+a child of \emph{Y}'' and never name the grandparent, so string matching
+scores a correct two-hop index at zero. Recall is the share of the key's
+members the index reaches.}
+\label{tab:idxquality}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrr}
+\toprule
+Key the index is built on & $n$ & deg. & prec. & recall & empty \\
+\midrule
+attribute: city & 8 & 26.4 & 98\% & 95\% & 0 \\
+attribute: hobby / job & 54 & 12.7 & 98\% & 96\% & 0 \\
+single-entity hub & 91 & 8.0 & 95\% & 90\% & 0 \\
+relation, two-hop & 10 & 3.9 & 87\% & 55\% & 0 \\
+relation, one-hop & 54 & 3.4 & 78\% & 73\% & 0 \\
+other / unscorable & 67 & 0.0 & --- & --- & 43 \\
+\midrule
+all authored indexes & 284 & 6.7 & 93\% & 83\% & 43 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
+[[GRADIENT TABLE AND ANALYSIS -- pending the probe, filling on completion]]
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.}
@@ -773,7 +806,7 @@ cannot solve natively.
 \textbf{Retention is also cheaper, with a caveat about what is being
 compared.} On re-encountered questions the forward pass takes $5.7$ steps
 and 31k tokens, vs.\ $9.2$ steps and 45k tokens in epoch~1: $-38\%$ steps,
-$-32\%$ tokens. Decomposing as in Sec.~\ref{sec:res-e2}, both terms move:
+$-32\%$ tokens. Decomposing the cost, both terms move:
 budget exhaustion falls from $47/150$ ($31\%$) to $7/150$ ($5\%$), and on
 the 100 questions resolved within budget in \emph{both} epochs the lookup
 itself shortens from $6.43$ to $4.64$ steps ($-28\%$) while F1 rises from
@@ -783,9 +816,9 @@ these two epochs are not a controlled store contrast: the store evolves
 \emph{during} epoch~1, so an early epoch-1 question meets a nearly
 untrained store and a late one meets a partly trained store, and the epoch
 label mixes store state with question order. The controlled version --- the
-same 150 training questions examined under the frozen initial store and the
-frozen final store, exactly as the test splits are examined --- is reported
-in Sec.~\ref{sec:res-gap}.
+same training questions examined under the frozen initial store and the
+frozen final store --- is the \emph{exact} row of the gradient table
+(Sec.~\ref{sec:res-grad}).
 
 \textbf{Three-layer decomposition, completed.} Retention $0.85$ /
 \texttt{test\_in} $0.63$ / \texttt{test\_out} $0.66$. Both test layers
@@ -924,7 +957,7 @@ reshuffled, so per-class retention rides on small samples. The frozen-store exam
 curation creates value where organization is lacking and pollution where it
 is not: training helps on the disorganized main condition, while
 GraphRAG-style summaries added to an already-searchable store regress
-\texttt{test\_in} (Sec.~\ref{sec:res-e2}). The difference is carried by
+accuracy (Sec.~\ref{sec:res-grad}). The difference is carried by
 whether the optimizer knows when \emph{not} to edit.
 The train/test protocol makes this boundary measurable; downstream-only evaluation
 cannot see a store being slowly ruined while individual answers still look fine.
