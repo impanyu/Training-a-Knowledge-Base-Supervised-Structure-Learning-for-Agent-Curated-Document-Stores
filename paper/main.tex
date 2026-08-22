@@ -990,51 +990,43 @@ intervention that does identify, because it varies coverage of the
 question's key \emph{before} the reader starts.
 
 \section{Discussion and Limitations}\label{sec:disc}
-\textbf{What limits the method is coverage, not construction.} The indexes
-the agent builds are accurate ($94\%$ precision, $91\%$ member recall), so
-the reading that this procedure simply fails to produce usable structure
-does not survive the final environment. What it does not do is build
-\emph{enough}: a quarter of the corpus sits under an index, and it is the
-quarter the training questions named. Two mechanisms are implicated, both
-actionable. The backward budget cannot populate a thirty-member index in one
-iteration, and nothing asks the agent to \emph{return} to an existing index
-and extend it, so $43$ were opened and abandoned. More fundamentally the
-agent indexes the key a question names rather than the class it belongs to:
-it builds ``Friends of Delphine Grimsby'' when asked about her, never
-``friends, for everyone''. A protocol that scores an index by completeness
-over a class, and rewards extending one over creating another, is the
-obvious next experiment. Curation also has a boundary in the other
-direction: GraphRAG-style summaries added to an already-searchable store
-\emph{lose} accuracy, so value comes from knowing when not to edit, and a
-train/test protocol is what makes that boundary visible --- downstream-only
-evaluation cannot see a store being slowly ruined while individual answers
-still look fine.
+\textbf{Coverage, not construction, is the limit.} The indexes the agent
+builds are accurate ($94\%$ precision, $91\%$ member recall); what it does
+not build is \emph{enough} of them, and the quarter of the corpus it covers
+is the quarter the training questions named. Two mechanisms are implicated,
+both actionable: the backward budget cannot populate a thirty-member index
+in one iteration and nothing asks the agent to \emph{return} to one, so $43$
+were opened and abandoned; and more fundamentally the agent indexes the key
+a question names rather than the class it belongs to --- ``Friends of
+Delphine Grimsby'' when asked about her, never ``friends, for everyone''. A
+protocol scoring an index by completeness over a class, and rewarding
+extension over creation, is the obvious next experiment. Curation has a
+boundary in the other direction too: GraphRAG-style summaries added to an
+already-searchable store \emph{lose} accuracy, so the value is in knowing
+when not to edit --- something downstream-only evaluation cannot see, since
+a store can be slowly ruined while individual answers still look fine.
 
-\textbf{Deployment, and the online variant.} The abstraction targets agent fleets
-maintaining shared repositories, where our failure ledger maps onto real
-incidents: duplicated near-copies burying each other is the lost-update
+\textbf{Deployment and the online variant.} The abstraction targets agent
+fleets maintaining shared repositories, where our failure ledger maps onto
+real incidents: near-duplicates burying each other is the lost-update
 problem, authored content without provenance is the hallucinated fix, a
 deleted last instance is knowledge loss during refactoring. We separate
 training from a frozen exam because that is what makes the generalization
-question answerable --- a store edited during evaluation cannot be said to
-have been tested on anything --- but nothing in the method requires it, and
-the online variant sketched in Sec.~\ref{sec:res-perlink} needs a different
-\emph{measurement} rather than a different curator: with the store moving
-underneath, held-out accuracy stops being well defined and the honest
-alternative is prequential.
+question answerable, but nothing in the method requires it: the online
+variant of Sec.~\ref{sec:res-perlink} needs a different \emph{measurement},
+not a different curator, since with the store moving underneath held-out
+accuracy stops being well defined and the honest alternative is prequential.
 
 \textbf{Threats to validity.} Template-rendered language is simpler than
-natural prose and its regularity may flatter lexical matching; the official
-PhantomWiki arm, whose generator we do not control, is the partial answer.
-Reader and trainer share a model family
-(\texttt{gpt-5-mini-2025-08-07}, the small reasoning model when these runs
-began), so structure tuned by one may suit the other's habits; a stronger
-reader is the harder test for us, not the easier one, since the better it is
-at recovering a set by searching the less an index adds. The four-point
-gradient is \kbgym{}-only because it needs a generator that can enumerate a
-template's instance pool. Single seed; single agent by design; support-set
-diagnostics unavailable on the external arm; grading is token-F1 against
-short golds.
+natural prose and may flatter lexical matching; the PhantomWiki arm, whose
+generator we do not control, is the partial answer. Reader and trainer share
+a model family (\texttt{gpt-5-mini-2025-08-07}), so structure tuned by one
+may suit the other's habits --- though a stronger reader is the harder test
+for us, not the easier one, since the better it is at recovering a set by
+searching the less an index adds. The four-point gradient is \kbgym{}-only:
+it needs a generator that can enumerate a template's instance pool. Single
+seed; single agent by design; no support-set diagnostics on the external
+arm; grading is token-F1 against short golds.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
