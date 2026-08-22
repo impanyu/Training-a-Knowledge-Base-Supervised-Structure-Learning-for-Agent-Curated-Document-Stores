@@ -25,38 +25,43 @@ def save(fig, name):
     print("wrote", OUT / f"{name}.pdf")
 
 
-# ---------- Fig: learning (eval curve + rolling forward F1) ----------
-rows = [json.loads(l) for l in open(RUN / "test_log.jsonl")]
-by = defaultdict(list)
-for r in rows:
-    by[(r["epoch"], r["flavor"])].append(r["f1"])
-epochs = sorted({e for e, _ in by})
-ev_in = [sum(by[(e, "in")]) / len(by[(e, "in")]) for e in epochs]
-ev_out = [sum(by[(e, "out")]) / len(by[(e, "out")]) for e in epochs]
+# ---------- Fig: the key-coverage gradient over training ----------
+# Each curve is one question group examined on eleven frozen snapshots of the
+# same run. The reader, the budget and the questions are identical at every
+# point; only the store changes, so the curves separate what training bought
+# for questions it saw from what it bought for questions it did not.
+CURVE = [("exact", "trained on this question", VERM, "o", "-"),
+         ("share2", "both keys seen", ORANGE, "s", "-"),
+         ("share1", "one key seen", BLUE, "^", "--"),
+         ("share0", "neither key seen", "0.45", "v", ":")]
+ITERS = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
 
-tl = [json.loads(l) for l in open(RUN / "train_log.jsonl")]
-f1s = [r["f1"] for r in tl]
-W = 30
-roll = [sum(f1s[i - W + 1:i + 1]) / W for i in range(W - 1, len(f1s))]
+def gradient_curve():
+    import os
+    fig, ax = plt.subplots(figsize=(3.5, 2.6))
+    for split, label, color, marker, ls in CURVE:
+        xs, ys = [], []
+        for N in ITERS:
+            p = f"runs/curve_{N}/test_log.jsonl"
+            if not os.path.exists(p):
+                continue
+            rows = [json.loads(l) for l in open(p)
+                    if json.loads(l).get("split") == split]
+            if not rows:
+                continue
+            xs.append(N)
+            ys.append(sum(r["steps"] for r in rows) / len(rows))
+        if xs:
+            ax.plot(xs, ys, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
+                    label=label)
+    ax.set_xlabel("training iteration (frozen snapshot)")
+    ax.set_ylabel("actions to answer")
+    ax.set_xticks([0, 50, 100, 150, 200])
+    ax.legend(frameon=False, fontsize=6.8, loc="lower left")
+    save(fig, "learning")
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.9, 2.5))
-ax1.plot(epochs, ev_in, "o-", color=BLUE, label="eval-in (trained templates)")
-ax1.plot(epochs, ev_out, "s-", color=VERM, label="eval-out (reserved templates)")
-ax1.set_xticks(epochs)
-ax1.set_xlabel("epoch")
-ax1.set_ylabel("eval F1")
-ax1.set_ylim(0, 1.0)
-ax1.legend(frameon=False, fontsize=7.5)
-ax1.set_title("(a) held-out eval by epoch", fontsize=9)
+gradient_curve()
 
-ax2.plot(range(W, W + len(roll)), roll, color=GREEN, lw=1.4)
-ax2.axvline(100.5, color="0.6", ls="--", lw=0.8)
-ax2.text(102, 0.08, "epoch 2\n(re-encountered\nquestions)", fontsize=7, color="0.35")
-ax2.set_xlabel("training iteration")
-ax2.set_ylabel(f"forward F1 (rolling {W})")
-ax2.set_ylim(0, 1.0)
-ax2.set_title("(b) train-forward accuracy", fontsize=9)
-save(fig, "learning")
 
 # ---------- Fig: store trajectory + final out-degree ----------
 ser = [json.loads(l) for l in open(RUN / "series.jsonl")]

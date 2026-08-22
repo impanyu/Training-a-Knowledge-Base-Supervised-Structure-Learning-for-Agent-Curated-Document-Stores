@@ -374,13 +374,58 @@ Document embeddings back \texttt{search} and are maintained
 automatically as documents are added, edited, or deleted.
 
 \subsection{Actions}\label{sec:actions}
-Reader and training-forward mode: \texttt{search(query)} (top-$k$ document ids
-with full text), \texttt{read(id)} (text plus links, each with target text),
-\texttt{answer(text)}. Training consolidation adds: \texttt{add(text)},
-\texttt{edit(id,text)}, \texttt{delete(id)}, \texttt{link(a,b)},
-\texttt{unlink(a,b)}, \texttt{done()}. Provenance is tracked throughout: initial
-documents carry an origin; edited ones are flagged; authored ones have no origin.
-Coverage and duplication are integer-exact; any authored content is attributable.
+Table~\ref{tab:actions} is the complete action set. Availability is enforced
+by the tool schema rather than at runtime: the reader is never shown an
+editing tool, so it cannot decline to use one, and the curator is never
+shown \texttt{answer}. The reader's three actions are byte-identical in
+training phase~1 and at exam time, which is what makes the frozen store the
+only thing that differs between the two.
+
+Two prices are set deliberately. \texttt{search} returns five documents per
+page and a page costs an action, so enumerating a set is possible but
+expensive --- the twenty-nine residents of a city cost six actions, while one
+\texttt{read} of a complete index costs one. Closing that gap is exactly
+what a trained store is for, and returning sixty results at once would erase
+the thing being measured. Conversely \texttt{link\_many} attaches any number
+of targets for a single action, so building an index is cheap once its
+members are found: the curator's budget goes on finding, not on attaching.
+Batches above forty targets are rejected --- the largest genuine key in this
+universe has thirty-six members, so a larger batch is a search result rather
+than a set, and truncating it silently would leave the curator believing it
+had built something it had not.
+
+Provenance is tracked throughout: initial documents carry an origin, edited
+ones are flagged, authored ones have no origin. Coverage and duplication are
+therefore integer-exact and any authored content is attributable.
+
+\begin{table}[!t]
+\caption{The action set. \emph{R} = available to the reader (exam and
+training phase~1); \emph{C} = available to the curator (training phase~2).
+No action is available to both roles in a way that lets the reader modify
+the store.}
+\label{tab:actions}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lL{4.3cm}cc@{}}
+\toprule
+Action & Effect & R & C \\
+\midrule
+\texttt{search(q, page)} & five most similar documents; one page per action & \checkmark & \checkmark \\
+\texttt{read(id)} & the document and the full text of everything it links to, one level & \checkmark & \checkmark \\
+\texttt{answer(text)} & submit and end the pass & \checkmark & \\
+\midrule
+\texttt{add(text)} & new document; a near-duplicate is merged instead & & \checkmark \\
+\texttt{edit(id, text)} & replace a document's text & & \checkmark \\
+\texttt{delete(id)} & remove a document & & \checkmark \\
+\texttt{link(a, b)} & one directed edge & & \checkmark \\
+\texttt{link\_many(a, T)} & up to forty edges from \texttt{a} for one action & & \checkmark \\
+\texttt{unlink(a, b)} & remove an edge & & \checkmark \\
+\texttt{done()} & end the curation pass & & \checkmark \\
+\bottomrule
+\end{tabular*}
+\end{table}
 
 \subsection{Question Classes and Splits}
 Ten categories over $\sim$26 templates. \emph{Forward} classes QC1--QC3 (1--3-hop
@@ -687,21 +732,9 @@ training tokens, 16.4h) yields the training half of E1; the frozen-store
 exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
 training-time signals, then the exam.
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{learning.pdf}
-\caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
-per point: 20 trained-template, 10 reserved-template). (b)~Rolling
-(window~30, drawn from the first full window) forward accuracy over
-training; the dashed line marks epoch~2, where questions are re-encountered
-and retention is carried only by the store.}
-\label{fig:learning}
-\end{figure}
-
-
 \textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
 eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
-(Fig.~\ref{fig:learning}a; $n{=}30$ per point, so these are directional).
+($n{=}30$ per point, so these are directional).
 
 \textbf{The store improves \emph{within} an epoch.} Rolling forward
 accuracy climbs through epoch~1 (first 50 iterations $0.56$, last 50
@@ -763,6 +796,19 @@ all scored indexes & 217 & 8.5 & 94\% & 91\% \\
 \end{table}
 
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{learning.pdf}
+\caption{What training bought, as a function of how much of the question
+the store had seen. Each curve is one question group ($n{=}10$) examined on
+eleven frozen snapshots of the same run; the reader, the action set, the
+budget and the questions are identical at every point, so the only thing
+varying along the $x$-axis is the store. \emph{Trained on this question}
+falls steadily; \emph{neither key seen} does not move. The two intermediate
+groups say how far the effect reaches past the exact key.}
+\label{fig:learning}
+\end{figure}
+
 [[GRADIENT TABLE AND ANALYSIS -- pending the probe, filling on completion]]
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
