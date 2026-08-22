@@ -61,7 +61,7 @@ def gradient_and_coverage():
     axis rather than a difference in what a point of coverage is worth.
     """
     import os
-    fig, axes = plt.subplots(2, 2, figsize=(6.9, 5.0))
+    fig, axes = plt.subplots(2, 2, figsize=(6.9, 3.9))
     (a_s, a_f), (b_s, b_f) = axes
 
     # --- top row: per group, against iteration
@@ -126,12 +126,12 @@ def gradient_and_coverage():
         ax.set_ylabel("actions to answer")
     for ax in (a_f, b_f):
         ax.set_ylabel("F1")
-    a_s.set_title("(a) cost, by question group", fontsize=8.5)
-    a_f.set_title("(b) accuracy, by question group", fontsize=8.5)
-    b_s.set_title("(c) cost vs coverage, pooled", fontsize=8.5)
-    b_f.set_title("(d) accuracy vs coverage, pooled", fontsize=8.5)
+    a_s.set_title("(a) cost, by question group", fontsize=8)
+    a_f.set_title("(b) accuracy, by question group", fontsize=8)
+    b_s.set_title("(c) cost vs coverage, pooled", fontsize=8)
+    b_f.set_title("(d) accuracy vs coverage, pooled", fontsize=8)
     a_s.legend(frameon=False, fontsize=6.4, loc="lower left")
-    fig.subplots_adjust(hspace=0.52, wspace=0.28)
+    fig.subplots_adjust(hspace=0.62, wspace=0.26)
     save(fig, "learning")
 
 gradient_and_coverage()
@@ -151,7 +151,7 @@ axa.plot(it, nodes_added, color=BLUE, lw=1.2, ls=":", label="net documents added
 axa.axvline(100.5, color="0.6", ls="--", lw=0.8)
 axa.set_xlabel("training iteration")
 axa.set_ylabel("count")
-axa.legend(frameon=False, fontsize=8.5, loc="upper left")
+axa.legend(frameon=False, fontsize=8, loc="upper left")
 axa.set_title("(a) what the store accumulates", fontsize=10)
 
 # (b) out-degree of every authored index in the final store
@@ -162,7 +162,7 @@ import statistics
 axb.hist(degs, bins=range(0, max(degs) + 3), color=VERM, alpha=0.85, lw=0)
 axb.axvline(statistics.median(degs), color=BLUE, ls="--", lw=1.0)
 axb.text(statistics.median(degs) + 0.7, axb.get_ylim()[1] * 0.86,
-         f"median {statistics.median(degs):.0f}", fontsize=8.5, color=BLUE)
+         f"median {statistics.median(degs):.0f}", fontsize=8, color=BLUE)
 n_empty = sum(1 for d in degs if d == 0)
 axb.text(0.97, 0.72, f"{len(degs)} indexes\nmean {statistics.mean(degs):.1f}, "
          f"max {max(degs)}\n{n_empty} empty ({n_empty/len(degs):.0%})",

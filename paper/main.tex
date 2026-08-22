@@ -265,6 +265,7 @@ Our protocol adds the missing measurement layer.
   {F1 (non-inferior?)\\ steps per question ($\rho<1$?)};
 \draw[arr] (exam) -- (out);
 \end{tikzpicture}
+
 \caption{The train/test protocol. A training agent consumes supervised QA pairs,
 answering each from the current store (gold revealed only after its single answer)
 and consolidating verified reasoning into structure. Evaluation freezes the store and
@@ -616,7 +617,7 @@ because it was pre-registered, not because it carries weight.
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.88\textwidth]{learning.pdf}
+\includegraphics[width=0.82\textwidth]{learning.pdf}
 \caption{Six frozen snapshots from epoch~1, read two ways. The reader,
 action set, budget and questions are identical at every point, so the only
 thing varying is the store. \emph{(a, b)} Cost and accuracy per question
@@ -716,7 +717,7 @@ PhantomWiki ships the questions its generator produced rather than the pool
 behind them; the arm also carries no offline-construction baselines, so the
 comparison below is \kbgym{}-only.
 
-\subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
+\textbf{Coverage is the currency.}\label{sec:res-perlink}
 B3 answers in fewer actions and at higher F1 than we do, from $100\%$
 coverage against our $27.6\%$: it indexes every entity in the corpus, while a
 hundred training questions name a quarter of it. Its $\rho$ holds between
@@ -828,35 +829,25 @@ Store & trained on & both keys & one key & neither \\
 \end{tabular*}
 \end{table}
 
-\subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
-\textbf{Retention is large, and concentrated exactly where predicted.} On
-the same 100 questions seen a second time (epoch~2) forward F1 rises from
-$0.63$ to $0.82$. Decomposed by class, the movement is entirely in the relation-level ones. The forward
-chains were saturated from the start (QC1--QC3 and QC9 at $1.00$ in both
-epochs: document-level retrieval already solves them), while the classes
-whose answers live \emph{between} documents move --- counts QC4
-$0.33 \to 1.00$, joins QC6 $0.33 \to 0.92$, reverse lookup QC10
-$0.20 \to 0.60$, intersection QC7 $0.67 \to 0.83$, deep counts QC8
-$0.42 \to 0.58$, abstention QC5 $0.00 \to 0.25$ ($n$ between 5 and 14 per
-class). This is the design
-prediction of E3 realized: the gains land in the classes retrieval cannot
-solve natively.
-
-\textbf{Retention is also cheaper, with a caveat about what is being
-compared.} The forward pass on those questions takes $7.4$ steps and 70k
-tokens in epoch~2 against $8.4$ steps and 118k tokens in epoch~1: $-12\%$
-steps, $-40\%$ tokens. Both terms of the cost move. Budget exhaustion falls
-from $15/100$ to $8/100$, and on the 83 questions resolved within budget in
-\emph{both} epochs the lookup itself shortens from $7.16$ to $6.37$ steps
-($-11\%$) while F1 rises from $0.759$ to $0.892$ --- so the saving is not an
-artifact of more questions terminating early. The caveat is that these two
-epochs are not a controlled store contrast: the store evolves \emph{during}
-epoch~1, so an early epoch-1 question meets a nearly untrained store and a
-late one meets a partly trained store, and the epoch label mixes store state
-with question order. The controlled version --- the same questions examined
-under two frozen stores --- is the \emph{exact} row of
-Table~\ref{tab:gradient}, and it gives a larger saving ($\rho = 0.686$)
-precisely because it removes that mixing.
+\subsection{E3: Retention by Question Class}\label{sec:res-e3}
+On the same 100 questions seen a second time, forward F1 rises $0.63 \to
+0.82$ and the movement is entirely in the relation-level classes: the
+forward chains were saturated from the start (QC1--QC3 and QC9 at $1.00$ in
+both epochs, since document-level retrieval already solves them), while
+counts QC4 go $0.33 \to 1.00$, joins QC6 $0.33 \to 0.92$, reverse lookup
+QC10 $0.20 \to 0.60$, intersection QC7 $0.67 \to 0.83$, deep counts QC8
+$0.42 \to 0.58$ and abstention QC5 $0.00 \to 0.25$ ($n$ between 5 and 14 per
+class). The gains land exactly in the classes retrieval cannot solve
+natively. Cost falls too --- $7.4$ steps and 70k tokens against $8.4$ and
+118k, budget exhaustion $15/100$ to $8/100$, and on the 83 questions
+resolved within budget in \emph{both} epochs the lookup shortens $7.16 \to
+6.37$ steps while F1 rises $0.759 \to 0.892$, so the saving is not an
+artifact of more questions terminating early. These two epochs are not a
+controlled store contrast, though: the store evolves \emph{during} epoch~1,
+so the epoch label mixes store state with question order. The controlled
+version is the \emph{trained} column of Table~\ref{tab:gradient}, which
+gives a larger saving ($\rho = 0.686$) precisely because it removes that
+mixing.
 
 \begin{figure*}[!t]
 \centering
