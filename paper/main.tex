@@ -282,88 +282,64 @@ cost.}
 \end{figure*}
 
 \section{Problem Formulation}
-A knowledge base $K$ is a directed graph of \emph{documents}. A document is
-deliberately small --- one self-contained sentence and its outgoing edges ---
-so that what the store learns is visible in its structure rather than hidden
-inside prose, and so that every edit is attributable.
+A knowledge base $K$ is a directed graph of \emph{documents}, each one
+self-contained sentence plus its outgoing edges, so that what the store
+learns is visible in its structure rather than hidden inside prose. Two
+fields are all any agent sees or writes: \texttt{text}, the one sentence
+\texttt{search} matches against, and \texttt{links}, the edges
+\texttt{read} follows --- \texttt{read} returns a document together with the
+full text of everything it links, which is what lets a well-connected
+document replace a sequence of uncertain searches. An \emph{index document}
+is not a distinct type but a document whose text names a key and whose worth
+lies in its links; nothing marks it as one, which is why an index carrying no
+links is indistinguishable from a sentence nobody needs. Three further
+fields are kept by the environment and are invisible to the agent, so that
+measurement does not depend on its cooperation: \texttt{origin} (which
+original fact a document represents, empty when authored), \texttt{flag}
+(untouched / authored / edited), and \texttt{absorbed} (origins folded in by
+a merge). Together they make the ledger exact.
 
-Two fields are all any agent ever sees or writes. \texttt{text} is one
-sentence stating one fact, with full names and no pronouns: it is the only
-thing \texttt{search} matches against and the only thing a reader is shown,
-so a document that packs two facts is retrievable by neither cleanly.
-\texttt{links} are outgoing edges to other documents; \texttt{read} returns a
-document together with the full text of everything it links, which is what
-lets a well-connected document replace a sequence of uncertain searches. An
-\emph{index document} is not a distinct type but a document whose text names
-a key and whose worth lies in its links rather than in the fact it states ---
-nothing in the store marks it as one, which is why an index carrying no links
-is indistinguishable from a sentence nobody needs.
+The \emph{reader} is a fixed LLM policy with \texttt{search}, \texttt{read}
+and \texttt{answer}, a fixed action budget $M$, and a memory holding only the
+current question and the last $k$ action--result pairs. Its behaviour on a
+question distribution $Q$ defines store quality on two axes,
+$\mathrm{acc}(K) = \mathbb{E}_{q}[\mathrm{F1}(\mathrm{reader}(K,q))]$ and
+$\mathrm{cost}(K) = \mathbb{E}_{q}[\mathrm{steps}(\mathrm{reader}(K,q))]$.
+\emph{Training} is any procedure consuming supervised pairs $(q,a^{*})$ and
+editing $K$, producing $K_T$ from $K_0$.
 
-The environment additionally keeps three fields the agent can neither read
-nor set, so that measurement does not depend on its cooperation:
-\texttt{origin} records which original fact a document represents (empty when
-the agent wrote it), \texttt{flag} distinguishes untouched originals from
-authored and edited ones, and \texttt{absorbed} records the origins folded in
-when a duplicate was merged. Together they make the ledger exact: every
-original fact is either still represented or demonstrably lost, and every
-piece of structure the agent added is separable from the corpus it was given.
-
-The \emph{reader} is a fixed
-LLM policy with three tools---vector \texttt{search}, document \texttt{read} (text plus
-linked documents), and \texttt{answer}---a fixed action budget $M$, and a short-term
-memory holding only the current question and the last $k$ action--result pairs.
-Reader performance on a question distribution $Q$ defines store quality along two
-axes:
-\begin{align*}
-\mathrm{acc}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{F1}\big(\mathrm{reader}(K,q)\big)\right],\\
-\mathrm{cost}(K) &= \mathbb{E}_{q\sim Q}\!\left[\mathrm{steps}\big(\mathrm{reader}(K,q)\big)\right].
-\end{align*}
-\emph{Training} is any procedure that consumes supervised pairs $(q, a^{*})$ and edits
-$K$, producing $K_T$ from the initial store $K_0$. What such a procedure is
-meant to learn is the store's \emph{access structure}, and it is worth
-being precise about this, because the action set admits a shortcut that
-looks like learning and is not. A store can be changed in two ways: by
-adding \emph{content} --- a document stating a fact, including a fact the
-store already implies, such as the answer to a question just solved --- or
-by adding \emph{access structure}: index documents whose value lies in the
-links they carry to the documents belonging to some key, and edges between
-documents that a chain must step across (including edges between index
-documents, which give navigation its levels). Only the second generalizes.
-A document recording a verified answer serves the one instance that
-produced it, and the instance will not recur; an index over a key serves
-every question whose first search names that key, and an edge serves every
-chain that must make that hop, whatever entity it concerns. Our hypothesis
-is therefore a claim about access structure specifically, and we measure
-the store's navigability --- index out-degree and the fraction of content
-reachable from an index in one read --- alongside accuracy and cost. Our central hypothesis is a joint
-condition on the two axes:
+What such a procedure should learn is \emph{access structure}, and the
+distinction matters because the action set admits a shortcut that resembles
+learning. A store can gain \emph{content} --- a document stating a fact,
+including one the store already implies, such as an answer just verified ---
+or \emph{access structure}: index documents whose value is the links they
+carry, and edges a chain must step across. Only the second generalizes. A
+document recording a verified answer serves the instance that produced it,
+and that instance will not recur; an index over a key serves every question
+whose search names that key. Our hypothesis is therefore a claim about
+access structure, and we measure navigability alongside accuracy and cost:
 \begin{equation}
 \mathrm{acc}(K_T) \;\ge\; \mathrm{acc}(K_0) - \delta
 \quad\text{and}\quad
 \rho \;=\; \frac{\mathrm{cost}(K_T)}{\mathrm{cost}(K_0)} \;<\; 1,
 \label{eq:hypothesis}
 \end{equation}
-with non-inferiority margin $\delta = 0.03$. Training cost amortizes: if training
-spent $C_{\mathrm{train}}$ tokens and the per-question saving is
-$c_0 - c_T$ tokens, the \emph{break-even point}
+with margin $\delta = 0.03$. Training amortizes: for $C_{\mathrm{train}}$
+tokens spent and a per-question saving of $c_0 - c_T$, the break-even point
 \begin{equation}
-N^{*} \;=\; \frac{C_{\mathrm{train}}}{c_0 - c_T}
+N^{*} \;=\; C_{\mathrm{train}} / (c_0 - c_T)
 \label{eq:breakeven}
 \end{equation}
-is the query volume after which curation has paid for itself---the single number
-that tells a practitioner whether training a store is worth it for their workload.
+is the query volume after which curation has paid for itself.
 
-The correspondence to supervised learning is exact: the store configuration is the
-parameter vector, one training iteration is one optimization step, the training agent
-is the optimizer, and held-out reader performance is the loss. Formally, the
-environment with a \emph{fixed} reader policy induces a Markov process over store
-configurations; training is a guided walk through configuration space, and the
-questions are its supervision signal. Because training-agent forward passes and test
-readers use identical tools, budgets, and the single-shot answer rule, the train/test
-generalization gap is well defined: the three-layer decomposition compares accuracy on
-re-encountered train instances (retention carried \emph{only} by the store---the
-agent's memory resets every question), unseen instances of trained templates
-(class-level generalization), and reserved templates (within-category transfer).
+The correspondence to supervised learning is exact: the store configuration
+is the parameter vector, one iteration is one optimization step, the
+training agent is the optimizer, and held-out reader performance is the
+loss. Because training forward passes and test readers use identical tools,
+budgets and the single-shot answer rule, the generalization gap is well
+defined --- and Sec.~\ref{sec:res-grad} refines it from a train/test
+dichotomy into a gradient over how much of a question the training set
+touched.
 
 \section{The \kbgym{} Environment}\label{sec:env}
 \subsection{Universe and Store}
@@ -558,28 +534,9 @@ alone, with no access to questions or answers---the defining contrast with
 our trainer, for which gold answers are labels and the structure built is
 whatever those labels showed to be missing. Beyond that they differ
 \emph{only} in how the store is prepared; reader, test
-sets, and budgets are identical, and each reports its one-time build cost
-(Table~\ref{tab:baselines}).
+sets, and budgets are identical, and each reports its one-time build cost.
 
-\begin{table}[t]
-\caption{Baseline arms on \kbgym{}-500. Identical reader, test sets, and
-budgets; arms differ only in store preparation.}
-\label{tab:baselines}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.2}
-\begin{tabular}{L{1.62cm}L{1.5cm}L{2.15cm}L{1.3cm}}
-\toprule
-Arm & Preparation & Structure added & Build cost \\
-\midrule
-B1 flat & none & --- & 0 \\
-B2 GraphRAG & offline, unsup. & 135 summary docs, 8.5k links & 488k tok \\
-B3 HippoRAG2 & offline, unsup. & 660 index docs, 196k links & $\approx$0 \\
-Ours & QA-supervised & links + nav docs & training run \\
-\bottomrule
-\end{tabular}
-\end{table}
-\textbf{B1, flat store}: the untrained store (= epoch~0). \textbf{B2,
+All three differ from ours only in store preparation; reader, test sets and budgets are identical. \textbf{B1, flat store}: the untrained store (= epoch~0), no structure, no build cost. \textbf{B2,
 GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
 extraction, justified by template-shaped text), co-occurrence communities,
 one LLM-written community summary document per community linked to its
@@ -866,13 +823,14 @@ Store & trained on & both keys & one key & neither \\
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.} On
 the same 100 questions seen a second time (epoch~2) forward F1 rises from
-$0.63$ to $0.82$. Table~\ref{tab:retention} decomposes it. The forward
-chains were saturated from the start --- QC1--QC3 and QC9 sit at $1.00$ in
-both epochs, because document-level retrieval already solves them --- while
-the relation-level classes, whose answers live \emph{between} documents,
-move: counts QC4 $0.33 \to 1.00$, joins QC6 $0.33 \to 0.92$, reverse lookup
-QC10 $0.20 \to 0.60$, intersection QC7 $0.67 \to 0.83$, deep counts QC8
-$0.42 \to 0.58$, abstention QC5 $0.00 \to 0.25$. This is the design
+$0.63$ to $0.82$. Decomposed by class, the movement is entirely in the relation-level ones. The forward
+chains were saturated from the start (QC1--QC3 and QC9 at $1.00$ in both
+epochs: document-level retrieval already solves them), while the classes
+whose answers live \emph{between} documents move --- counts QC4
+$0.33 \to 1.00$, joins QC6 $0.33 \to 0.92$, reverse lookup QC10
+$0.20 \to 0.60$, intersection QC7 $0.67 \to 0.83$, deep counts QC8
+$0.42 \to 0.58$, abstention QC5 $0.00 \to 0.25$ ($n$ between 5 and 14 per
+class). This is the design
 prediction of E3 realized: the gains land in the classes retrieval cannot
 solve natively.
 
@@ -891,29 +849,6 @@ with question order. The controlled version --- the same questions examined
 under two frozen stores --- is the \emph{exact} row of
 Table~\ref{tab:gradient}, and it gives a larger saving ($\rho = 0.686$)
 precisely because it removes that mixing.
-
-\begin{table}[!t]
-\caption{Per-category forward F1 on the same 100 questions: first encounter
-(epoch~1) vs.\ re-encounter (epoch~2).}
-\label{tab:retention}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.15}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}L{2.9cm}rrr@{}}
-\toprule
-Category & $n$ & epoch 1 & epoch 2 \\
-\midrule
-QC1--QC3, QC9 (chains, compare) & 47 & 1.00 & 1.00 \\
-QC4 counts & 6 & 0.33 & \textbf{1.00} \\
-QC6 join & 12 & 0.33 & \textbf{0.92} \\
-QC7 intersection & 6 & 0.67 & \textbf{0.83} \\
-QC10 reverse lookup & 5 & 0.20 & \textbf{0.60} \\
-QC8 deep counts & 12 & 0.42 & 0.58 \\
-QC5 abstention & 12 & 0.00 & 0.25 \\
-\bottomrule
-\end{tabular*}
-\end{table}
 
 \begin{figure*}[!t]
 \centering
