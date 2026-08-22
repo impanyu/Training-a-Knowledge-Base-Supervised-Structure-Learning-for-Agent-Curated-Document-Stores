@@ -708,18 +708,22 @@ it at the far end of the coverage gradient measured next. We report it
 because it was pre-registered, not because it carries weight.
 
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
-\begin{figure}[!t]
+\begin{figure*}[!t]
 \centering
-\includegraphics[width=\columnwidth]{learning.pdf}
-\caption{What training bought, as a function of how much of the question
-the store had seen. Each curve is one question group ($n{=}10$) examined on
-eleven frozen snapshots of the same run; the reader, the action set, the
-budget and the questions are identical at every point, so the only thing
-varying along the $x$-axis is the store. \emph{Trained on this question}
-falls steadily; \emph{neither key seen} does not move. The two intermediate
-groups say how far the effect reaches past the exact key.}
+\includegraphics[width=0.92\textwidth]{learning.pdf}
+\caption{Six frozen snapshots of one training run, read two ways. The
+reader, action set, budget and questions are identical at every point, so
+the only thing varying is the store. \emph{(a, b)} Cost and accuracy per
+question group against training iteration: \emph{trained on this question}
+improves steadily, \emph{neither key seen} does not move, and the two
+intermediate groups say how far the effect reaches past the exact key.
+\emph{(c, d)} The same runs pooled, against the share of the corpus the
+store's indexes reach --- the one axis the offline baselines also sit on,
+at $100\%$. Reading left to right is reading the training run forwards; the
+distance to B3 is distance along that axis, not a difference in what a point
+of coverage is worth (Table~\ref{tab:percoverage}).}
 \label{fig:learning}
-\end{figure}
+\end{figure*}
 
 How far does built structure reach? A train/test split answers that with a
 single number, which conflates two very different failures: a store that
@@ -817,7 +821,7 @@ Ours (trained) & 27.6\% & $\mathbf{0.039}$ & $\mathbf{+0.0033}$ \\
 \end{table}
 
 \textbf{The store is undertrained, not saturated.} This is the central
-qualification on every number in this paper, and Fig.~\ref{fig:coverage}
+qualification on every number in this paper, and Fig.~\ref{fig:learning}c--d
 is the evidence for it. Through epoch~1 the
 reachable share of the corpus grows almost linearly in questions consumed,
 at $0.25$ points per question. Epoch~2 re-asks the same hundred questions
@@ -841,18 +845,6 @@ is what makes the generalization question answerable at all, and an
 always-learning store cannot be said to have been tested on anything. The
 two readings are complementary, and the online one is the deployment we
 think this protocol is actually for.
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{coverage.pdf}
-\caption{What coverage buys. Each orange point is one frozen epoch-1
-snapshot of our store, placed at the share of the corpus its indexes reach;
-the offline arms index everything and sit at $100\%$. Reading left to right
-along our curve is reading the training run forwards. The gap to B3 is a gap
-in how far along this axis the arm sits, not in the value of a point of
-coverage --- per point we buy more of both (Table~\ref{tab:percoverage}).}
-\label{fig:coverage}
-\end{figure}
 
 \begin{table}[!t]
 \caption{The key-coverage gradient. Groups differ only in how much of the

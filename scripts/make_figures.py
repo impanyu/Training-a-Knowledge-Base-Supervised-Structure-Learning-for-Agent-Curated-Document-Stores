@@ -49,16 +49,22 @@ def _coverage(N):
     return 100 * len(reach) / len(seeds)
 
 
-def gradient_curve():
-    """Cost and accuracy against coverage, one curve per question group.
+def gradient_and_coverage():
+    """One figure, two readings of the same six frozen snapshots.
 
-    Each point is one frozen snapshot of the same run, every twenty
-    iterations through epoch 1. The reader, the action set, the budget and
-    the questions are identical at every point, so the only thing varying
-    along x is the store.
+    Top: cost and accuracy per question group against training iteration --
+    what training bought, stratified by how much of the question it had
+    seen. Bottom: the same runs pooled, against the share of the corpus the
+    store's indexes reach, which is the axis the offline baselines can also
+    be placed on. Reading the bottom row left to right is reading the
+    training run forwards, and the distance to B3 is distance along that
+    axis rather than a difference in what a point of coverage is worth.
     """
     import os
-    fig, (axs, axf) = plt.subplots(1, 2, figsize=(6.9, 2.7))
+    fig, axes = plt.subplots(2, 2, figsize=(6.9, 5.0))
+    (a_s, a_f), (b_s, b_f) = axes
+
+    # --- top row: per group, against iteration
     for split, label, color, marker, ls in CURVE:
         xs, ys, fs = [], [], []
         for N in ITERS:
@@ -76,34 +82,11 @@ def gradient_curve():
             fs.append(sum(r["f1"] for r in rows) / len(rows))
         if not xs:
             continue
-        axs.plot(xs, ys, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
-                 label=label)
-        axf.plot(xs, fs, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
-                 label=label)
-    for ax, ylab, title in ((axs, "actions to answer", "(a) cost"),
-                            (axf, "F1", "(b) accuracy")):
-        ax.set_xlabel("training iteration (frozen snapshot)")
-        ax.set_ylabel(ylab)
-        ax.set_xticks(ITERS)
-        ax.set_title(title, fontsize=9)
-    axs.legend(frameon=False, fontsize=6.8, loc="lower left")
-    save(fig, "learning")
+        for ax, vals in ((a_s, ys), (a_f, fs)):
+            ax.plot(xs, vals, marker=marker, ls=ls, color=color, lw=1.4,
+                    ms=3.4, label=label)
 
-gradient_curve()
-
-
-# ---------- Fig: what coverage buys ----------
-def coverage_outcome():
-    """Cost and accuracy against how much of the corpus an index reaches.
-
-    Coverage, not iteration count, is the quantity the offline baselines can
-    also be placed on: they index everything, so they sit at 100%. Our six
-    epoch-1 snapshots trace the same relationship from 0 up to 25%, which
-    makes the comparison a question of how far along the curve each arm sits
-    rather than of which structure is better.
-    """
-    import os
-    fig, (axs, axf) = plt.subplots(1, 2, figsize=(6.9, 2.7))
+    # --- bottom row: pooled, against coverage, with the offline arms
     xs, ys, fs = [], [], []
     for N in ITERS:
         p = f"runs/curve_{N}/test_log.jsonl"
@@ -124,26 +107,36 @@ def coverage_outcome():
         return sum(x["steps"] for x in r) / len(r), sum(x["f1"] for x in r) / len(r)
 
     b2, b3 = arm("grad_graphrag"), arm("grad_hipporag")
-    for ax, ours, ylab, title in ((axs, ys, "actions to answer", "(a) cost"),
-                                  (axf, fs, "F1", "(b) accuracy")):
+    for ax, vals, j in ((b_s, ys, 0), (b_f, fs, 1)):
         if xs:
-            ax.plot(xs, ours, "o-", color=VERM, lw=1.6, ms=4,
-                    label="ours (epoch-1 snapshots)")
-            ax.plot([xs[-1], 100], [ours[-1], ours[-1]], ls=":", color=VERM,
-                    lw=1.1, alpha=0.7)
-        j = 0 if ylab.startswith("actions") else 1
+            ax.plot(xs, vals, "o-", color=VERM, lw=1.6, ms=4, label="ours")
+            ax.plot([xs[-1], 100], [vals[-1], vals[-1]], ls=":", color=VERM,
+                    lw=1.1, alpha=0.6)
         if b3:
             ax.plot([100], [b3[j]], "^", color=BLUE, ms=6, label="B3 HippoRAG2")
         if b2:
             ax.plot([100], [b2[j]], "s", color="0.45", ms=5, label="B2 GraphRAG")
-        ax.set_xlabel("corpus reachable from an index (%)")
-        ax.set_ylabel(ylab)
         ax.set_xlim(-4, 108)
-        ax.set_title(title, fontsize=9)
-    axs.legend(frameon=False, fontsize=6.8, loc="upper right")
-    save(fig, "coverage")
 
-coverage_outcome()
+    for ax in (a_s, a_f):
+        ax.set_xlabel("training iteration (frozen snapshot)")
+        ax.set_xticks(ITERS)
+    for ax in (b_s, b_f):
+        ax.set_xlabel("corpus reachable from an index (%)")
+    for ax in (a_s, b_s):
+        ax.set_ylabel("actions to answer")
+    for ax in (a_f, b_f):
+        ax.set_ylabel("F1")
+    a_s.set_title("(a) cost, by question group", fontsize=8.5)
+    a_f.set_title("(b) accuracy, by question group", fontsize=8.5)
+    b_s.set_title("(c) cost vs coverage, pooled", fontsize=8.5)
+    b_f.set_title("(d) accuracy vs coverage, pooled", fontsize=8.5)
+    a_s.legend(frameon=False, fontsize=6.4, loc="lower left")
+    b_s.legend(frameon=False, fontsize=6.4, loc="upper right")
+    fig.subplots_adjust(hspace=0.52, wspace=0.28)
+    save(fig, "learning")
+
+gradient_and_coverage()
 
 
 # ---------- Fig: store trajectory + final out-degree ----------
