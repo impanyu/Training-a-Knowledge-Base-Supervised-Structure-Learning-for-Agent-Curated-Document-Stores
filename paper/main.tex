@@ -25,7 +25,6 @@
 \setcounter{bottomnumber}{2}
 \setcounter{totalnumber}{5}
 \setcounter{dbltopnumber}{2}
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 \newcommand{\kbgym}{KBGym}
 
 \begin{document}
@@ -371,8 +370,8 @@ page and a page costs an action, so enumerating a set is possible but
 expensive --- the twenty-nine residents of a city cost six actions, while one
 \texttt{read} of a complete index costs one. Closing that gap is exactly
 what a trained store is for, and returning sixty results at once would erase
-the thing being measured. Conversely \texttt{link\_many} attaches any number
-of targets for a single action, so building an index is cheap once its
+the thing being measured. Conversely \texttt{link\_many} attaches up to forty
+targets for a single action, so building an index is cheap once its
 members are found: the curator's budget goes on finding, not on attaching.
 Batches above forty targets are rejected --- the largest genuine key in this
 universe has thirty-six members, so a larger batch is a search result rather
@@ -547,7 +546,7 @@ iterations in, the store was recovered from its trace in under two minutes.
 0.3, low reasoning effort, 12k completion tokens per turn) with tool-forced
 decisions and static schemas; the \texttt{gpt-5-mini} alias resolved to
 snapshot \texttt{gpt-5-mini-2025-08-07}, which we record because the alias
-will move. Budgets $N_1{=}M{=}15$, $N_2{=}20$ --- the backward pass is longer
+will move. Budgets $N_1{=}M{=}15$, $N_2{=}30$ --- the backward pass is longer
 because it must both locate a set and attach it --- and FIFO memory $K{=}30$.
 The main run averaged 94k tokens and 123\,s per iteration (200 iterations,
 18.8M tokens, 6.8\,h, $\approx$\$13), single seed.
@@ -689,9 +688,10 @@ PhantomWiki & 0.769$^{*}$ \emph{(0.880)} & 0.914 \emph{(0.807)} & 1.029 \emph{(0
 The trained group is the only cell significant on both benchmarks
 (CIs $[0.52,0.84]$ and $[0.68,0.86]$), and accuracy rises on both
 ($0.700 \to 0.800$ and $0.728 \to 0.880$). The two middle cells disagree in
-their ordering across benchmarks, which is the honest reading of that
-region: there is no reliable partial transfer, only a saving where the
-question was trained and none where it was not. On PhantomWiki the
+their ordering across benchmarks, which falsifies the monotone decay E2 was
+designed to test: there is no reliable partial transfer in the step
+endpoint, only a saving where the question was trained and none where it was
+not. On PhantomWiki the
 uncovered group is worse than neutral --- F1 falls $0.765 \to 0.718$ --- as
 indexes for other keys occupy retrieval slots that question needed. Coverage
 is not merely absent outside the trained set; it is mildly costly, which is
@@ -927,7 +927,7 @@ relation, two-hop & 10 & 3.9 & 87\% & 55\% \\
 relation, one-hop & 54 & 3.4 & 78\% & 73\% \\
 \multicolumn{5}{@{}l}{\quad\emph{``Friends of Delphine Grimsby''}} \\
 \midrule
-all scored indexes & 217 & 8.5 & 94\% & 91\% \\
+all scored indexes & 220 & 8.5 & 94\% & 91\% \\
 \bottomrule
 \end{tabular*}
 \end{table}
@@ -939,7 +939,7 @@ string match --- the grandchildren of a person are recorded as ``\emph{X} is
 a child of \emph{Y}'' and never name the grandparent, so a string-match test
 scores a correct two-hop index at zero, and an earlier version of this
 analysis reported exactly that artifact. Resolved properly, precision is
-$94\%$ and member recall $91\%$ over 217 scorable indexes. Quality tracks
+$94\%$ and member recall $91\%$ over the 220 whose key resolves. Quality tracks
 the arity of the key, not its depth: attribute indexes over a city or hobby
 are near-perfect ($98\%$, $95$--$96\%$ recall) and carry the most links,
 while relational indexes are smaller and noisier and two-hop relations are
@@ -947,8 +947,8 @@ while relational indexes are smaller and noisier and two-hop relations are
 curator struggles with; breadth is. Structurally the layer is flat:
 $1{,}896$ of $1{,}913$ links attach an index, $100$ join two indexes and
 $17$ join two source documents, so entry points are built readily and levels
-almost never --- and \textbf{$1{,}611$ of $5{,}864$ source documents
-($27.5\%$) are reachable from an index in one read}. That is the binding
+almost never --- and \textbf{$1{,}621$ of $5{,}864$ source documents
+($27.6\%$) are reachable from an index in one read}. That is the binding
 constraint of Sec.~\ref{sec:res-grad}, restated as a property of the store.
 
 \textbf{Break-even, and what would settle the mechanism.} On the trained
