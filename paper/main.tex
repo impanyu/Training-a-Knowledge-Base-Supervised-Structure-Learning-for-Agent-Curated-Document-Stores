@@ -670,14 +670,20 @@ and retention is carried only by the store.}
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.92\textwidth]{network.pdf}
-\caption{Evolution of the document network during training, every 60
-iterations. Every document is drawn; position is a t-SNE projection of its
-embedding, so proximity = semantic similarity (the clusters visible at
-iteration~0 are the universe's natural topic groups). Orange: agent-authored
-navigation documents (size = link degree); green: links. Structure grows
-from nothing into a navigation layer spanning the semantic space: hub
-directories (dense orange cluster) fan out into topic clusters, and local
-links connect semantically adjacent documents.}
+\caption{The document network the agent built. \emph{Top:} the store at
+three points in training; every document is drawn, and position is a t-SNE
+projection of its embedding, so proximity is the same proximity the reader's
+\texttt{search} sees (the clusters at iteration~0 are the universe's natural
+topic groups). Blue: source documents. Orange: authored index documents,
+sized by degree. Green: links. \emph{Bottom:} the final store with four
+index documents labelled, together with the documents each one reaches
+(purple). The four were selected for correctness, not size: every link each
+of them carries points at a document that genuinely belongs under its key
+(Sec.~\ref{sec:res-e4}), and together they span what the agent produced ---
+an attribute index over a city, an attribute index over a hobby, a one-hop
+relation, and a two-hop relation. Structure grows from nothing into a
+navigation layer over the semantic space: hub indexes fan out into topic
+clusters while local links join semantically adjacent documents.}
 \label{fig:network}
 \end{figure*}
 
