@@ -132,13 +132,16 @@ the labels, and structure is optimized against verified answers.
 \item \textbf{A train/test protocol for knowledge bases}: two-phase
 (forward/backward) training iterations, single-shot gold reveal,
 frozen-store examination under action budgets, learning curves, and a
-three-layer generalization decomposition (re-encountered instances / unseen
-instances / unseen templates).
+\emph{key-coverage gradient} --- a probe that varies how much of a test
+question's key the training set touched, which turns ``does it generalize''
+into a measurable decay curve rather than a yes or no.
 \item \textbf{\kbgym}, a contamination-free environment in the PhantomWiki
 style~\cite{phantomwiki}: a fictional-person universe rendered as a graph of
 atomic single-sentence documents; ten diagnostic question classes with exact
-answers and support sets; deterministic, integer-exact store metrics; no LLM
-judge anywhere.
+answers and support sets; deterministic, integer-exact store metrics and no
+LLM judge in any measurement --- grading is SQuAD normalization against
+programmatic golds, and the one LLM judge in the system guards
+deduplication inside the store, never a reported number.
 \item \textbf{Cost as a first-class outcome}: accuracy, store size,
 training cost, and per-question answering cost reported together, with a
 break-even analysis of when training a store pays for itself.
@@ -443,9 +446,11 @@ trained templates), \texttt{test\_out} (50; one reserved template per category),
 is touched exactly once). Grading is SQuAD-normalized F1/EM.
 
 \subsection{Design Rationale}\label{sec:design}
-Four decisions carry the methodology. \emph{(i) No LLM judge anywhere}: golds are
-exact, grading is SQuAD normalization, store metrics are integer counts over
-provenance---every number in this paper is reproducible to the digit.
+Four decisions carry the methodology. \emph{(i) No LLM judge in any
+measurement}: golds are exact, grading is SQuAD normalization, and store
+metrics are integer counts over provenance, so every number in this paper is
+reproducible to the digit. One LLM judge exists in the system --- it vetoes
+near-duplicate writes inside the store --- but it never scores anything.
 \emph{(ii) Realistic retrieval}: \texttt{search} returns matched document text, as
 production vector stores do; an early variant returning only titles collapsed the
 reader to F1 $0.0$ and would have credited the trained store for fixing an
@@ -901,9 +906,9 @@ are the universe's natural topic groups). Navigation documents appear
 throughout the map; hub directories --- the dense orange cluster --- fan out
 into the topic clusters, and short local links connect semantically adjacent
 documents: the store visibly acquires an access layer it was born without.
-Figure~\ref{fig:trajectory} quantifies the same growth from trace replay:
-$+390$ documents ($+6.6\%$), 597 links, accumulating steadily across both
-epochs --- the sublinear, structural growth the parsimony objective was
+Fig.~\ref{fig:trajectory}a quantifies the same growth from trace replay:
+$+287$ documents ($+4.9\%$) and $1{,}913$ links, nearly all of it laid down
+in epoch~1 --- the sublinear, structural growth the parsimony objective was
 designed to enforce.
 
 \textbf{Edit behavior.} The backward pass writes $4.9$ edits per iteration
