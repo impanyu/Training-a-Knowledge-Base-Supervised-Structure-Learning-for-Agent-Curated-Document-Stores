@@ -47,19 +47,19 @@ def main():
     idx = [n for n in nodes if n.get("flag") == "authored"]
 
     buckets = {name: [] for name, _ in FAMILY}
-    buckets["other / unscorable"] = []
+    buckets["_dropped"] = []      # unclassifiable keys, not reported
     for n in idx:
         text = n["text"]
         want = members(text, kids, parents, friends, spouse, attr)
         links = [t for t in n.get("links", []) if t in by_id]
         fam = next((name for name, pred in FAMILY if pred(text)), None)
         if fam is None or want is None or not links:
-            buckets["other / unscorable"].append((n, None, links))
+            buckets["_dropped"].append((n, None, links))
             continue
         buckets[fam].append((n, want, links))
 
     rows = []
-    for name in [f for f, _ in FAMILY] + ["other / unscorable"]:
+    for name in [f for f, _ in FAMILY]:
         items = buckets[name]
         if not items:
             continue
@@ -81,16 +81,16 @@ def main():
         for name, n_idx, deg, p, r, empty in rows:
             pp = f"{p:.0%}".replace("%", r"\%") if p is not None else "---"
             rr = f"{r:.0%}".replace("%", r"\%") if r is not None else "---"
-            print(f"{name} & {n_idx} & {deg:.1f} & {pp} & {rr} & {empty} \\\\")
+            print(f"{name} & {n_idx} & {deg:.1f} & {pp} & {rr} \\\\")
     else:
         print(f"{'family':<26}{'n':>4}{'mean deg':>10}{'precision':>11}"
-              f"{'recall':>9}{'empty':>7}")
+              f"{'recall':>9}")
         for name, n_idx, deg, p, r, empty in rows:
             pp = f"{p:.0%}" if p is not None else "--"
             rr = f"{r:.0%}" if r is not None else "--"
-            print(f"{name:<26}{n_idx:>4}{deg:>10.1f}{pp:>11}{rr:>9}{empty:>7}")
+            print(f"{name:<26}{n_idx:>4}{deg:>10.1f}{pp:>11}{rr:>9}")
         tot = sum(r[1] for r in rows)
-        print(f"{'':<26}{tot:>4}  ({len(idx)} authored index documents)")
+        print(f"{'':<26}{tot:>4}  scored, of {len(idx)} authored index documents")
 
 
 if __name__ == "__main__":

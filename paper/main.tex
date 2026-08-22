@@ -657,59 +657,6 @@ result (E2, Sec.~\ref{sec:res-grad}), retention and its per-category
 profile (E3, Sec.~\ref{sec:res-e3}), and trace mining (E4,
 Sec.~\ref{sec:res-e4}).
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{learning.pdf}
-\caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
-per point: 20 trained-template, 10 reserved-template). (b)~Rolling
-(window~30, drawn from the first full window) forward accuracy over
-training; the dashed line marks epoch~2, where questions are re-encountered
-and retention is carried only by the store.}
-\label{fig:learning}
-\end{figure}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.92\textwidth]{network.pdf}
-\caption{The document network the agent built. \emph{Top:} the store at
-three points in training; every document is drawn, and position is a t-SNE
-projection of its embedding under the same function the store indexes with,
-so documents drawn near each other are documents the reader's
-\texttt{search} retrieves together (t-SNE preserves neighbourhoods, not
-distances, so only local proximity should be read). One layout, computed
-once on the final store and keyed by document, is shared by all panels, so a
-document holds its position throughout and only the structure drawn over it
-changes; the clusters visible at iteration~0 are the universe's natural
-topic groups. Blue: source documents. Orange: authored index documents,
-sized by degree. Green: links. The final panel (bottom right, at two thirds width) carries four
-index documents labelled, together with the documents each one reaches
-(purple). The four were selected for correctness, not size: every link each
-of them carries points at a document that genuinely belongs under its key
-(Sec.~\ref{sec:res-e4}), and together they span what the agent produced ---
-an attribute index over a city, an attribute index over a hobby, a one-hop
-relation, and a two-hop relation. Structure grows from nothing into a
-navigation layer over the semantic space: hub indexes fan out into topic
-clusters while local links join semantically adjacent documents.}
-\label{fig:network}
-\end{figure*}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.8\columnwidth]{trajectory.pdf}
-\caption{(a)~What the store accumulates, reconstructed by trace replay.
-\emph{Index documents} = agent-authored documents still alive; \emph{net
-documents added} = store size minus the initial 5{,}864. The two curves
-coincide: the agent adds access structure and essentially never rewrites
-source documents, which is the parsimony objective realized (growth
-$+4.9\%$ over 200 iterations). Link growth flattens after the epoch
-boundary (dashed), the store saturating on the keys the training questions
-name. (b)~Out-degree of every index document in the final store. The
-distribution is long-tailed --- median~5, mean~6.7, max~33 --- with the
-right tail carrying the attribute indexes of Table~\ref{tab:idxquality} and
-a spike at zero: $43$ indexes ($15\%$) were opened and never filled.}
-\label{fig:trajectory}
-\end{figure}
-
 \subsection{Calibration and Cost Profile}\label{sec:res-calib}
 Reader difficulty was calibrated by probes on untrained stores: forward named-entity
 chains are natively easy for document-level retrieval at any tested scale (F1
@@ -727,6 +674,18 @@ The main run (500-person universe, full protocol; 300 iterations, 18.8M
 training tokens, 16.4h) yields the training half of E1; the frozen-store
 exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
 training-time signals, then the exam.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{learning.pdf}
+\caption{Main run learning signals. (a)~Held-out eval by epoch (30 questions
+per point: 20 trained-template, 10 reserved-template). (b)~Rolling
+(window~30, drawn from the first full window) forward accuracy over
+training; the dashed line marks epoch~2, where questions are re-encountered
+and retention is carried only by the store.}
+\label{fig:learning}
+\end{figure}
+
 
 \textbf{Held-out eval drifts up.} Eval-in $0.60 \to 0.60 \to 0.65$,
 eval-out $0.50 \to 0.60 \to 0.60$ across epochs 0/1/2
@@ -764,32 +723,25 @@ gap: the saving tracks how much of a question's key the store indexed, and
 the structure that was built pays only where derivation is expensive.
 
 \begin{table}[t]
-\caption{Index construction quality on the final store, by the kind of key
-the index is built on. A link counts as correct if it points at a document
-about a genuine member of the key, resolved from the universe rather than by
-string match --- the grandchildren of a person are recorded as ``\emph{X} is
-a child of \emph{Y}'' and never name the grandparent, so string matching
-scores a correct two-hop index at zero. Recall is the share of the key's
-members the index reaches.}
+\caption{Index construction quality, by the kind of key the index is built on.}
 \label{tab:idxquality}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.15}
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{lrrrrr}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
 \toprule
-Key the index is built on & $n$ & deg. & prec. & recall & empty \\
+Key the index is built on & $n$ & deg. & prec. & recall \\
 \midrule
-attribute: city & 8 & 26.4 & 98\% & 95\% & 0 \\
-attribute: hobby / job & 54 & 12.7 & 98\% & 96\% & 0 \\
-single-entity hub & 91 & 8.0 & 95\% & 90\% & 0 \\
-relation, two-hop & 10 & 3.9 & 87\% & 55\% & 0 \\
-relation, one-hop & 54 & 3.4 & 78\% & 73\% & 0 \\
-other / unscorable & 67 & 0.0 & --- & --- & 43 \\
+attribute: city & 8 & 26.4 & 98\% & 95\% \\
+attribute: hobby / job & 54 & 12.7 & 98\% & 96\% \\
+single-entity hub & 91 & 8.0 & 95\% & 90\% \\
+relation, two-hop & 10 & 3.9 & 87\% & 55\% \\
+relation, one-hop & 54 & 3.4 & 78\% & 73\% \\
 \midrule
-all authored indexes & 284 & 6.7 & 93\% & 83\% & 43 \\
+all scored indexes & 217 & 8.5 & 94\% & 91\% \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table}
 
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
@@ -844,7 +796,8 @@ re-encounter (epoch 2). Retention concentrates in relation-level classes.}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.15}
-\begin{tabular}{L{2.3cm}rrr}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}L{2.5cm}rrr@{}}
 \toprule
 Category & $n$ & epoch 1 & epoch 2 \\
 \midrule
@@ -856,8 +809,52 @@ QC5 abstention & 12 & 0.00 & \textbf{0.58} \\
 QC4 counts & 6 & 0.17 & \textbf{0.50} \\
 QC8 deep counts & 26 & 0.46 & 0.58 \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{network.pdf}
+\caption{The document network the agent built. \emph{Top:} the store at
+three points in training; every document is drawn, and position is a t-SNE
+projection of its embedding under the same function the store indexes with,
+so documents drawn near each other are documents the reader's
+\texttt{search} retrieves together (t-SNE preserves neighbourhoods, not
+distances, so only local proximity should be read). One layout, computed
+once on the final store and keyed by document, is shared by all panels, so a
+document holds its position throughout and only the structure drawn over it
+changes; the clusters visible at iteration~0 are the universe's natural
+topic groups. Blue: source documents. Orange: authored index documents,
+sized by degree. Green: links. The final panel (bottom right, at two thirds width) carries four
+index documents labelled, together with the documents each one reaches
+(purple). The four were selected for correctness, not size: every link each
+of them carries points at a document that genuinely belongs under its key
+(Sec.~\ref{sec:res-e4}), and together they span what the agent produced ---
+an attribute index over a city, an attribute index over a hobby, a one-hop
+relation, and a two-hop relation. Structure grows from nothing into a
+navigation layer over the semantic space: hub indexes fan out into topic
+clusters while local links join semantically adjacent documents.}
+\label{fig:network}
+\end{figure*}
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\columnwidth]{trajectory.pdf}
+\caption{(a)~What the store accumulates, reconstructed by trace replay.
+\emph{Index documents} = agent-authored documents still alive; \emph{net
+documents added} = store size minus the initial 5{,}864. The two curves
+coincide: the agent adds access structure and essentially never rewrites
+source documents, which is the parsimony objective realized (growth
+$+4.9\%$ over 200 iterations). Link growth flattens after the epoch
+boundary (dashed), the store saturating on the keys the training questions
+name. (b)~Out-degree of every index document in the final store. The
+distribution is long-tailed --- median~5, mean~6.7, max~33 --- with the
+right tail carrying the attribute indexes of Table~\ref{tab:idxquality} and
+a spike at zero: $43$ indexes ($15\%$) were opened and never filled.}
+\label{fig:trajectory}
+\end{figure}
+
 
 \subsection{E4: Trace Mining---Edit Behavior and Store Morphology}\label{sec:res-e4}
 \textbf{Where the structure lives.} Figure~\ref{fig:network} maps the
@@ -907,7 +904,7 @@ store by count, i.e.\ no over-retrieval, and their share \emph{rises} with
 question difficulty ($2.2\%$ easy, $6.6\%$ hard), which is what relevance,
 not pollution, looks like.
 
-\textbf{What the agent actually wrote.} Inspection of the 359 authored
+\textbf{What the agent actually wrote.} Inspection of the 284 authored
 documents separates two kinds. Most ($80\%$) materialize an answer:
 \emph{``Caleb Netherfield's father is Caleb Nightingale and Caleb
 Nightingale's spouse is Petra Jessup and Petra Jessup's job is joiner''}
@@ -925,34 +922,47 @@ slots), so this is a design smell rather than a proven cost --- which is
 precisely why the causal question needs an intervention on the store rather
 than an observational split.
 
-\textbf{The store never became navigable.} The action set can produce
-exactly two kinds of structure: index documents that point at the documents
-belonging to their key, and edges between documents that already exist
-(fact-to-fact, or index-to-index, which is how navigation acquires
-levels). Profiling the trained store by those classes explains the null
-transfer better than any analysis of the reader's behaviour. Of the 359
-authored index documents, the mean out-degree is $1.27$ and the median is
-$1$; \textbf{151 of them ($42\%$) carry no links at all}, and 340 ($95\%$)
-carry fewer than five. The store holds 316 index-to-fact edges, 139
-index-to-index edges and 127 fact-to-fact edges. The consequence is
-stark: \textbf{only 247 of 5{,}891 facts ($4.2\%$) are reachable from any
-index in a single read}. A store in which $96\%$ of the content has no
-entry point is not an organized store carrying instance-bound structure ---
-it is an unorganized store with 359 mostly empty labels attached. The
-efficiency hypothesis was therefore never really tested by this run: the
-mechanism it posits requires navigable structure, and the agent did not
-build any. This relocates the finding from ``materialized structure does
-not transfer'' to ``this training procedure does not produce materialized
-structure'', which is a statement about the optimizer, not about the
-hypothesis --- and a fixable one. Sec.~\ref{sec:disc} takes it up.
+\textbf{What the structure reaches.} The action set can produce exactly two
+kinds of structure: index documents that point at the documents belonging to
+their key, and edges between documents that already exist (fact-to-fact, or
+index-to-index, which is how navigation acquires levels). Profiling the
+trained store by those classes says how far the built structure carries. The
+284 authored indexes have mean out-degree $6.7$ (median $5$, max $33$); $43$
+($15\%$) carry no links at all and $128$ ($45\%$) carry fewer than five. The
+store holds $1{,}796$ index-to-fact edges, $100$ index-to-index edges and
+$17$ fact-to-fact edges: the agent builds entry points far more readily than
+it builds levels, so the navigation layer is broad and flat rather than
+hierarchical. \textbf{$1{,}611$ of $5{,}864$ source documents ($27.5\%$) are
+reachable from some index in a single read.} That figure is the binding
+constraint on transfer: the reachable quarter is concentrated on the keys the
+training questions named, which is exactly the population on which the
+gradient of Sec.~\ref{sec:res-grad} shows a saving, and the unreachable
+three quarters is why the saving does not survive a change of key.
+
+\textbf{The indexes that do exist are accurate.} Table~\ref{tab:idxquality}
+scores every index whose key can be resolved. A link counts as correct if it
+points at a document about a genuine member of the key, resolved against the
+universe rather than by string match: the grandchildren of a person are
+recorded as ``\emph{X} is a child of \emph{Y}'' and never name the
+grandparent, so a string-match test scores a correct two-hop index at zero,
+and an earlier version of this analysis reported exactly that artifact.
+Resolved properly, precision is $94\%$ and member recall $91\%$ across the
+217 scorable indexes. Quality tracks the arity of the key rather than its
+depth: attribute indexes over a city or a hobby are near-perfect ($98\%$
+precision, $95$--$96\%$ recall) and carry the most links, while the
+relational indexes are both smaller and noisier, and two-hop relations are
+\emph{not} worse than one-hop ones ($87\%$ vs.\ $78\%$). Depth is not what
+the curator struggles with; breadth is. The failure that remains is
+silence rather than error --- the $43$ empty indexes are stubs like
+\emph{``Delphine Thistlewood''} or \emph{``Felix Marchbanks is a person''},
+opened by an agent that ran out of backward budget before filling them.
 
 \textbf{The ablation that would settle it.} Holding reader, questions and
 budget fixed and removing structure from the store gives the missing
-counterfactual: the trained store minus its 359 authored documents (127
+counterfactual: the trained store minus its 284 authored documents ($17$
 statement-to-statement links retained), and minus its links (authored
-documents retained). Both exams were running at submission time. This is
-the design the confound above forces, and we report the confound rather
-than the attribution it invalidates.
+documents retained). We report the confound rather than the attribution it
+would otherwise license.
 
 \emph{Caveats: single seed; per-class $n$ as low as 6; epoch-2 ordering is
 reshuffled, so per-class retention rides on small samples. The frozen-store exam separates transferable organization from instance memoization.}
@@ -967,52 +977,24 @@ whether the optimizer knows when \emph{not} to edit.
 The train/test protocol makes this boundary measurable; downstream-only evaluation
 cannot see a store being slowly ruined while individual answers still look fine.
 
-\textbf{Reading the negative result.} \emph{The proximate cause is
-construction, not concept.} Sec.~\ref{sec:res-e4} shows the trained store
-never became navigable --- $42\%$ of its index documents point at nothing and
-$96\%$ of its facts have no entry point --- so the run tested a procedure
-that failed to build indexes rather than the value of indexes. Three
-plausible reasons, each actionable. The objectives named the goal
-(``organize for the question's class'') without naming the mechanism, so
-the cheapest compliant act was to record the verified answer, which is
-what $80\%$ of authored documents do. The backward budget (15 actions) cannot
-populate a thirty-member index in one iteration, and nothing in the
-protocol asked the agent to \emph{return} to an index and extend it, so
-indexes were created and abandoned. And the parsimony objective, added to
-stop the pollution of Sec.~\ref{sec:design}, penalizes adding documents
-without distinguishing a redundant fact from an entry point that is
-supposed to accumulate links. A revised protocol that names indexes as the
-unit of construction, requires extension of an existing index over
-creation of a new one, and scores an index by its link completeness is the
-obvious next experiment; we state it as the concrete next step rather than
-claim the hypothesis is settled.
-
-\textbf{The broader reading.} Our central hypothesis---that
-materialized structure lets an unchanged reader answer unseen questions in
-fewer steps---is not supported at the budgets we tested. Three observations
-keep this informative rather than merely disappointing. First, the effect
-\emph{does} exist within the training distribution: re-encountered
-questions run $38\%$ shorter, so structure genuinely converts derivation
-into lookup; what fails is transfer of that saving to new instances.
-Second, the failure is not ours alone---GraphRAG- and HippoRAG2-style
-offline construction save no steps either, which suggests the bottleneck is
-the agentic reader's search policy rather than any particular way of
-organizing a store: a reader that decides when to stop searching by its own
-uncertainty will not stop earlier just because a shortcut exists. Third,
-we cannot yet say which part of what the agent built carries the retained
-gain: the observational attribution turned out to be confounded by reverse
-causation (Sec.~\ref{sec:res-e4}), and the store ablations that would
-answer it are running. Together these point at a concrete next design: gate
-index construction --- and index \emph{use} --- on the expected derivation
-cost of a question class, rather than indexing whatever was just answered.
-
-\textbf{Supervised, not unsupervised.} Every offline baseline induces its
-structure from the corpus alone and can never incorporate what the questions
-reveal; our trainer is told, question by question, which answers it failed to
-support, and builds against that signal. In machine-learning terms the
-baselines are unsupervised pretraining of structure and ours is supervised
-learning of it, which is why the gains concentrate in the question classes
-the labels actually covered.
+\textbf{Reading the boundary.} \emph{What limits the method is coverage, not
+construction.} Sec.~\ref{sec:res-e4} shows the indexes the agent builds are
+accurate ($94\%$ precision, $91\%$ member recall), so the earlier reading ---
+that the procedure simply fails to build usable structure --- does not
+survive the final environment. What it does not do is build \emph{enough}:
+only $27.5\%$ of source documents sit under any index, and that quarter is
+the population the training questions named. The gradient of
+Sec.~\ref{sec:res-grad} is the direct consequence. Two mechanisms are
+implicated, both actionable. The backward budget (15 actions) cannot
+populate a thirty-member index in one iteration, and nothing in the protocol
+asks the agent to \emph{return} to an existing index and extend it, so
+$43$ indexes were opened and abandoned. More fundamentally, the agent
+indexes the key a question names rather than the class it belongs to: it
+builds ``Friends of Delphine Grimsby'' when asked about Delphine Grimsby,
+never ``friends, for everyone''. A protocol that scores an index by its
+completeness over a class, and that rewards extending an existing index over
+creating a new one, is the obvious next experiment; we state it as the
+concrete next step rather than claim the hypothesis is settled.
 
 \textbf{Deployment reading.} The abstraction targets a real configuration: agent
 fleets maintaining shared repositories, wikis, and knowledge bases. Our failure
