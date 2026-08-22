@@ -34,13 +34,31 @@ CURVE = [("exact", "trained on this question", VERM, "o", "-"),
          ("share2", "both keys seen", ORANGE, "s", "-"),
          ("share1", "one key seen", BLUE, "^", "--"),
          ("share0", "neither key seen", "0.45", "v", ":")]
-ITERS = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+ITERS = [0, 20, 40, 60, 80, 100]        # epoch 1 only: epoch 2
+                                        # repeats the same questions
+                                        # and adds no new keys
+
+def _coverage(N):
+    """Share of source documents reachable from an index at iteration N."""
+    st = json.load(open(f"runs/v11_main/snaps/kb_{N}.json"))["store"]
+    seeds = set(st["origins"])
+    reach = {t for n in st["nodes"] if n["id"] not in seeds
+             for t in (n.get("links") or []) if t in seeds}
+    return 100 * len(reach) / len(seeds)
+
 
 def gradient_curve():
+    """Cost and accuracy against coverage, one curve per question group.
+
+    Each point is one frozen snapshot of the same run, every twenty
+    iterations through epoch 1. The reader, the action set, the budget and
+    the questions are identical at every point, so the only thing varying
+    along x is the store.
+    """
     import os
-    fig, ax = plt.subplots(figsize=(3.5, 2.6))
+    fig, (axs, axf) = plt.subplots(1, 2, figsize=(6.9, 2.7))
     for split, label, color, marker, ls in CURVE:
-        xs, ys = [], []
+        xs, ys, fs = [], [], []
         for N in ITERS:
             p = f"runs/curve_{N}/test_log.jsonl"
             if not os.path.exists(p):
@@ -51,61 +69,77 @@ def gradient_curve():
                 continue
             xs.append(N)
             ys.append(sum(r["steps"] for r in rows) / len(rows))
-        if xs:
-            ax.plot(xs, ys, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
-                    label=label)
-    ax.set_xlabel("training iteration (frozen snapshot)")
-    ax.set_ylabel("actions to answer")
-    ax.set_xticks([0, 50, 100, 150, 200])
-    ax.legend(frameon=False, fontsize=6.8, loc="lower left")
+            fs.append(sum(r["f1"] for r in rows) / len(rows))
+        if not xs:
+            continue
+        axs.plot(xs, ys, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
+                 label=label)
+        axf.plot(xs, fs, marker=marker, ls=ls, color=color, lw=1.4, ms=3.4,
+                 label=label)
+    for ax, ylab, title in ((axs, "actions to answer", "(a) cost"),
+                            (axf, "F1", "(b) accuracy")):
+        ax.set_xlabel("training iteration (frozen snapshot)")
+        ax.set_ylabel(ylab)
+        ax.set_xticks(ITERS)
+        ax.set_title(title, fontsize=9)
+    axs.legend(frameon=False, fontsize=6.8, loc="lower left")
     save(fig, "learning")
 
 gradient_curve()
 
 
-# ---------- Fig: coverage, measured and projected ----------
-def coverage_projection():
-    """How much of the corpus an index reaches, against training questions.
+# ---------- Fig: what coverage buys ----------
+def coverage_outcome():
+    """Cost and accuracy against how much of the corpus an index reaches.
 
-    Epoch 1 consumes 100 new questions and the curve is close to linear in
-    them. Epoch 2 re-asks the same 100 and the curve flattens, which is the
-    evidence that coverage is bounded by the number of DISTINCT questions
-    seen rather than by the method saturating. The projection extends the
-    epoch-1 slope; it is a lower bound, since the largest keys are hit first.
+    Coverage, not iteration count, is the quantity the offline baselines can
+    also be placed on: they index everything, so they sit at 100%. Our six
+    epoch-1 snapshots trace the same relationship from 0 up to 25%, which
+    makes the comparison a question of how far along the curve each arm sits
+    rather than of which structure is better.
     """
-    import numpy as np
-    pts = []
+    import os
+    fig, (axs, axf) = plt.subplots(1, 2, figsize=(6.9, 2.7))
+    xs, ys, fs = [], [], []
     for N in ITERS:
-        st = json.load(open(f"runs/v11_main/snaps/kb_{N}.json"))["store"]
-        seeds = set(st["origins"])
-        reach = {t for n in st["nodes"] if n["id"] not in seeds
-                 for t in (n.get("links") or []) if t in seeds}
-        pts.append((N, 100 * len(reach) / len(seeds)))
-    e1 = [(n, c) for n, c in pts if n <= 100]        # new questions
-    e2 = [(n, c) for n, c in pts if n >= 100]        # repeats
+        p = f"runs/curve_{N}/test_log.jsonl"
+        if not os.path.exists(p):
+            continue
+        rows = [json.loads(l) for l in open(p)]
+        if not rows:
+            continue
+        xs.append(_coverage(N))
+        ys.append(sum(r["steps"] for r in rows) / len(rows))
+        fs.append(sum(r["f1"] for r in rows) / len(rows))
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.6))
-    slope = e1[-1][1] / e1[-1][0]
-    xp = np.array([0, 100 / slope])
-    ax.plot(xp, slope * xp, color="0.6", ls=":", lw=1.2,
-            label=f"projection ({slope:.2f}% per question)")
-    ax.axhline(100, color=BLUE, lw=1.2, ls="--")
-    ax.text(58, 102.5, "offline construction (B2, B3): 100%",
-            fontsize=6.4, color=BLUE)
-    ax.plot([n for n, _ in e1], [c for _, c in e1], "o-", color=VERM, lw=1.6,
-            ms=3.6, label="epoch 1 (new questions)")
-    ax.plot([n for n, _ in e2], [c for _, c in e2], "s-", color=ORANGE,
-            lw=1.6, ms=3.4, label="epoch 2 (the same 100, repeated)")
-    ax.annotate(f"{100/slope:.0f} distinct questions", xy=(100 / slope, 100),
-                xytext=(-6, -26), textcoords="offset points", fontsize=6.4,
-                color="0.35", ha="right")
-    ax.set_xlabel("training iterations (one question each)")
-    ax.set_ylabel("corpus reachable from an index (%)")
-    ax.set_ylim(0, 112)
-    ax.legend(frameon=False, fontsize=6.4, loc="center right")
+    def arm(run):
+        p = f"runs/{run}/test_log.jsonl"
+        if not os.path.exists(p):
+            return None
+        r = [json.loads(l) for l in open(p)]
+        return sum(x["steps"] for x in r) / len(r), sum(x["f1"] for x in r) / len(r)
+
+    b2, b3 = arm("grad_graphrag"), arm("grad_hipporag")
+    for ax, ours, ylab, title in ((axs, ys, "actions to answer", "(a) cost"),
+                                  (axf, fs, "F1", "(b) accuracy")):
+        if xs:
+            ax.plot(xs, ours, "o-", color=VERM, lw=1.6, ms=4,
+                    label="ours (epoch-1 snapshots)")
+            ax.plot([xs[-1], 100], [ours[-1], ours[-1]], ls=":", color=VERM,
+                    lw=1.1, alpha=0.7)
+        j = 0 if ylab.startswith("actions") else 1
+        if b3:
+            ax.plot([100], [b3[j]], "^", color=BLUE, ms=6, label="B3 HippoRAG2")
+        if b2:
+            ax.plot([100], [b2[j]], "s", color="0.45", ms=5, label="B2 GraphRAG")
+        ax.set_xlabel("corpus reachable from an index (%)")
+        ax.set_ylabel(ylab)
+        ax.set_xlim(-4, 108)
+        ax.set_title(title, fontsize=9)
+    axs.legend(frameon=False, fontsize=6.8, loc="upper right")
     save(fig, "coverage")
 
-coverage_projection()
+coverage_outcome()
 
 
 # ---------- Fig: store trajectory + final out-degree ----------

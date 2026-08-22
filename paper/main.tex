@@ -856,6 +856,29 @@ community summaries are the wrong structure regardless of how much of the
 corpus they span. What separates us from B3 is therefore not the quality of
 the structure but how much of the corpus carries any.
 
+\begin{table}[!t]
+\caption{Coverage-normalized comparison against offline construction, pooled
+over all 120 probe questions. The offline arms index the whole corpus; ours
+indexes the part its training questions named.}
+\label{tab:percoverage}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrrr@{}}
+\toprule
+Store & cov. & actions & F1 & \multicolumn{2}{c}{per point of coverage} \\
+\cmidrule(lr){5-6}
+ & & & & actions & F1 \\
+\midrule
+B1 flat & 0\% & 9.8 & 0.725 & --- & --- \\
+B2 GraphRAG & 100\% & 9.4 & 0.708 & $0.003$ & $-0.0002$ \\
+B3 HippoRAG2 & 100\% & \textbf{7.3} & \textbf{0.908} & $0.025$ & $+0.0018$ \\
+Ours & 27.6\% & 8.7 & 0.817 & \textbf{0.039} & $\mathbf{+0.0033}$ \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
 \textbf{Coverage is bounded by the training set, not by the method.}
 Fig.~\ref{fig:coverage} makes the distinction visible. Through epoch~1 the
 reachable share of the corpus grows almost linearly in questions consumed,
