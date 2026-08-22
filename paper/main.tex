@@ -844,12 +844,13 @@ and as step savings only on the questions it was trained on. Reporting one
 number for ``does it generalize'' would have hidden both halves.
 
 \subsection{E2b: Coverage Is the Currency}\label{sec:res-perlink}
-B3 leads every raw comparison in Table~\ref{tab:gradient}, and it does so
+B3 answers in fewer actions and at higher F1 than we do, and it does so
 from $100\%$ coverage against our $27.6\%$: it indexes every entity in the
 corpus, while a hundred training questions name only a quarter of it. Where
 our indexes exist we lead --- the trained group is ours at $\rho = 0.686$
 against $0.777$ --- and where they do not we fall back to the flat store
-while B3 does not, which is what the three right-hand $\rho$ columns record.
+while B3 does not: its $\rho$ holds between $0.71$ and $0.78$ in all four
+groups, ours only in the trained one.
 A gradient defined by what training touched is in any case a property of our
 arm alone; for an arm that indexes everything, all four groups are the same
 store. The comparison that treats both fairly divides each arm's gain by the
@@ -936,7 +937,7 @@ snapshot of our store, placed at the share of the corpus its indexes reach;
 the offline arms index everything and sit at $100\%$. Reading left to right
 along our curve is reading the training run forwards. The gap to B3 is a gap
 in how far along this axis the arm sits, not in the value of a point of
-coverage --- per point we buy more of both (Table~\ref{tab:gradient}).}
+coverage --- per point we buy more of both (Table~\ref{tab:percoverage}).}
 \label{fig:coverage}
 \end{figure}
 
