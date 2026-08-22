@@ -501,41 +501,31 @@ contamination & none & none \\
 \end{table}
 
 \textbf{Official PhantomWiki (external validity).} A generator we do not
-control (phantom-wiki 1.0.3, SWI-Prolog 10.0.2): 16 family trees, 405 person
-articles, 480 generated QA over 8 templates grouped into four composition
-shapes, with per-question hop depth 1--5; two reserved templates (relational
-and aggregative) form \texttt{test\_out}. Their Prolog-derived relations have
-no per-fact supports, so repair diagnostics are unavailable on this arm; the
-train/test protocol itself does not need them. Documents at sentence or
-article granularity (the latter tests the method at paragraph scale with zero
-contamination).
-
-A real-text arm over an annotated multi-hop corpus is the obvious third
-benchmark and we did not run it. Public corpora are parametrically
-contaminated, so every score would have to be reported as a delta over a
-mandatory no-store reader baseline, and establishing that baseline honestly
-is a study in itself. We note the omission rather than report a planned
-arm as a result.
+control (phantom-wiki 1.0.3): 16 family trees, 405 person articles, 480
+generated QA over 8 templates in four composition shapes, hop depth 1--5;
+two reserved templates form \texttt{test\_out}. Its Prolog-derived relations
+carry no per-fact supports, so repair diagnostics are unavailable there,
+which the protocol itself does not need. A real-text arm is the obvious
+third benchmark and we did not run it: public corpora are parametrically
+contaminated, so every score would need a no-store baseline that is a study
+in itself.
 
 \subsection{Baselines}
 All baselines are \emph{unsupervised}: structure is induced from the corpus
-alone, with no access to questions or answers---the defining contrast with
-our trainer, for which gold answers are labels and the structure built is
-whatever those labels showed to be missing. Beyond that they differ
-\emph{only} in how the store is prepared; reader, test
-sets, and budgets are identical, and each reports its one-time build cost.
-
-All three differ from ours only in store preparation; reader, test sets and budgets are identical. \textbf{B1, flat store}: the untrained store (= epoch~0), no structure, no build cost. \textbf{B2,
-GraphRAG-style}~\cite{graphrag}: entities extracted per document (lexical
-extraction, justified by template-shaped text), co-occurrence communities,
-one LLM-written community summary document per community linked to its
-members. \textbf{B2, HippoRAG-2-style}~\cite{hipporag2}:
-(subject, relation, object) triples per document, entity-sharing links
-between documents, per-entity hub documents. B2 and B2 structure lands as
-authored documents and links \emph{in our store format}, so the common
-budgeted reader can traverse it: we test their \emph{structure} under a fixed
-reader rather than their retrieval algorithms (a documented adaptation; e.g.\
-B3 forgoes Personalized PageRank).
+alone, with no access to questions or answers --- the defining contrast with
+our trainer, for which gold answers are labels. They differ from us and from
+each other \emph{only} in how the store is prepared; reader, test sets and
+budgets are identical. \textbf{B1, flat store}: the untrained store
+(= epoch~0), no structure, no build cost. \textbf{B2,
+GraphRAG-style}~\cite{graphrag}: lexically extracted entities per document,
+co-occurrence communities, one LLM-written summary document per community
+linked to its members (488k build tokens). \textbf{B3,
+HippoRAG-2-style}~\cite{hipporag2}: (subject, relation, object) triples per
+document, entity-sharing links, per-entity hub documents (lexical, so
+$\approx$0 build cost). Both land their structure as documents and links
+\emph{in our store format}, so the common reader can traverse it: we test
+their \emph{structure} under a fixed reader rather than their retrieval
+algorithms, a documented adaptation --- B3 forgoes Personalized PageRank.
 
 \subsection{Implementation}
 \textbf{Storage and retrieval.} The store is a dictionary from document id
@@ -552,31 +542,24 @@ recomputed. This is not only convenient: when an API outage killed a run 100
 iterations in, the store was recovered from its trace in under two minutes.
 
 \textbf{Models and budgets.} Trainer and reader are gpt-5-mini (temperature
-0.3, low reasoning effort, 12k completion tokens per turn), tool-forced
-decisions, static schemas. The runs invoke the \texttt{gpt-5-mini} alias,
-which resolved to snapshot \texttt{gpt-5-mini-2025-08-07}; we record the
-snapshot rather than the alias because the alias will move, and the
-duplicate judge (below) is the same model at minimal reasoning effort. Budgets $N_1{=}M{=}15$ and $N_2{=}20$; the
-backward pass is longer because it must both locate a set and attach it. FIFO
-memory $K{=}30$. \texttt{search} returns five documents per page and a page costs an action,
-while \texttt{link\_many} attaches up to forty documents for one, so the cost
-of building an index is dominated by finding its members rather than by
-wiring them.
+0.3, low reasoning effort, 12k completion tokens per turn) with tool-forced
+decisions and static schemas; the \texttt{gpt-5-mini} alias resolved to
+snapshot \texttt{gpt-5-mini-2025-08-07}, which we record because the alias
+will move. Budgets $N_1{=}M{=}15$, $N_2{=}20$ --- the backward pass is longer
+because it must both locate a set and attach it --- and FIFO memory $K{=}30$.
+The main run averaged 94k tokens and 123\,s per iteration (200 iterations,
+18.8M tokens, 6.8\,h, $\approx$\$13), single seed.
 
-\textbf{Cost.} The 500-person main run averaged 94k tokens and 123\,s per
-iteration (200 iterations, 18.8M tokens, 6.8\,h, $\approx$\$13). Single
-seed (seed~0); seed replication is left to future work. The infrastructure
-deduplication guard is enabled: on add or edit the store embeds the candidate,
-takes the three nearest documents, and consults an LLM judge when cosine
-similarity exceeds $0.90$. The judge is given a completion budget of 500
-tokens at minimal reasoning effort, which matters more than it sounds:
-a reasoning model spends its budget thinking before it emits anything, and
-at the four tokens an earlier version allowed, it returned an empty string
-on every call --- read by the caller as ``not a duplicate'', so the guard
-was wired up and inert. We measured this directly: 4 and 64 tokens both
-yield empty output, 500 with minimal effort answers in about ten. Any
-number reported here for merges therefore comes from a judge that actually
-answered.
+\textbf{The deduplication guard.} On add or edit the store embeds the
+candidate, takes the three nearest documents, and consults an LLM judge when
+cosine similarity exceeds $0.90$. The judge gets 500 completion tokens at
+minimal reasoning effort, which matters more than it sounds: a reasoning
+model spends its budget thinking before it emits anything, and at the four
+tokens an earlier version allowed it returned an empty string on every call,
+read by the caller as ``not a duplicate'' --- the guard was wired up and
+inert. Measured directly, 4 and 64 tokens both yield empty output and 500
+answers in about ten, so the merge counts reported here come from a judge
+that answered.
 
 \subsection{Experiment Suite}\label{sec:suite}
 Four experiments follow, each stated with the prediction it was designed to
