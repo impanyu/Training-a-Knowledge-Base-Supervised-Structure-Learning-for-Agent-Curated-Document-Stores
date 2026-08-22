@@ -101,11 +101,9 @@ a database does not change its data when an index is built, yet queries get chea
 Each training question's verified reasoning path is materialized as
 \emph{access structure}---a multi-hop chain becomes a traversable link
 path, a key that search handles badly gains an index document linking
-everything under it---so future readers pay a lookup price instead of a
-re-derivation price. The distinction from writing the answer into a
-document is the whole point: an answer serves the instance that produced
-it, an index serves every question that enters through the same key. Training cost is thereby amortized: after a computable number of questions, the
-one-time cost of curation is repaid by per-question savings.
+everything under it, so future readers pay a lookup price instead of a
+re-derivation price, and the one-time cost is repaid after a computable
+number of questions.
 
 \textbf{Contributions.}
 \begin{enumerate}
@@ -184,17 +182,15 @@ retrieval~\cite{llmwiki-rar} has an agent write and update wiki pages during
 question answering; streaming knowledge compilation~\cite{llmwiki-stream}
 maintains a time-evolving wiki under a document stream; STORM~\cite{storm}
 generates Wikipedia-style articles by multi-perspective research --- one-shot
-authorship rather than continual maintenance. A parallel line accumulates
-experience across episodes: MemGPT pages context in and out of external
-memory~\cite{memgpt}; Mem0 and A-MEM maintain linked long-term note
-stores~\cite{mem0,amem}; generative agents retrieve and reflect over an event
-stream~\cite{generative-agents}; Voyager grows a skill library~\cite{voyager};
-Reflexion, ExpeL, and Agent Workflow Memory distill verbal feedback,
-cross-task insights, and reusable workflows~\cite{reflexion,expel,awm};
-Dynamic Cheatsheet and ACE evolve a test-time strategy memory or context
-playbook~\cite{cheatsheet,ace}. In these the artifact is a prompt or a
-private memory serving one agent; ours is a shared, inspectable document
-store whose curation quality is itself the measured outcome.
+authorship rather than continual maintenance. A parallel line accumulates experience
+across episodes --- external memory paging~\cite{memgpt}, linked long-term
+note stores~\cite{mem0,amem}, reflection over an event
+stream~\cite{generative-agents}, skill
+libraries~\cite{voyager}, and distilled feedback, insights, workflows or
+strategy playbooks~\cite{reflexion,expel,awm,cheatsheet,ace}. In these the
+artifact is a prompt or a private memory serving one agent; ours is a
+shared, inspectable document store whose curation quality is itself the
+measured outcome.
 
 \textbf{Measuring memory without contamination.} The published curation
 systems report downstream task scores only: the store itself is never
@@ -546,32 +542,18 @@ reader rather than their retrieval algorithms (a documented adaptation; e.g.\
 B3 forgoes Personalized PageRank).
 
 \subsection{Implementation}
-\textbf{Storage.} The store is held in memory as a dictionary from document
-id to a record of \texttt{text} and a list of outgoing link ids; there is no
-database and no object store. Links are ids only, never copies, so a document
-is named in exactly one place and a delete cascades: the removed id is
-stripped from every other document's link list rather than left dangling. The
-whole store serialises to newline-delimited JSON, one object per document,
-which is what the per-epoch snapshots contain and what makes them readable
-and diffable.
-
-\textbf{Retrieval.} A separate in-memory vector index (chroma, ephemeral
-client, default ONNX MiniLM embeddings) serves \texttt{search} and nothing
-else: it holds each document's \texttt{text} and id, and never its links or
-provenance. Adding or editing a document marks it dirty; the environment
-re-embeds every dirty document in one batch at the end of the iteration, and
-a delete drops its row. The agent therefore never manages embeddings, and the
-index is strictly derived state --- discarding it and rebuilding from the
-documents changes nothing.
-
-\textbf{Reproducibility.} Every action and its result is appended to a trace,
-so any intermediate store can be rebuilt exactly by replaying that trace from
-the initial universe, without an API call --- including merges, whose
-verdicts are recorded rather than recomputed. Embeddings are not serialised
-because they are recomputable from text. This is not only an analysis
-convenience: when an API outage killed a run 100 iterations in, the store was
-reconstructed from its own trace in under two minutes and training continued
-from that point.
+\textbf{Storage and retrieval.} The store is a dictionary from document id
+to a record of \texttt{text} and outgoing ids; there is no database, links
+are ids rather than copies, and a delete cascades so no edge dangles. A
+separate in-memory vector index (chroma, default ONNX MiniLM embeddings)
+serves \texttt{search} and holds nothing else: adding or editing a document
+marks it dirty, and the environment re-embeds dirty documents in one batch at
+the end of an iteration, so the index is strictly derived state.
+\textbf{Reproducibility.} Every action and its result is appended to a
+trace, so any intermediate store is rebuildable exactly by replay --- without
+an API call, including merges, whose verdicts are recorded rather than
+recomputed. This is not only convenient: when an API outage killed a run 100
+iterations in, the store was recovered from its trace in under two minutes.
 
 \textbf{Models and budgets.} Trainer and reader are gpt-5-mini (temperature
 0.3, low reasoning effort, 12k completion tokens per turn), tool-forced
