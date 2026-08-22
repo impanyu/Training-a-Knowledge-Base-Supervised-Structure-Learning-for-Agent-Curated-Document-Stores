@@ -914,9 +914,21 @@ coverage --- per point we buy more of both (Table~\ref{tab:gradient}).}
 $\rho$ = actions relative to the untrained flat store on the same questions;
 $^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. The four groups
 differ only in how much of the question the training set touched, so the
-gradient is a property of \emph{our} arm: the offline arms index everything,
-for which every group is the same store. The last two columns divide each
-arm's pooled gain over B1 by the share of the corpus it indexes. Best per column in bold: B3 leads every raw comparison, ours leads both coverage-normalized ones and the trained group.}
+gradient is a property of \emph{our} arm alone: the offline arms index
+everything, and for them every group is the same store.
+\textbf{Read the coverage column with the rest.} B3 leads the raw
+comparisons, and it does so from $100\%$ coverage against our $27.6\%$ ---
+it indexes every entity in the corpus, while a hundred training questions
+name only a quarter of it. Where our indexes exist we lead: the trained
+group is ours by a clear margin ($\rho = 0.686$ against $0.777$). Where they
+do not, we fall back to the flat store and B3 does not, which is what the
+three right-hand $\rho$ columns record. Normalizing each arm's pooled gain
+by the coverage that produced it removes the asymmetry, and there we lead on
+both endpoints: $1.6\times$ B3's action saving and $1.8\times$ its accuracy
+gain per point of corpus indexed. The gap in the raw columns is a gap in how
+much has been trained, not in what a point of training buys; coverage grows
+linearly in new training questions (Fig.~\ref{fig:coverage}) and this run
+consumed a hundred of them.}
 \label{tab:gradient}
 \centering
 \small
