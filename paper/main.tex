@@ -21,14 +21,11 @@
 \title{Training a Knowledge Base:\\Supervised Structure Learning for Agent-Curated Document Stores}
 
 \author{\IEEEauthorblockN{Yu Pan}
-\IEEEauthorblockA{\textit{Department of Biological Systems Engineering} \\
-\textit{University of Nebraska--Lincoln}\\
-Lincoln, NE, USA \\
+\IEEEauthorblockA{\textit{University of Nebraska--Lincoln} \\
 yu.pan@unl.edu}
 \and
 \IEEEauthorblockN{Hongfeng Yu}
 \IEEEauthorblockA{\textit{University of Nebraska--Lincoln} \\
-Lincoln, NE, USA \\
 hfyu@unl.edu}}
 
 \maketitle
@@ -613,7 +610,7 @@ one action, so the cost of building an index is dominated by finding its
 members rather than by wiring them.
 
 \textbf{Cost.} The 500-person main run averaged 37.7k tokens and 121\,s per
-iteration (11.3M tokens, 10.1\,h, $\approx$\$8 at current pricing). Single
+iteration (18.8M tokens, 16.4\,h, $\approx$\$13 at current pricing). Single
 seed (seed~0); seed replication is left to future work. The infrastructure
 deduplication guard is enabled: on add or edit the store embeds the candidate,
 takes the three nearest documents, and consults an LLM judge when cosine
@@ -705,12 +702,12 @@ $9.2$)---motivating the 500-person main configuration, where the cost axis has
 roughly $3\times$ headroom over the $\sim$3-step floor. Accuracy can
 saturate while cost headroom persists---one reason efficiency is the
 primary endpoint. The 300-iteration
-main run consumed 11.3M training tokens over 10.1\,h ($\approx\$8$ at
+main run consumed 18.8M training tokens over 16.4\,h ($\approx\$13$ at
 current pricing).
 
 \subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
-The main run (500-person universe, full protocol; 300 iterations, 11.3M
-training tokens, 10.1h) yields the training half of E1; the frozen-store
+The main run (500-person universe, full protocol; 300 iterations, 18.8M
+training tokens, 16.4h) yields the training half of E1; the frozen-store
 exam that completes it is reported below at $M{=}15$ and $M{=}8$. Two
 training-time signals, then the exam.
 
@@ -748,107 +745,6 @@ Sec.~\ref{sec:res-e3} is real but confined to \emph{re-encountered}
 questions. Sections~\ref{sec:res-e2} and~\ref{sec:res-e4} locate the gap:
 no baseline saves steps either, and the structure that was built pays only
 where derivation is expensive.
-
-\begin{table}[t]
-\caption{E2: offline-construction baselines under the common reader
-(final environment, gpt-5-mini). F1 and steps per question on
-\texttt{test\_in} ($n{=}100$) and \texttt{test\_out} ($n{=}50$); tok/q =
-mean answering tokens across both splits; Build = one-time construction
-cost. Best per column in bold.}
-\label{tab:e2}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.15}
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{llrrrrr}
-\toprule
- & & \multicolumn{2}{c}{\texttt{test\_in}} & \multicolumn{2}{c}{\texttt{test\_out}} & \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}
-Store & Build & F1 & steps & F1 & steps & tok/q \\
-\midrule
-\multicolumn{7}{l}{\emph{budget $M{=}15$}}\\
-B1 flat & --- & 0.620 & 9.0 & 0.620 & 8.9 & 9.7k \\
-B2 GraphRAG-style & 488k tok & 0.570 & 9.3 & 0.640 & 9.1 & 10.5k \\
-B3 HippoRAG2-style & $\sim$0 & \textbf{0.660} & 9.3 & \textbf{0.700} & 7.9 & 11.1k \\
-Ours (trained) & 11.3M tok & 0.630 & 9.0 & 0.660 & 8.3 & 9.7k \\
-\midrule
-\multicolumn{7}{l}{\emph{budget $M{=}8$}}\\
-B1 flat & --- & 0.530 & 6.5 & \textbf{0.600} & 5.7 & 4.9k \\
-B2 GraphRAG-style & 488k tok & 0.560 & 6.2 & 0.500 & 6.2 & 5.0k \\
-B3 HippoRAG2-style & $\sim$0 & 0.530 & 6.4 & 0.520 & 5.9 & 6.0k \\
-Ours (trained) & 11.3M tok & \textbf{0.570} & 6.3 & 0.540 & 6.1 & 5.1k \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{E2: Baselines Buy Accuracy, Not Steps}\label{sec:res-e2}
-Table~\ref{tab:e2} reports the offline-construction baselines under the
-common reader. Three observations. \textbf{(i) No baseline saves steps.}
-Every arm sits at $9.0$--$9.3$ steps/question at $M{=}15$: community
-summaries and entity indexes change \emph{what} the reader finds, not how
-long it searches, so cost reduction---our primary endpoint---is not a free
-by-product of offline structure. \textbf{(ii) Entity indexing is the
-accuracy frontier.} B3 leads both splits ($0.660$/$0.700$) at essentially
-zero build cost, making it the accuracy bar for the trained store.
-\textbf{(iii) Summaries can pollute.} B2 spends a 488k-token build to
-\emph{lose} $0.05$ F1 on \texttt{test\_in} relative to the flat store: its
-135 community summaries compete with source documents in retrieval and bury
-them---summary pollution arising inside a standard pipeline. At the tight budget ($M{=}8$) all stores degrade and the ordering
-compresses; no arm dominates. The trained store enters the table without
-dominating it: at $M{=}15$ it is above B1 and B2 on both splits and below
-B3's entity indexes; at $M{=}8$ it leads \texttt{test\_in} but trails B1 on
-\texttt{test\_out}. Crucially it shares the baselines' defining failure ---
-$\rho \approx 1$ against B1 at both budgets. That \emph{every} method here,
-supervised or not, lands within noise of the flat store
-on steps is the paper's most robust negative finding, and the step
-distribution says why.
-
-\textbf{Retrieval cannot enumerate, and that is what structure is for.}
-The reader's \texttt{search} returns the five most similar documents and
-nothing else: no paging, no count, no way to ask for the sixth. A question
-whose answer requires a \emph{set} --- how many grandchildren, which friend
-is shared, which holder of a job lives in a city --- is therefore not
-merely hard for such a reader, it is out of reach unless the store itself
-makes the set reachable, because the twenty-five residents of a city cannot
-be recovered five at a time from a store that does not connect them. This
-predicts exactly where offline structure should pay, and the baselines
-confirm it. Partitioning our ten classes into those that need a set
-(QC4, QC6--QC8, QC10) and those answerable from a single document or a
-chain (QC1--QC3, QC5, QC9), B3's entity indexes lift the first group from
-$0.388$ to $0.514$ F1 and the second group from $0.797$ to $0.797$ --- a
-gain of $+0.126$ where enumeration is required and of exactly zero
-where it is not. Per class the pattern is sharp: counts QC4 $+0.30$,
-intersection QC7 $+0.29$, join QC6 $+0.09$, while QC1 and QC2 sit at
-$1.00$ under every arm. Structure in a store is not a general accelerant;
-it is specifically a substitute for the enumeration that vector retrieval
-cannot perform.
-
-\textbf{Why no method saves steps: mean steps is not a lookup-length
-measure.} Steps per question are strongly bimodal --- a mass around 3--6
-and a spike at exactly $M$ --- because a question the reader cannot resolve
-consumes the \emph{entire} budget by construction. The mean therefore
-decomposes as $\bar{s} = p_{\text{give-up}} M + (1 - p_{\text{give-up}})
-\bar{s}_{\text{answered}}$, and at $M{=}15$ the second term is nearly
-arm-invariant: $6.77$ (B1), $6.97$ (B2), $6.91$ (B3), $6.90$ (ours). The
-cleanest contrast is the paired one: on the 103 questions that
-\emph{both} B1 and the trained store answered, the trained store takes
-$6.48$ steps against B1's $6.57$ --- a $0.10$-step difference, i.e.\ none.
-What the trained store actually does is convert give-ups: it rescues 13
-questions B1 abandoned (answering them in $10.2$ steps at F1 $0.69$) while
-losing 7 in the other direction, and that net of 6 fully accounts for the
-mean dropping from $8.97$ to $8.73$. Organization thus moves the
-\emph{give-up rate}, not the length of a successful lookup. Two
-consequences. Methodologically, mean steps conflates two different
-quantities and is a poor efficiency endpoint at budgets where give-ups are
-common ($27$--$35\%$ here); reporting $p_{\text{give-up}}$ and
-$\bar{s}_{\text{answered}}$ separately, as we do above, is the honest
-decomposition. Substantively, the reader's stopping rule is
-confidence-driven rather than structure-driven: it stops when it believes
-it can answer, so a shortcut it traverses earlier does not make it stop
-earlier --- it only changes \emph{whether} it ever gets there. Making
-materialized structure pay in steps therefore requires a reader that can
-recognize it is on a shortcut, which our fixed reader, chosen deliberately
-to isolate the store, cannot.
 
 \subsection{E3: Retention and Its Per-Category Profile}\label{sec:res-e3}
 \textbf{Retention is large, and concentrated exactly where predicted.}
@@ -913,20 +809,6 @@ QC8 deep counts & 26 & 0.46 & 0.58 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{The Controlled Generalization Gap}\label{sec:res-gap}
-The epoch-to-epoch contrast above mixes store state with question order. The
-controlled comparison holds the store frozen and varies only which questions
-are asked: the same reader, budget and protocol as the test splits, applied
-to the 150 \emph{training} questions under (a) the untrained initial store
-and (b) the frozen epoch-2 store. Together with the test-split results this
-gives the train/test generalization gap in its standard form --- performance
-on questions the store was optimized for, against performance on questions
-it was not, with everything else held fixed. This exam was running at
-submission time; the slot is reserved here because it is the measurement
-that separates an overfitted store from a generalizing one, and the
-evidence so far (large retention gains, near-null transfer of the step
-saving) predicts a wide gap.
 
 \subsection{E4: Trace Mining---Edit Behavior and Store Morphology}\label{sec:res-e4}
 \textbf{Where the structure lives.} Figure~\ref{fig:network} maps the
