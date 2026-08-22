@@ -45,39 +45,30 @@ hfyu@unl.edu}}
 \maketitle
 
 \begin{abstract}
-Retrieval-augmented generation treats the document store as a frozen input.
-A recent wave of systems instead lets an LLM agent continuously curate a
-persistent knowledge base, yet none of this work measures what curation does
-to the store itself. We invert the usual framing: \emph{the knowledge base
-is the model}. A training agent consumes supervised QA pairs one at a
-time---attempting each question against the current store, receiving the
-gold answer, then editing the store's structure. An independent reader,
-unchanged and with editing tools withheld, is then examined on a frozen
-snapshot under a fixed action budget. The central hypothesis is an
-\emph{efficiency} claim: by materializing access structure, a trained store
-lets an unchanged reader answer at \emph{non-inferior accuracy in fewer
-actions}, amortizing a one-time training cost over future queries. The
-protocol yields the apparatus of machine learning for knowledge bases ---
-learning curves, a train/test gap, per-class transfer, and break-even
-analysis. On a contamination-free synthetic universe (500 people, 5{,}864
-atomic documents) and on an official PhantomWiki generation, the hypothesis
-holds where the store has structure and fails cleanly where it does not. We
-measure the boundary directly, with a probe that varies how much of a
-question's key the training set touched: on questions the store was trained
-on the reader spends $31\%$ fewer actions at higher accuracy, and the saving
-decays to nothing once neither key is covered. Auditing the store explains
-why. The indexes the agent builds are accurate ($94\%$ of their links point
-at a document that genuinely belongs under the key, $91\%$ member recall),
-but they cover only $27.6\%$ of the corpus, because a hundred training
-questions name only so many keys. Coverage grows linearly in \emph{new}
-questions and stops the moment training starts repeating them, so the store
-is undertrained rather than saturated: per point of corpus coverage it
-already buys $1.6\times$ the action saving and $1.8\times$ the accuracy of an
-offline entity index that covers everything, and closing the gap is a matter
-of roughly four times more training questions rather than a different
-method. What limits supervised curation here is coverage, not construction
---- a distinction this protocol makes measurable and a train/test split
-cannot.
+Retrieval-augmented generation treats the document store as a frozen input,
+and the systems that instead let an agent curate one never measure what
+curation does to the store. We invert the framing: \emph{the knowledge base
+is the model}. A training agent answers a supervised question against the
+current store, is shown the gold, then edits the store; an unchanged reader
+is later examined on a frozen snapshot under a fixed action budget. Where
+offline graph construction is \emph{unsupervised}---structure inferred from
+a corpus with no notion of what will be asked---(question, answer) pairs are
+our labels, and the store is optimized against verified answers. That
+supervision is what makes the structure cheap. Per point of corpus indexed
+it returns $1.6\times$ the action saving and $1.8\times$ the accuracy of an
+unsupervised entity index that covers everything, using $1{,}913$ links
+against its $196{,}112$, and $94\%$ of ours point at a document that
+genuinely belongs under its key. On questions the store trained on, an
+unchanged reader spends $31\%$ fewer actions at higher accuracy. To measure
+how far that reaches we introduce a \emph{key-coverage gradient}, a probe
+varying how much of a question the training set touched, which replaces the
+pass/fail of a train/test split with a decay curve. It shows the store is
+undertrained rather than saturated: coverage grows linearly in new questions
+and stops the moment training repeats them, so a hundred questions reach a
+quarter of the corpus and roughly four times as many would close the gap to
+full coverage. Supervision also composes with deployment as offline
+construction cannot---the loop consumes questions one at a time and edits in
+place, so a store can keep learning from the traffic it serves.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -742,62 +733,23 @@ roughly $3\times$ headroom over the $\sim$3-step floor. Accuracy can
 saturate while cost headroom persists---one reason efficiency is the
 primary endpoint.
 
-\subsection{E1: Training Dynamics and the Learning Curve}\label{sec:res-e1}
+\subsection{E1: Training Dynamics}\label{sec:res-e1}
 The main run trains on 100 questions for two epochs (200 iterations, 18.8M
-tokens, 6.8\,h, $\approx\$13$). Two training-time signals establish that the
-store is accumulating something before the frozen exams test what it is
-worth.
-
-\textbf{The store improves \emph{within} an epoch.} Forward accuracy climbs
-across epoch~1 --- $0.60$ over the first fifty iterations, $0.66$ over the
-last fifty --- before any question repeats. Later training questions are
-already benefiting from structure that earlier ones left behind, which is
-the evidence that structure accumulates rather than being rebuilt per
-question.
-
-\textbf{Curation slows as the store fills.} The backward pass writes $4.9$
-edits per iteration in epoch~1 and $1.6$ in epoch~2, and spends $25.3$ of
-its $30$ actions in epoch~1 against $14.7$ in epoch~2; document growth falls
-from $2.4$ to $0.45$ per iteration. The agent is not idling --- it is finding
-progressively more of what a question names already indexed, which is what
-the parsimony objective asks for and what Fig.~\ref{fig:trajectory}a shows
-as a flattening curve.
-
-\textbf{The held-out eval curve is flat.} Eval-in runs $0.75 \to 0.80 \to
-0.80$ and eval-out $1.00 \to 0.90 \to 0.90$ across epochs 0/1/2 ($n{=}20$
-and $n{=}10$ per point). At this sample size these are not distinguishable
-from noise, and the eval split was drawn to be instance-disjoint from
-training, so it sits at the far end of the coverage gradient the next
-section measures. We report it because it was pre-registered as the learning
-curve, not because it carries weight.
-
-\begin{table}[!t]
-\caption{Index construction quality, by the kind of key the index is built
-on, with one example of each.}
-\label{tab:idxquality}
-\centering
-\scriptsize
-\renewcommand{\arraystretch}{1.1}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
-\toprule
-Key the index is built on & $n$ & deg. & prec. & recall \\
-\midrule
-attribute: city & 8 & 26.4 & 98\% & 95\% \\
-\multicolumn{5}{@{}l}{\quad\emph{``Residents of Dorringham''}} \\[1pt]
-attribute: hobby / job & 54 & 12.7 & 98\% & 96\% \\
-\multicolumn{5}{@{}l}{\quad\emph{``People whose hobby is astronomy''}} \\[1pt]
-single-entity hub & 91 & 8.0 & 95\% & 90\% \\
-\multicolumn{5}{@{}l}{\quad\emph{``Bennett Coldwater''}} \\[1pt]
-relation, two-hop & 10 & 3.9 & 87\% & 55\% \\
-\multicolumn{5}{@{}l}{\quad\emph{``Grandchildren of Ivor Yarrow''}} \\[1pt]
-relation, one-hop & 54 & 3.4 & 78\% & 73\% \\
-\multicolumn{5}{@{}l}{\quad\emph{``Friends of Delphine Grimsby''}} \\
-\midrule
-all scored indexes & 217 & 8.5 & 94\% & 91\% \\
-\bottomrule
-\end{tabular*}
-\end{table}
+tokens, 6.8\,h, $\approx\$13$). Two signals establish that the store
+accumulates before the frozen exams test what it is worth. Forward accuracy
+climbs \emph{within} epoch~1, from $0.60$ over the first fifty iterations to
+$0.66$ over the last fifty, before any question repeats: later training
+questions already benefit from structure earlier ones left behind. And
+curation slows as the store fills --- $4.9$ edits per iteration in epoch~1
+against $1.6$ in epoch~2, $25.3$ of $30$ backward actions spent against
+$14.7$, document growth $2.4$ per iteration against $0.45$ --- because the
+agent increasingly finds what a question names already indexed, which is
+what the parsimony objective asks for. The per-epoch eval curve is flat
+(eval-in $0.75 \to 0.80 \to 0.80$, eval-out $1.00 \to 0.90 \to 0.90$,
+$n{=}20$ and $10$); at that sample size it is not distinguishable from
+noise, and the eval split is instance-disjoint from training, which places
+it at the far end of the coverage gradient measured next. We report it
+because it was pre-registered, not because it carries weight.
 
 \subsection{E2: The Key-Coverage Gradient}\label{sec:res-grad}
 \begin{figure}[!t]
