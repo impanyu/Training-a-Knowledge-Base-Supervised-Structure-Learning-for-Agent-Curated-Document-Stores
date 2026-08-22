@@ -968,6 +968,34 @@ the one question that produced it. The difference is that the curation skill
 now names the mechanism (``an index points; it does not list'') rather than
 only the goal.
 
+\begin{table}[!t]
+\caption{Index construction quality, by the kind of key the index is built
+on, with one example of each.}
+\label{tab:idxquality}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
+\toprule
+Key the index is built on & $n$ & deg. & prec. & recall \\
+\midrule
+attribute: city & 8 & 26.4 & 98\% & 95\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Residents of Dorringham''}} \\[1pt]
+attribute: hobby / job & 54 & 12.7 & 98\% & 96\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``People whose hobby is astronomy''}} \\[1pt]
+single-entity hub & 91 & 8.0 & 95\% & 90\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Bennett Coldwater''}} \\[1pt]
+relation, two-hop & 10 & 3.9 & 87\% & 55\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Grandchildren of Ivor Yarrow''}} \\[1pt]
+relation, one-hop & 54 & 3.4 & 78\% & 73\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Friends of Delphine Grimsby''}} \\
+\midrule
+all scored indexes & 217 & 8.5 & 94\% & 91\% \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
 \textbf{Accurate, but narrow.} Table~\ref{tab:idxquality} scores every index
 whose key resolves. A link is correct if it points at a document about a
 genuine member of the key, resolved against the universe rather than by
