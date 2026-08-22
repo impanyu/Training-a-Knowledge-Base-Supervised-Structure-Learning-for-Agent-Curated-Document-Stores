@@ -845,6 +845,16 @@ group, so a gradient defined by what training touched cannot be applied to
 it. The comparison it does support is efficiency per unit of coverage, and
 that comparison is favourable.
 
+\emph{Coverage} counts a source document as covered when at least one
+authored index links to it directly, and is reported as a share of the
+5{,}864 originals. Three alternative readings agree, so the number is not an
+artifact of the definition: allowing a second hop through an index-to-index
+edge leaves it unchanged at $27.6\%$ (the agent built only 100 such edges);
+counting only links a semantic check confirms as correct gives $27.3\%$; and
+at the level of questions rather than documents, $78$ of $302$ ($25.8\%$)
+have their entire support set reachable from some index in one read. Both
+offline arms sit at $100\%$ on every one of these readings, by construction.
+
 Pooled over all 120 probe questions, B1 answers in $9.8$ actions at F1
 $0.725$. B3, indexing the whole corpus, reaches $7.3$ actions and $0.908$;
 our store, indexing $27.6\%$ of it, reaches $8.7$ and $0.817$. Per point of
