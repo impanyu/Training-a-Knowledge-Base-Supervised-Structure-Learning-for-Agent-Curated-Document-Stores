@@ -1,0 +1,1 @@
+Training a Knowledge Base: Supervised Structure Learning for Agent-Curated Document Stores
