@@ -22,11 +22,14 @@ NAME = re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b")
 def universe_relations(nodes):
     """child->parents, parent->children, friends, and attribute maps."""
     kids, parents, friends = defaultdict(set), defaultdict(set), defaultdict(set)
+    spouse = defaultdict(set)
     attr = defaultdict(set)                       # value -> people
     for n in nodes:
         t = n["text"].rstrip(".")
         if (m := re.match(r"(.+) is a child of (.+)$", t)):
             kids[m.group(2)].add(m.group(1)); parents[m.group(1)].add(m.group(2))
+        elif (m := re.match(r"(.+) is married to (.+)$", t)):
+            spouse[m.group(1)].add(m.group(2)); spouse[m.group(2)].add(m.group(1))
         elif (m := re.match(r"(.+) is a friend of (.+)$", t)):
             friends[m.group(1)].add(m.group(2)); friends[m.group(2)].add(m.group(1))
         elif (m := re.match(r"(.+) lives in the city of (.+)$", t)):
@@ -35,10 +38,10 @@ def universe_relations(nodes):
             attr[m.group(2)].add(m.group(1))
         elif (m := re.match(r"(.+)'s job is (.+)$", t)):
             attr[m.group(2)].add(m.group(1))
-    return kids, parents, friends, attr
+    return kids, parents, friends, spouse, attr
 
 
-def members(text, kids, parents, friends, attr):
+def members(text, kids, parents, friends, spouse, attr):
     """The set of PEOPLE this index claims to gather, or None if unparsable."""
     t = text.rstrip(".")
     names = NAME.findall(t)
@@ -56,6 +59,8 @@ def members(text, kids, parents, friends, attr):
             return friends.get(who, set())
         if low.startswith("parents of"):
             return parents.get(who, set())
+        if low.startswith(("spouse of", "spouses of")):
+            return spouse.get(who, set())
         # a bare person hub: documents about that person
         return {who}
     for value, people in attr.items():
@@ -72,7 +77,7 @@ def main():
     a = ap.parse_args()
 
     uni = json.load(open(a.universe))
-    kids, parents, friends, attr = universe_relations(uni["nodes"])
+    kids, parents, friends, spouse, attr = universe_relations(uni["nodes"])
     d = json.load(open(a.kb))
     nodes = d["store"]["nodes"] if "store" in d else d["nodes"]
     by_id = {n["id"]: n for n in nodes}
@@ -83,7 +88,7 @@ def main():
 
     rows, unscored = [], 0
     for n in idx:
-        want = members(n["text"], kids, parents, friends, attr)
+        want = members(n["text"], kids, parents, friends, spouse, attr)
         links = [t for t in n.get("links", []) if t in by_id]
         if want is None or not links:
             unscored += 1

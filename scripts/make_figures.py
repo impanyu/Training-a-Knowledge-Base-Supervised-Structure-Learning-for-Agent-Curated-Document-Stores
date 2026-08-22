@@ -58,52 +58,42 @@ ax2.set_ylim(0, 1.0)
 ax2.set_title("(b) train-forward accuracy", fontsize=9)
 save(fig, "learning")
 
-# ---------- Fig: store trajectory ----------
+# ---------- Fig: store trajectory + final out-degree ----------
 ser = [json.loads(l) for l in open(RUN / "series.jsonl")]
 it = list(range(len(ser)))
 links = [s["n_links"] for s in ser]
 authored = [s["authored_statements"] for s in ser]
 nodes_added = [s["n_nodes"] - ser[0]["n_nodes"] for s in ser]
 
-fig, ax = plt.subplots(figsize=(3.4, 2.4))
-ax.plot(it, links, color=GREEN, lw=1.4, label="links")
-ax.plot(it, authored, color=VERM, lw=1.4, label="authored documents")
-ax.plot(it, nodes_added, color=BLUE, lw=1.2, ls=":", label="net documents added")
-ax.axvline(100.5, color="0.6", ls="--", lw=0.8)
-ax.set_xlabel("training iteration")
-ax.set_ylabel("count")
-ax.legend(frameon=False, fontsize=7.5, loc="upper left")
+fig, (axa, axb) = plt.subplots(1, 2, figsize=(6.9, 2.4))
+axa.plot(it, links, color=GREEN, lw=1.4, label="links")
+axa.plot(it, authored, color=VERM, lw=1.4, label="index documents")
+axa.plot(it, nodes_added, color=BLUE, lw=1.2, ls=":", label="net documents added")
+axa.axvline(100.5, color="0.6", ls="--", lw=0.8)
+axa.set_xlabel("training iteration")
+axa.set_ylabel("count")
+axa.legend(frameon=False, fontsize=7.5, loc="upper left")
+axa.set_title("(a) what the store accumulates", fontsize=9)
+
+# (b) out-degree of every authored index in the final store
+final = json.load(open("/tmp/kbstate_200.json"))["store"]
+degs = sorted(len(n.get("links", [])) for n in final["nodes"]
+              if n.get("flag") == "authored")
+import statistics
+axb.hist(degs, bins=range(0, max(degs) + 3), color=VERM, alpha=0.85, lw=0)
+axb.axvline(statistics.median(degs), color=BLUE, ls="--", lw=1.0)
+axb.text(statistics.median(degs) + 0.7, axb.get_ylim()[1] * 0.86,
+         f"median {statistics.median(degs):.0f}", fontsize=7, color=BLUE)
+n_empty = sum(1 for d in degs if d == 0)
+axb.text(0.97, 0.72, f"{len(degs)} indexes\nmean {statistics.mean(degs):.1f}, "
+         f"max {max(degs)}\n{n_empty} empty ({n_empty/len(degs):.0%})",
+         transform=axb.transAxes, ha="right", va="top", fontsize=7,
+         color="0.25")
+axb.set_xlabel("out-degree of an index document")
+axb.set_ylabel("index documents")
+axb.set_title("(b) final out-degree distribution", fontsize=9)
 save(fig, "trajectory")
 
-
-
-def _annotate(ax, annot, pos):
-    """Draw four verified indexes and the documents they reach.
-
-    All four link only documents that genuinely belong under their key
-    (scripts/index_precision2.py), and together they span the structural
-    range the agent produced: a city index, a hobby index, a one-hop
-    relation and a two-hop relation.
-    """
-    off = [(-40, 25), (33, 23), (-44, -28), (29, -27)]
-    for (text, a), (dx, dy) in zip(annot.items(), off):
-        if a["id"] not in pos:
-            continue
-        x, y = pos[a["id"]]
-        for t in a["targets"]:
-            if t in pos:
-                ax.plot([x, pos[t][0]], [y, pos[t][1]], color=PURPLE,
-                        lw=0.55, alpha=0.85, zorder=4)
-        ax.scatter([x], [y], s=34, facecolor="none", edgecolor=PURPLE,
-                   lw=1.0, zorder=6)
-        ax.annotate(f"{text}\n{a['kind']}, {a['note']}", (x, y),
-                    textcoords="offset points", xytext=(dx, dy),
-                    fontsize=5.0, color="0.15", ha="center", va="center",
-                    zorder=7,
-                    bbox=dict(boxstyle="round,pad=0.22", fc="white",
-                              ec=PURPLE, lw=0.5, alpha=0.92),
-                    arrowprops=dict(arrowstyle="-", color=PURPLE, lw=0.5,
-                                    shrinkA=0, shrinkB=3))
 
 # ---------- Fig: network evolution + index anatomy ----------
 def _draw(ax, nodes, pos, edge_lw=0.30, dot=0.5):

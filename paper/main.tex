@@ -690,12 +690,17 @@ clusters while local links join semantically adjacent documents.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.8\columnwidth]{trajectory.pdf}
-\caption{Store trajectory during training, reconstructed by trace replay.
-\emph{Authored documents} = agent-written documents still alive and unedited
-(navigation/index documents); \emph{net documents added} = total store size
-minus the initial 5{,}864 (authored survivors, including later-edited ones,
-minus deleted originals). Growth is steady and small ($+6.6\%$ over 300
-iterations).}
+\caption{(a)~What the store accumulates, reconstructed by trace replay.
+\emph{Index documents} = agent-authored documents still alive; \emph{net
+documents added} = store size minus the initial 5{,}864. The two curves
+coincide: the agent adds access structure and essentially never rewrites
+source documents, which is the parsimony objective realized (growth
+$+4.9\%$ over 200 iterations). Link growth flattens after the epoch
+boundary (dashed), the store saturating on the keys the training questions
+name. (b)~Out-degree of every index document in the final store. The
+distribution is long-tailed --- median~5, mean~6.7, max~33 --- with the
+right tail carrying the attribute indexes of Table~\ref{tab:idxquality} and
+a spike at zero: $43$ indexes ($15\%$) were opened and never filled.}
 \label{fig:trajectory}
 \end{figure}
 
