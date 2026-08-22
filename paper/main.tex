@@ -59,14 +59,19 @@ against its $196{,}112$, and $94\%$ of ours point at a document that
 genuinely belongs under its key. On questions the store trained on, an unchanged reader spends $31\%$ fewer
 actions at higher accuracy, and the same result reproduces on an official
 PhantomWiki generation whose questions we did not write ($\rho = 0.77$, F1
-$0.73 \to 0.88$). To measure
-how far that reaches we introduce a \emph{key-coverage gradient}, a probe
-varying how much of a question the training set touched, which replaces the
-pass/fail of a train/test split with a decay curve. It shows the store is
-undertrained rather than saturated: coverage grows linearly in new questions
+$0.73 \to 0.88$). To measure how far that reaches we introduce a \emph{key-coverage
+gradient}, a probe varying how much of a question the training set touched,
+which replaces the pass/fail of a train/test split with a decay curve. It
+shows that generalization is real but endpoint-dependent: accuracy carries
+to questions the store never saw, by $+0.167$ F1 where both of a question's
+keys were indexed during training and $+0.100$ where one was, decaying to
+zero where neither was, while the action saving stays on the trained
+questions. Because that decay is indexed by coverage rather than by
+question novelty, more training extends it --- and the store is undertrained
+rather than saturated: coverage grows linearly in new questions
 and stops the moment training repeats them, so a hundred questions reach a
-quarter of the corpus and roughly four times as many would close the gap to
-full coverage. Supervision also composes with deployment as offline
+quarter of the corpus, roughly four times as many would close the gap, and
+the questions that generalization reaches grow with it. Supervision also composes with deployment as offline
 construction cannot---the loop consumes questions one at a time and edits in
 place, so a store can keep learning from the traffic it serves.
 \end{abstract}
@@ -124,10 +129,14 @@ point of corpus indexed, supervised curation returns $1.6\times$ the action
 saving and $1.8\times$ the accuracy of an unsupervised entity index that
 covers everything, because it spends its structure where questions actually
 go: $1{,}913$ links against $196{,}112$, and $94\%$ of ours point at a
-document that genuinely belongs under its key. Our absolute numbers trail
-that baseline only because a hundred training questions reach a quarter of
-the corpus, and coverage grows linearly in questions consumed --- the gap is
-training volume, not method. Supervision also composes with deployment in a
+document that genuinely belongs under its key. And the structure generalizes, on the endpoint where generalization is
+available to it: questions the store never saw gain $+0.167$ F1 when both of
+their keys were indexed during training and $+0.100$ when one was, decaying
+to zero when neither was. That decay is indexed by \emph{coverage}, not by
+question novelty, so it recedes as training continues. Our absolute numbers
+trail the unsupervised baseline only because a hundred training questions
+reach a quarter of the corpus, and coverage grows linearly in questions
+consumed --- the gap is training volume, not method. Supervision also composes with deployment in a
 way offline construction cannot: the loop consumes questions one at a time
 and edits in place, so a store can keep learning from live traffic and
 concentrate its structure on the query distribution it actually serves.
