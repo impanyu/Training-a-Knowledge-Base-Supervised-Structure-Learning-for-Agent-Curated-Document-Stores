@@ -533,21 +533,6 @@ contamination & none & none \\
 \end{tabular*}
 \end{table}
 
-\textbf{\kbgym{} (main).} 500 fictional people (10\% name distractors; family
-trees, spouses, friendships; job/hobby/city attributes; globally distinct
-birthdates) render into 5{,}864 atomic documents. Ten question categories over
-26 templates: forward chains QC1--QC3; aggregation counts QC4/QC8 (children,
-friends, grandchildren, attribute-filtered counts); abstention QC5;
-multi-constraint joins QC6 (no name anchor; unique answer enforced against
-distractors); set intersection QC7 (common friends); comparison/superlatives
-QC9 (birthdates; ties excluded by construction); reverse lookup QC10 (exactly
-one qualifier). Golds are graph-derived with accepted variants; every question
-carries its support set. Splits are instance-disjoint: \texttt{train} 150
-(i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} 100 (unseen
-instances of trained templates), \texttt{test\_out} 50 (one reserved template
-per category), \texttt{eval} 30 (stratified; drives the learning curve so the
-final test is touched exactly once).
-
 \textbf{Official PhantomWiki (external validity).} A generator we do not
 control (phantom-wiki 1.0.3, SWI-Prolog 10.0.2): 16 family trees, 405 person
 articles, 480 generated QA over 8 templates grouped into four composition
