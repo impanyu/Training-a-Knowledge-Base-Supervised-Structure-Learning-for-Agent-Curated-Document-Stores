@@ -151,10 +151,9 @@ deduplication inside the store, never a reported number.
 retrieves from a frozen corpus with a learned dense retriever and generates
 conditioned on the results~\cite{rag-lewis,dpr,realm,fid}: the corpus is an
 input, never an output. Agentic RAG moves retrieval into the reasoning loop, interleaving it with
-reasoning~\cite{react,ircot}, sub-question
-decomposition~\cite{selfask}, confidence-triggered
-retrieval~\cite{flare,selfrag}, or a learned retrieve-or-reason
-policy~\cite{deeprag,searchr1,agentic-rag-survey}. Our reader \emph{is} such
+reasoning~\cite{react,ircot}, decomposing into sub-questions, retrieving on
+low confidence~\cite{selfrag}, or learning the retrieve-or-reason
+policy~\cite{searchr1,agentic-rag-survey}. Our reader \emph{is} such
 a loop. The distinction is which side learns: that line improves the
 query-side policy against a fixed corpus; we hold the policy fixed and train
 the store. The axes are orthogonal and composable.
@@ -182,9 +181,8 @@ STORM~\cite{storm} generates Wikipedia-style articles by multi-perspective
 research --- one-shot authorship rather than continual maintenance. A parallel line accumulates experience
 across episodes --- external memory paging~\cite{memgpt}, linked long-term
 note stores~\cite{mem0,amem}, reflection over an event
-stream~\cite{generative-agents}, skill
-libraries~\cite{voyager}, and distilled feedback, insights, workflows or
-strategy playbooks~\cite{reflexion,expel,awm,cheatsheet,ace}. In these the
+stream~\cite{generative-agents}, and distilled feedback or reusable
+workflows~\cite{reflexion,awm,ace}. In these the
 artifact is a prompt or a private memory serving one agent; ours is a
 shared, inspectable document store whose curation quality is itself the
 measured outcome.
@@ -1079,12 +1077,6 @@ model pre-training,'' ICML, 2020.
 generative models for open domain question answering,'' EACL, 2021.
 \bibitem{react} S.~Yao \emph{et al.}, ``ReAct: Synergizing reasoning and
 acting in language models,'' ICLR, 2023.
-\bibitem{selfask} O.~Press \emph{et al.}, ``Measuring and narrowing the
-compositionality gap in language models,'' Findings of EMNLP, 2023.
-\bibitem{flare} Z.~Jiang \emph{et al.}, ``Active retrieval augmented
-generation,'' EMNLP, 2023.
-\bibitem{deeprag} X.~Guan \emph{et al.}, ``DeepRAG: Thinking to retrieval
-step by step for large language models,'' arXiv:2502.01142, 2025.
 \bibitem{searchr1} B.~Jin \emph{et al.}, ``Search-R1: Training LLMs to reason
 and leverage search engines with reinforcement learning,'' arXiv:2503.09516,
 2025.
@@ -1094,16 +1086,10 @@ systems,'' arXiv:2310.08560, 2023.
 AI agents with scalable long-term memory,'' arXiv:2504.19413, 2025.
 \bibitem{generative-agents} J.~S. Park \emph{et al.}, ``Generative agents:
 Interactive simulacra of human behavior,'' UIST, 2023.
-\bibitem{voyager} G.~Wang \emph{et al.}, ``Voyager: An open-ended embodied
-agent with large language models,'' arXiv:2305.16291, 2023.
 \bibitem{reflexion} N.~Shinn \emph{et al.}, ``Reflexion: Language agents with
 verbal reinforcement learning,'' NeurIPS, 2023.
-\bibitem{expel} A.~Zhao \emph{et al.}, ``ExpeL: LLM agents are experiential
-learners,'' AAAI, 2024.
 \bibitem{awm} Z.~Z. Wang \emph{et al.}, ``Agent workflow memory,''
 arXiv:2409.07429, 2024.
-\bibitem{cheatsheet} M.~Suzgun \emph{et al.}, ``Dynamic cheatsheet: Test-time
-learning with adaptive memory,'' arXiv:2504.07952, 2025.
 \bibitem{storm} Y.~Shao \emph{et al.}, ``Assisting in writing Wikipedia-like
 articles from scratch with large language models,'' NAACL, 2024.
 \bibitem{lightrag} Z.~Guo \emph{et al.}, ``LightRAG: Simple and fast
