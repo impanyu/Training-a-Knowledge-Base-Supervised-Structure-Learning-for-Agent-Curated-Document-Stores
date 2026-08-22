@@ -344,15 +344,25 @@ dichotomy into a gradient over how much of a question the training set
 touched.
 
 \section{The \kbgym{} Environment}\label{sec:env}
-\subsection{Universe and Store}
-A generator in the PhantomWiki style samples a fictional population (500 people in
-the main configuration): family trees, spouses, friendships, per-person attributes
-(job, hobby, city), globally distinct birthdates, and \emph{name distractors}---extra
-people sharing first names with questioned subjects. Facts render through fixed
-templates into $\sim$5{,}900 atomic single-sentence documents (``Alice Johnson's job is
-arborist.''). The initial store has \emph{zero links}: a bag of atomic facts.
-Document embeddings back \texttt{search} and are maintained
-automatically as documents are added, edited, or deleted.
+\subsection{Universe, Store and Questions}
+A generator in the PhantomWiki style samples a fictional population (500
+people): family trees, spouses, friendships, per-person attributes (job,
+hobby, city), distinct birthdates, and \emph{name distractors} sharing first
+names with questioned subjects. Facts render through fixed templates into
+5{,}864 atomic single-sentence documents (``Alice Johnson's job is
+arborist.''), and the initial store has \emph{zero links}: a bag of facts.
+Ten question categories over 26 templates. QC1--QC3 are 1--3-hop
+named-entity chains, natively easy for document-level retrieval, and serve
+as the non-inferiority floor. The rest target relations \emph{between}
+documents: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint
+joins with no name anchor (QC6), set intersection (QC7), superlatives over
+birthdates (QC9), reverse lookup with a uniqueness guarantee (QC10). Golds
+come from graph traversal, every question carries its support set, and
+grading is SQuAD-normalized F1. Splits are instance-disjoint:
+\texttt{train} 150, \texttt{test\_in} 100 (unseen instances of trained
+templates), \texttt{test\_out} 50 (one reserved template per category),
+\texttt{eval} 30 (drives the per-epoch curve so the test splits are touched
+once).
 
 \subsection{Actions}\label{sec:actions}
 Table~\ref{tab:actions} is the complete action set. Availability is enforced
@@ -408,37 +418,22 @@ Action & Effect & R & C \\
 \end{tabular*}
 \end{table}
 
-\subsection{Question Classes and Splits}
-Ten categories over $\sim$26 templates. \emph{Forward} classes QC1--QC3 (1--3-hop
-named-entity chains) are natively easy for document-level retrieval and serve as the
-non-inferiority floor. \emph{Hard} classes target relations \emph{between}
-documents: aggregation counts (QC4, QC8), abstention (QC5), multi-constraint joins
-without a name anchor (QC6), set intersection (QC7), comparison/superlatives over
-birthdates (QC9), and reverse lookup with a uniqueness guarantee (QC10). Golds are
-computed by graph traversal over the fact layer; every question carries template id,
-gold variants, and its support set. Splits (instance-disjoint): \texttt{train} (150;
-i.i.d.\ over all categories, 60\% hard), \texttt{test\_in} (100; unseen instances of
-trained templates), \texttt{test\_out} (50; one reserved template per category),
-\texttt{eval} (30; stratified, drives the per-epoch learning curve so the final test
-is touched exactly once). Grading is SQuAD-normalized F1/EM.
-
 \subsection{Design Rationale}\label{sec:design}
 Four decisions carry the methodology. \emph{(i) No LLM judge in any
-measurement}: golds are exact, grading is SQuAD normalization, and store
-metrics are integer counts over provenance, so every number in this paper is
-reproducible to the digit. One LLM judge exists in the system --- it vetoes
-near-duplicate writes inside the store --- but it never scores anything.
-\emph{(ii) Realistic retrieval}: \texttt{search} returns matched document text, as
-production vector stores do; an early variant returning only titles collapsed the
-reader to F1 $0.0$ and would have credited the trained store for fixing an
-artificially crippled interface. \emph{(iii) Atomic documents}: the store is its
-own chunking, so organization is expressible \emph{only} through links and navigation
-nodes---any efficiency gain is attributable to structure, and any authored content is
-provenance-flagged. \emph{(iv) Contamination control}: we measured gpt-5-mini
-answering HotpotQA-style questions at F1 $\approx 1.0$ with \emph{no retrieval at
-all}; on public corpora, a reader's score conflates the store with the weights, and
-``store value'' loses meaning. A fictional universe makes the no-store score
-$\approx 0$, so every point of reader performance is earned through the store.
+measurement}: golds are exact and store metrics are integer counts over
+provenance, so every number here is reproducible to the digit; the one judge
+in the system vetoes near-duplicate writes and scores nothing.
+\emph{(ii) Realistic retrieval}: \texttt{search} returns matched document
+text, as production vector stores do --- an early variant returning only
+titles collapsed the reader to F1 $0.0$ and would have credited the trained
+store for repairing a crippled interface. \emph{(iii) Atomic documents}: the
+store is its own chunking, so organization is expressible \emph{only}
+through links and index documents, and any efficiency gain is attributable
+to structure. \emph{(iv) Contamination control}: gpt-5-mini answers
+HotpotQA-style questions at F1 $\approx 1.0$ with \emph{no retrieval at
+all}, so on public corpora a reader's score conflates store with weights. A
+fictional universe puts the no-store score at $\approx 0$, and every point
+of reader performance is earned through the store.
 
 \section{Training Protocol}
 Fig.~\ref{fig:protocol} gives the shape of one iteration and of the exam
