@@ -673,10 +673,15 @@ and retention is carried only by the store.}
 \includegraphics[width=0.92\textwidth]{network.pdf}
 \caption{The document network the agent built. \emph{Top:} the store at
 three points in training; every document is drawn, and position is a t-SNE
-projection of its embedding, so proximity is the same proximity the reader's
-\texttt{search} sees (the clusters at iteration~0 are the universe's natural
-topic groups). Blue: source documents. Orange: authored index documents,
-sized by degree. Green: links. \emph{Bottom:} the final store with four
+projection of its embedding under the same function the store indexes with,
+so documents drawn near each other are documents the reader's
+\texttt{search} retrieves together (t-SNE preserves neighbourhoods, not
+distances, so only local proximity should be read). One layout, computed
+once on the final store and keyed by document, is shared by all panels, so a
+document holds its position throughout and only the structure drawn over it
+changes; the clusters visible at iteration~0 are the universe's natural
+topic groups. Blue: source documents. Orange: authored index documents,
+sized by degree. Green: links. The final panel (bottom right, at two thirds width) carries four
 index documents labelled, together with the documents each one reaches
 (purple). The four were selected for correctness, not size: every link each
 of them carries points at a document that genuinely belongs under its key

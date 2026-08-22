@@ -132,24 +132,26 @@ def _load(N, pos):
 def network_evolution():
     pos = json.load(open("/tmp/kbnet_pos.json"))
     annot = json.load(open("/tmp/kbnet_annot.json"))
-    fig = plt.figure(figsize=(7.0, 5.6))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1.0, 1.55],
-                          hspace=0.14, wspace=0.05)
+    fig = plt.figure(figsize=(7.0, 5.2))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.0, 1.32],
+                          hspace=0.16, wspace=0.05)
 
-    for col, N in enumerate((0, 100, 200)):
+    slots = [(gs[0, 0], 0), (gs[0, 1], 50), (gs[0, 2], 100), (gs[1, 0], 150)]
+    for cell, N in slots:
+        ax = fig.add_subplot(cell)
         nodes = _load(N, pos)
-        ax = fig.add_subplot(gs[0, col])
         n_auth = _draw(ax, nodes, pos)
         nlinks = sum(len(nd.get("links", [])) for nd in nodes)
-        ax.set_title(f"iter {N}\n{nlinks} links, {n_auth} indexes", fontsize=7)
+        ax.set_title(f"iter {N}: {nlinks} links, {n_auth} indexes", fontsize=6.5)
 
-    # bottom: the final store, full width, with four verified indexes labelled
-    ax = fig.add_subplot(gs[1, :])
-    _draw(ax, _load(200, pos), pos, edge_lw=0.22, dot=0.45)
-    # labels pinned to the four corners in axes coordinates, so they always
-    # sit inside the panel; a leader line ties each to its index document
+    # the final store gets two thirds of the bottom row, with four verified
+    # indexes labelled and their fan-out drawn
+    ax = fig.add_subplot(gs[1, 1:])
+    nodes = _load(200, pos)
+    n_auth = _draw(ax, nodes, pos, edge_lw=0.22, dot=0.45)
+    nlinks = sum(len(nd.get("links", [])) for nd in nodes)
     corners = [(0.02, 0.97, "left", "top"), (0.98, 0.97, "right", "top"),
-               (0.02, 0.05, "left", "bottom"), (0.98, 0.05, "right", "bottom")]
+               (0.02, 0.04, "left", "bottom"), (0.98, 0.04, "right", "bottom")]
     for (text, a), (cx, cy, ha, va) in zip(annot.items(), corners):
         if a["id"] not in pos:
             continue
@@ -157,20 +159,18 @@ def network_evolution():
         for t in a["targets"]:
             if t in pos:
                 ax.plot([x, pos[t][0]], [y, pos[t][1]], color=PURPLE,
-                        lw=0.9, alpha=1.0, zorder=5,
-                        solid_capstyle="round")
-        ax.scatter([x], [y], s=60, facecolor="none", edgecolor=PURPLE,
-                   lw=1.3, zorder=7)
+                        lw=0.85, alpha=1.0, zorder=5, solid_capstyle="round")
+        ax.scatter([x], [y], s=52, facecolor="none", edgecolor=PURPLE,
+                   lw=1.2, zorder=7)
         ax.annotate(f"{text}\n{a['kind']}, {a['note']}",
                     xy=(x, y), xycoords="data",
                     xytext=(cx, cy), textcoords="axes fraction",
-                    fontsize=6.0, color="0.12", ha=ha, va=va, zorder=8,
-                    bbox=dict(boxstyle="round,pad=0.28", fc="white",
-                              ec=PURPLE, lw=0.6, alpha=0.95),
-                    arrowprops=dict(arrowstyle="-", color=PURPLE, lw=0.6,
+                    fontsize=5.6, color="0.12", ha=ha, va=va, zorder=8,
+                    bbox=dict(boxstyle="round,pad=0.25", fc="white",
+                              ec=PURPLE, lw=0.55, alpha=0.95),
+                    arrowprops=dict(arrowstyle="-", color=PURPLE, lw=0.55,
                                     alpha=0.8, shrinkA=2, shrinkB=5))
-    ax.set_title("final store: four indexes whose links were all verified "
-                 "correct, and the documents they reach", fontsize=7.5)
+    ax.set_title(f"iter 200: {nlinks} links, {n_auth} indexes", fontsize=6.5)
 
     fig.legend(handles=[
         plt.Line2D([], [], marker="o", ls="", color=BLUE, ms=3,
@@ -180,9 +180,9 @@ def network_evolution():
         plt.Line2D([], [], color=GREEN, lw=1, label="link"),
         plt.Line2D([], [], color=PURPLE, lw=1.2,
                    label="fan-out of a labelled index")],
-        loc="lower center", ncol=2, frameon=False, fontsize=7,
-        bbox_to_anchor=(0.5, -0.03))
-    fig.subplots_adjust(bottom=0.10, top=0.94)
+        loc="lower center", ncol=2, frameon=False, fontsize=6.8,
+        bbox_to_anchor=(0.5, -0.035))
+    fig.subplots_adjust(bottom=0.11, top=0.945)
     save(fig, "network")
 
 
