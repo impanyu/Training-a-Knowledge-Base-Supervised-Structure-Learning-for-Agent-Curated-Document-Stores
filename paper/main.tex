@@ -49,31 +49,24 @@ curation does to the store. We invert the framing: \emph{the knowledge base
 is the model}. A training agent answers a supervised question against the
 current store, is shown the gold, then edits the store; an unchanged reader
 is later examined on a frozen snapshot under a fixed action budget. Where
-offline graph construction is \emph{unsupervised}---structure inferred from
-a corpus with no notion of what will be asked---(question, answer) pairs are
-our labels, and the store is optimized against verified answers. That
-supervision is what makes the structure cheap. Per point of corpus indexed
-it returns $1.6\times$ the action saving and $1.8\times$ the accuracy of an
-unsupervised entity index that covers everything, using $1{,}913$ links
-against its $196{,}112$, and $94\%$ of ours point at a document that
-genuinely belongs under its key. On questions the store trained on, an unchanged reader spends $31\%$ fewer
-actions at higher accuracy, and the same result reproduces on an official
-PhantomWiki generation whose questions we did not write ($\rho = 0.77$, F1
-$0.73 \to 0.88$). To measure how far that reaches we introduce a \emph{key-coverage
-gradient}, a probe varying how much of a question the training set touched,
-which replaces the pass/fail of a train/test split with a decay curve. It
-shows that generalization is real but endpoint-dependent: accuracy carries
-to questions the store never saw, by $+0.167$ F1 where both of a question's
-keys were indexed during training and $+0.100$ where one was, decaying to
-zero where neither was, while the action saving stays on the trained
-questions. Because that decay is indexed by coverage rather than by
-question novelty, more training extends it --- and the store is undertrained
-rather than saturated: coverage grows linearly in new questions
-and stops the moment training repeats them, so a hundred questions reach a
-quarter of the corpus, roughly four times as many would close the gap, and
-the questions that generalization reaches grow with it. Supervision also composes with deployment as offline
-construction cannot---the loop consumes questions one at a time and edits in
-place, so a store can keep learning from the traffic it serves.
+offline graph construction is unsupervised, (question, answer) pairs are our
+labels --- and that supervision is what makes the structure cheap. Per point
+of corpus indexed it returns $1.6\times$ the action saving and $1.8\times$
+the accuracy of an unsupervised entity index covering everything, using
+$1{,}913$ links against its $196{,}112$. On questions the store trained on,
+an unchanged reader spends $31\%$ fewer actions at higher accuracy, and the
+result reproduces on an official PhantomWiki generation whose questions we
+did not write. To measure how far this reaches we introduce a
+\emph{key-coverage gradient}, a probe varying how much of a question the
+training set touched, replacing a train/test split's pass/fail with a decay
+curve. Generalization proves endpoint-dependent: accuracy carries to unseen
+questions ($+0.167$ F1 where both of a question's keys were indexed,
+$+0.100$ where one was, zero where neither) while the action saving stays on
+trained questions. Because that decay is indexed by coverage rather than by
+novelty, more training extends it --- and the store is undertrained, not
+saturated: coverage grows linearly in new questions and stops the moment
+training repeats them, so a hundred questions reach a quarter of the corpus
+and four times as many would close the gap.
 \end{abstract}
 
 \begin{IEEEkeywords}
