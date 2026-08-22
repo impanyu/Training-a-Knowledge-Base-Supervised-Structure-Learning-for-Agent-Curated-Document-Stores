@@ -693,6 +693,21 @@ question --- the saving is gone ($\rho = 0.935$, CI spanning $1$), and it
 does not return. Coverage of the keys is therefore \emph{not} what buys the
 saving; having answered that exact question before is.
 
+\textbf{Two epochs, two different gains.} Fig.~\ref{fig:learning}a--b
+separates them. Across epoch~1, where each question is seen once, the
+trained group's accuracy moves almost all the way it is going to move
+($0.633 \to 0.800$) while cost barely does ($9.20 \to 8.30$ actions). Across
+epoch~2, where the same hundred questions are curated a second time, cost
+falls the rest of the way ($8.30 \to 6.57$) and accuracy does not move at
+all. The second pass does not change what the store can answer; it changes
+how quickly. Nor does it work by completing indexes left half-built ---
+mean out-degree is flat across the epoch ($6.79$ to $6.67$) and the empty
+count barely moves ($45$ to $43$) --- it works by adding $45$ more indexes
+aimed at the same questions. The saving we report therefore reflects two
+curation passes over a question, not one, which is a real qualification on
+the headline number and a direct argument for the online setting: a store
+serving repeat traffic gets more passes over the keys that matter, for free.
+
 \textbf{The transfer radius depends on which endpoint you ask about.}
 Splitting each group by whether the flat store exhausted its budget
 separates two effects that the pooled $\rho$ hides. Where B1 runs out of
