@@ -25,6 +25,21 @@ PYTHONPATH=src python3 -m kb.baseline_graphrag --universe data/v10L/universe.jso
 PYTHONPATH=src python3 -m kb.baseline_hipporag --universe data/v10L/universe.json --out data/v10L_hipporag
 ```
 
+**The PhantomWiki arm.** Its universe comes from a generator we do not
+control, so you make your own rather than restoring ours. `phantom-wiki`
+needs SWI-Prolog and a venv (the system Python is PEP-668 managed):
+
+```bash
+python3 -m venv pwenv && ./pwenv/bin/pip install 'phantom-wiki==1.0.3'
+./pwenv/bin/phantom-wiki --output-dir pw_out --seed 1 \
+  --article-format json --question-format json
+PYTHONPATH=src python3 -m kb.adapt_phantomwiki --src pw_out --out data/pw1
+```
+
+Any seed works — the protocol does not care which universe it runs on, and
+that portability is the point of the arm. Ours used seed 1, which gave 405
+articles → 3,403 statement documents.
+
 **The key-coverage probe** (Table V, Fig. 2). Note the dependency: the probe
 groups questions by what the *training run* touched, so it needs that run's
 `train_log.jsonl` and cannot be built from the repository alone.
@@ -67,18 +82,15 @@ done
 Pin the snapshot, not the `gpt-5-mini` alias: the alias moves, and the
 reported numbers are from `gpt-5-mini-2025-08-07`.
 
-## What will not reproduce
+## What a re-run looks like
 
-**The exact numbers.** The reader is an LLM at temperature 0.3, so a re-run
-gives a different sample. Expect the same ordering and the same shape of the
-gradient; do not expect $\rho = 0.686$ to the digit.
-
-**The PhantomWiki arm.** Its universe came from a `phantom-wiki` 1.0.3
-generation whose output directory no longer exists. `phantom-wiki` installs
-into a fresh venv (the system Python is PEP-668 managed) and `swipl` is
-required, but we have **not** verified that re-generating with `seed=1`
-reproduces the same 3,403 statement nodes. Until that is checked, treat the
-PhantomWiki results as reproducible in method but not in data.
+Everything above runs end to end from this repository; that is the bar these
+instructions are written to. What a re-run gives you is your own experiment,
+not our data file. The reader is an LLM at temperature 0.3, so each run draws
+a different sample, and a different PhantomWiki seed is a different universe
+outright. Read your results against ours by shape, not by digit: the ordering
+of the arms, the direction of the coverage gradient, the gap closing as key
+overlap drops. $\rho = 0.686$ is one draw.
 
 ## Analysis
 
