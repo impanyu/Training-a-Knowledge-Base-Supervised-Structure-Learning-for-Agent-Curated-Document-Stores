@@ -1,14 +1,14 @@
-# Reproducing the runs
+# Reproducing the paper
 
-No data is committed. Everything under `data/` and `runs/` is generated, and
-the generators are deterministic given their seed, so the repository stays
-small and there is no risk of a stale copy diverging from the code that made
-it. The commands below rebuild every input from scratch.
+`data/` and `runs/` are not committed: the first is regenerable, the second
+is ~144 MB of LLM output. This file says exactly which numbers you can
+reproduce from this repository alone, which need a training run, and which
+cannot be reproduced at all.
 
-## The universe
+## What regenerates exactly
 
-The 500-person KBGym universe used in the paper (5,864 atomic documents, 330
-questions, splits 150/100/50/30):
+**The KBGym universe.** Deterministic given its seed — verified
+byte-identical, not merely equivalent:
 
 ```bash
 PYTHONPATH=src python3 -m kb.build --seed 0 --people 500 \
@@ -16,59 +16,101 @@ PYTHONPATH=src python3 -m kb.build --seed 0 --people 500 \
   --distractors 0.1 --out data/v10L
 ```
 
-This is byte-identical on every run; the parameters are also recorded in the
-`meta` block of the file it writes, so a universe can always be traced back
-to the command that produced it.
-
-## Baseline stores
-
-Each adapts the same universe into the store format the common reader uses,
-so the arms differ only in how the store was prepared.
+**The offline baseline stores.** Both extract lexically, so both are
+deterministic. B2 spends 488k LLM tokens on its community summaries; B3
+spends none.
 
 ```bash
-# B3, GraphRAG-style: entity communities + one LLM summary per community
-PYTHONPATH=src python3 -m kb.baseline_graphrag \
-  --universe data/v10L/universe.json --out data/v10L_graphrag
-
-# B5, HippoRAG2-style: per-entity index nodes + passage-graph edges (no LLM)
-PYTHONPATH=src python3 -m kb.baseline_hipporag \
-  --universe data/v10L/universe.json --out data/v10L_hipporag
-
-# Oracle access layer: the structure training is trying to discover, built
-# directly from the universe, as a ceiling rather than a competitor
-python3 scripts/build_oracle_index.py --out data/v10L_oracle
+PYTHONPATH=src python3 -m kb.baseline_graphrag --universe data/v10L/universe.json --out data/v10L_graphrag
+PYTHONPATH=src python3 -m kb.baseline_hipporag --universe data/v10L/universe.json --out data/v10L_hipporag
 ```
 
-## Training and evaluation
+**The key-coverage probe** (Table V, Fig. 2). Note the dependency: the probe
+groups questions by what the *training run* touched, so it needs that run's
+`train_log.jsonl` and cannot be built from the repository alone.
 
 ```bash
-bash scripts/v11_full.sh        # 2 epochs x 150 questions, then every exam
+PYTHONPATH=src python3 scripts/make_gradient_probe.py --per-group 30 \
+  --arms b1=data/v10L/universe.json \
+         graphrag=data/v10L_graphrag/universe.json \
+         hipporag=data/v10L_hipporag/universe.json
 ```
 
-All calls go to the `gpt-5-mini` alias, which resolved to
-`gpt-5-mini-2025-08-07` for the reported runs. The alias moves; pin the
-snapshot with `--model gpt-5-mini-2025-08-07` to reproduce those numbers
-rather than whatever the alias points at when you read this.
+## What needs a training run
 
-The script trains the store, runs the frozen-store exams at M = 15 and M = 8
-and on the train split, re-measures all baselines under the same reader, and
-writes the structural analyses. `OPENAI_API_KEY` (and `OPENAI_BASE_URL` if
-you use a proxy) come from a `.env` file in the repository root.
+```bash
+PYTHONPATH=src python3 -m kb.train --universe data/v10L/universe.json \
+  --epochs 2 --train-size 100 --out runs/v11_main --model gpt-5-mini-2025-08-07
+```
+
+200 iterations, 18.8M tokens, 6.8 h, about \$13. Then the exams — the four
+probe arms, the six epoch-1 snapshots, and the test splits:
+
+```bash
+for a in b1 graphrag hipporag; do
+  PYTHONPATH=src python3 -m kb.test --kb data/grad_$a/universe.json \
+    --split exact,share2,share1,share0 --limit 30 --out runs/grad_$a --m 15
+done
+PYTHONPATH=src python3 -m kb.test --kb runs/v11_main/kb_epoch_2.json \
+  --universe data/grad_b1/universe.json --split exact,share2,share1,share0 \
+  --limit 30 --out runs/grad_trained --m 15
+
+for N in 0 20 40 60 80 100; do
+  PYTHONPATH=src python3 -m kb.replay --universe data/v10L/universe.json \
+    --trace runs/v11_main/trace.jsonl --at $N --out runs/v11_main/snaps/kb_$N.json
+  PYTHONPATH=src python3 -m kb.test --kb runs/v11_main/snaps/kb_$N.json \
+    --universe data/grad_b1/universe.json --split exact,share2,share1,share0 \
+    --limit 30 --out runs/curve_$N --m 15 --epoch $N
+done
+```
+
+Pin the snapshot, not the `gpt-5-mini` alias: the alias moves, and the
+reported numbers are from `gpt-5-mini-2025-08-07`.
+
+## What will not reproduce
+
+**The exact numbers.** The reader is an LLM at temperature 0.3, so a re-run
+gives a different sample. Expect the same ordering and the same shape of the
+gradient; do not expect $\rho = 0.686$ to the digit.
+
+**The PhantomWiki arm.** Its universe came from a `phantom-wiki` 1.0.3
+generation whose output directory no longer exists. `phantom-wiki` installs
+into a fresh venv (the system Python is PEP-668 managed) and `swipl` is
+required, but we have **not** verified that re-generating with `seed=1`
+reproduces the same 3,403 statement nodes. Until that is checked, treat the
+PhantomWiki results as reproducible in method but not in data.
 
 ## Analysis
 
 ```bash
-python3 scripts/results_table.py                 # accuracy, steps, break-even
-python3 scripts/note_character.py --kb runs/v11_main/kb_epoch_2.json
-python3 scripts/index_precision.py --kb runs/v11_main/kb_epoch_2.json
-python3 scripts/index_taxonomy.py  --kb runs/v11_main/kb_epoch_2.json
-python3 scripts/make_figures.py                  # paper/figs/*.pdf
+python3 scripts/gradient_table.py                                   # Table V
+python3 scripts/index_quality_table.py --kb runs/v11_main/kb_epoch_2.json
+python3 scripts/index_precision2.py --kb runs/v11_main/kb_epoch_2.json --show 20
+PYTHONPATH=src python3 scripts/make_network_layout.py               # t-SNE + annotations
+PYTHONPATH=src python3 scripts/make_figures.py                      # paper/figs/*.pdf
+PYTHONPATH=src python3 scripts/trajectory_diff.py --group exact     # reader traces, side by side
 ```
 
-Any intermediate store state can be rebuilt from a run's trace without
-spending an API call:
+Use `index_precision2.py`, not `index_precision.py`. The older script tests
+whether a linked document mentions the index's key, which is correct for
+attribute indexes and wrong for relational ones — the grandchildren of a
+person never name the grandparent, so a correct two-hop index scores zero.
+The v2 scorer resolves the key's true member set from the universe instead.
+Both are kept so the discrepancy stays inspectable.
+
+## Rebuilding a store offline
+
+Any intermediate state replays from the trace with no API call, including
+merge verdicts, which are recorded rather than recomputed:
 
 ```bash
 PYTHONPATH=src python3 -m kb.replay --universe data/v10L/universe.json \
-  --trace runs/v11_main/trace.jsonl --at 150 --embed --out /tmp/kb_at_150.json
+  --trace runs/v11_main/trace.jsonl --at 100 --out /tmp/kb_100.json
 ```
+
+Validated byte-exact against the epoch snapshots.
+
+## The data itself
+
+`data/` and `runs/` as used for the paper are archived outside git. See the
+`README.md` in that archive for the directory map.
