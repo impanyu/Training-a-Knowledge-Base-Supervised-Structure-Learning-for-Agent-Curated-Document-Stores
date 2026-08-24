@@ -50,26 +50,25 @@ about which structure a question will need. We treat the knowledge base as a
 \emph{non-parametric model} trained on (question, answer) pairs: a training
 agent answers a supervised question against the current store, is shown the
 gold answer, then edits the store. The store carries forward, and we test
-the curated store with a test set. That supervision is what makes the
-structure cheap. We evaluate on two contamination-free universes: KBGym, the
-generator we release, and an official PhantomWiki generation whose questions
-we did not write. On questions the store trained on, the reader answers with
-$31\%$ fewer actions \emph{and} $+0.100$ F1 --- both at once, where offline
-construction trades one against the other: GraphRAG saves $9\%$ of the
-actions but falls below the untrained store's accuracy. The advantage is
-efficiency per unit of structure: $1{,}913$ links reaching $27.6\%$ of the
-corpus return $1.6\times$ the action saving and $1.8\times$ the accuracy,
-per point of corpus indexed, of an entity index that spends $196{,}112$
-links covering all of it. A \emph{key-coverage gradient} --- a probe varying
-how much of a question the training set touched --- replaces a split's
-pass/fail with a decay curve: accuracy carries to unseen questions ($+0.167$
-F1 where both of a question's keys were indexed, $+0.100$ where one was,
-zero where neither) while the action saving stays on trained questions.
-Because that decay is indexed by coverage, not question novelty, the limit
-is training volume rather than method: coverage grows linearly at $0.25$
-points per new question and flattens only once training repeats them, so a
-hundred questions leaves the store undertrained, and every further question
-widens the reach.
+the curated store with a test set. We evaluate on two contamination-free
+universes: KBGym, the generator we release, and an official PhantomWiki
+generation whose questions we did not write. On questions the store trained
+on, the reader answers with $31\%$ fewer actions \emph{and} $+0.100$ F1 ---
+both at once, where offline construction trades one against the other:
+GraphRAG saves $9\%$ of the actions but falls below the untrained store's
+accuracy. The advantage is efficiency per unit of structure: $1{,}913$ links
+reaching $27.6\%$ of the corpus return $1.6\times$ the action saving and
+$1.8\times$ the accuracy, per point of corpus indexed, of an entity index
+that spends $196{,}112$ links covering all of it. A \emph{key-coverage
+gradient} --- a probe varying how much of a question the training set
+touched --- replaces a split's pass/fail with a decay curve: accuracy
+carries to unseen questions ($+0.167$ F1 where both of a question's keys
+were indexed, $+0.100$ where one was, zero where neither) while the action
+saving stays on trained questions. Because that decay is indexed by
+coverage, not question novelty, the limit is training volume rather than
+method: coverage grows linearly at $0.25$ points per new question and
+flattens only once training repeats them, so a hundred questions leaves the
+store undertrained, and every further question widens the reach.
 \end{abstract}
 
 \begin{IEEEkeywords}
