@@ -622,28 +622,22 @@ constructing four question groups that differ in how much of the question
 the training set touched. \kbgym{} is generated, so the full instance pool
 of every template is available, and the groups are \emph{stratified}: all
 four draw from the six two-slot trained templates with identical
-per-template quotas (34 questions each), so no group can be easier by
-composition. The anchor group is every two-slot training question itself;
-the other three mirror its template mix exactly with unseen questions whose
-keys the training set touched twice, once, or not at all. All four are
-examined on the same frozen store, by the same reader, under the same
-budget. One residual asymmetry survives stratification --- trained
-questions name the popular keys, whose member sets are larger --- so the
-untrained store's own F1 still varies across groups ($0.62$--$0.79$) and
-the table reads \emph{vertically}: each arm against B1 on the same
-thirty-four questions, the gradient living in those paired differences.
+per-template quotas ($n{=}34$), so no group is easier by composition ---
+the anchor group is every two-slot training question, and the other three
+mirror its template mix with unseen questions whose keys training touched
+twice, once, or not at all, all examined on the same frozen store, reader
+and budget. Trained questions still name the more popular keys, so B1's
+own F1 varies across groups ($0.62$--$0.79$) and the table reads
+\emph{vertically}: each arm against B1 on the same questions.
 
 Table~\ref{tab:gradient} is the result and Fig.~\ref{fig:learning} its
-training-time version, and on the stratified probe the decay is monotone
-on both endpoints. On the questions the store trained on, the reader
-spends $25\%$ fewer actions ($\rho = 0.747$, CI $[0.64, 0.87]$) at
-$+0.294$ F1 over the untrained flat store. One step away --- same
-template, both keys indexed, different question --- the accuracy gain
-drops to $+0.176$ and the step saving loses significance ($\rho = 0.879$,
-CI $[0.71, 1.09]$); at one key $+0.059$ and $\rho = 0.98$; at none,
-nothing ($-0.029$, $\rho = 1.02$). Accuracy decays with key coverage;
-the step saving, significant only where the exact question was trained,
-decays faster still.
+training-time version: on the stratified probe the decay is monotone on
+both endpoints. On trained questions the reader spends $25\%$ fewer
+actions ($\rho = 0.747$, CI $[0.64, 0.87]$) at $+0.294$ F1 over the flat
+store; with both keys covered, $+0.176$ F1 and the step saving loses
+significance ($\rho = 0.879$); at one key $+0.059$; at none, nothing.
+Accuracy decays with key coverage; the step saving, significant only
+where the exact question was trained, decays faster.
 
 \textbf{Two epochs, two different gains.} Fig.~\ref{fig:learning}a--b
 separates them. Across epoch~1, where each question is seen once, the
@@ -737,15 +731,12 @@ our store, indexing $27.6\%$ of it, reaches $8.9$ and $0.831$. Per point
 of corpus coverage that is $0.035$ actions saved and $+0.0045$ F1 for us
 against $0.023$ and $+0.0021$ for B3 --- $1.5\times$ and $2.1\times$ more
 per point covered. Both ratios concentrate where training touched the
-keys: on the two key-covered groups alone the accuracy ratio is
-$3.6\times$ and $5.4\times$, at one key it falls below $1$, and at none
-ours is negative --- so the per-point advantage is worth whatever a
-deployment's overlap with its training distribution makes it worth. B2,
-which also covers everything, returns \emph{negative} actions and F1 per
-point: coverage alone is not the mechanism, and community summaries are
-the wrong structure regardless of how much of the corpus they span. What
-separates us from B3 is therefore not the quality of the structure but
-how much of the corpus carries any.
+keys (at one key the accuracy ratio falls below $1$; at none ours is
+negative), so the per-point advantage is worth whatever a deployment's
+overlap with its training distribution makes it worth. B2, which also
+covers everything, returns \emph{negative} actions and F1 per point:
+coverage alone is not the mechanism. What separates us from B3 is not the
+quality of the structure but how much of the corpus carries any.
 
 \begin{table}[!t]
 \caption{What a point of corpus coverage buys. Each arm's gain over the
