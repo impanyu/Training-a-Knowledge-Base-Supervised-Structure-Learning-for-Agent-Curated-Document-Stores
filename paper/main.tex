@@ -54,16 +54,16 @@ the curated store with a test set. We evaluate on two contamination-free
 benchmarks: KBGym, a fictional-universe generator we release, and
 PhantomWiki. On the questions it trained on, the curated store answers with
 $31\%$ fewer actions and higher accuracy than the untrained store, on both
-benchmarks --- where the offline baselines (GraphRAG, HippoRAG) trade one
-for the other. It is also far cheaper: $1{,}913$ links against the strongest
-baseline's $196{,}112$, returning $1.6\times$ the action saving and
-$1.8\times$ the accuracy gain per point of corpus covered. A
-\emph{key-coverage gradient} probe shows the accuracy gain carrying to
-questions the store never saw, in proportion to how much of the question its
-indexes cover. The binding limit is index coverage, not method: a hundred
-training questions cover $27.6\%$ of the corpus and coverage grows linearly
-in new questions, so a larger training set widens the indexed share and with
-it every gain above.
+benchmarks. GraphRAG achieves neither together, saving actions only at an
+accuracy below the untrained store; HippoRAG achieves both, but by spending
+$196{,}112$ links where we spend $1{,}913$ --- per point of corpus covered,
+our store returns $1.6\times$ its action saving and $1.8\times$ its accuracy
+gain. A \emph{key-coverage gradient} probe shows the accuracy gain carrying
+to questions the store never saw, in proportion to how much of the question
+its indexes cover. The binding limit is index coverage, not method: a
+hundred training questions cover $27.6\%$ of the corpus and coverage grows
+linearly in new questions, so a larger training set widens the indexed share
+and with it every gain above.
 \end{abstract}
 
 \begin{IEEEkeywords}
