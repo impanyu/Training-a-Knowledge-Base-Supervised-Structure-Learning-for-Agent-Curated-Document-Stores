@@ -39,6 +39,11 @@ def main():
     ap.add_argument("--universe", default="data/v10L/universe.json")
     ap.add_argument("--train-log", default="runs/v11_main/train_log.jsonl")
     ap.add_argument("--per-group", type=int, default=100)
+    ap.add_argument("--stratified", action="store_true",
+                    help="equal per-template quotas in every group, so the "
+                         "four groups share one template mix; quota per "
+                         "template = number of trained questions of that "
+                         "template (the binding constraint)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--arms", nargs="+", required=True,
                     help="name=path/to/universe.json for each arm's store")
@@ -77,36 +82,67 @@ def main():
     pick = random.Random(a.seed)
     splits, questions, n = {}, [], 0
 
-    # Group "exact": the training questions themselves, the anchor of the
-    # gradient. Same size as the other groups so the four points are
-    # directly comparable.
-    anchor = list(trained)
-    pick.shuffle(anchor)
-    splits["exact"] = []
-    for qid in anchor[:a.per_group]:
-        src = Q[qid]
-        n += 1
-        new = f"g{n:04d}"
-        questions.append({**src, "qid": new})
-        splits["exact"].append(new)
-    print(f"  exact: {len(splits['exact'])} questions (the training set)")
-    for k in (2, 1, 0):
-        pool = buckets[k]
-        pick.shuffle(pool)
-        take = pool[:a.per_group]
-        name = f"share{k}"
-        splits[name] = []
-        for t, row in take:
+    def add(name, src_rows):
+        nonlocal n
+        splits.setdefault(name, [])
+        for item in src_rows:
             n += 1
             qid = f"g{n:04d}"
-            questions.append({
-                "qid": qid, "template": t, "category": B.TEMPLATES[t][0],
-                "hops": B.TEMPLATES[t][1], "text": row["text"],
-                "golds": row["golds"], "support": row["support"],
-                "unanswerable": bool(row.get("unanswerable", False)),
-                "eval_flavor": None})
+            if isinstance(item, dict):          # a training question, verbatim
+                questions.append({**item, "qid": qid})
+            else:                               # (template, instance row)
+                t, row = item
+                questions.append({
+                    "qid": qid, "template": t, "category": B.TEMPLATES[t][0],
+                    "hops": B.TEMPLATES[t][1], "text": row["text"],
+                    "golds": row["golds"], "support": row["support"],
+                    "unanswerable": bool(row.get("unanswerable", False)),
+                    "eval_flavor": None})
             splits[name].append(qid)
-        print(f"  {name}: {len(take)} questions (pool {len(pool)})")
+
+    if a.stratified:
+        # One template mix for all four groups. The quota for template t is
+        # the number of trained questions of t (every bucket pool is far
+        # larger), so "exact" is ALL trained two-slot questions and each
+        # share group mirrors its composition exactly.
+        ex = {}
+        for qid in trained:
+            t = Q[qid]["template"]
+            if t in TWO_SLOT:
+                ex.setdefault(t, []).append(Q[qid])
+        by_tb = {}
+        for k in (2, 1, 0):
+            for t, row in buckets[k]:
+                by_tb.setdefault((t, k), []).append((t, row))
+        quota = {t: min([len(ex[t])] + [len(by_tb.get((t, k), []))
+                                        for k in (2, 1, 0)])
+                 for t in ex}
+        print("  per-template quota:",
+              {t: q for t, q in sorted(quota.items())})
+        add("exact", [q for t in sorted(quota) for q in ex[t][:quota[t]]])
+        for k in (2, 1, 0):
+            rows = []
+            for t in sorted(quota):
+                pool = by_tb.get((t, k), [])
+                pick.shuffle(pool)
+                rows += pool[:quota[t]]
+            add(f"share{k}", rows)
+        for name in splits:
+            print(f"  {name}: {len(splits[name])} questions")
+    else:
+        # Group "exact": the training questions themselves, the anchor of
+        # the gradient. Same size as the other groups so the four points
+        # are directly comparable.
+        anchor = list(trained)
+        pick.shuffle(anchor)
+        add("exact", [Q[qid] for qid in anchor[:a.per_group]])
+        print(f"  exact: {len(splits['exact'])} questions (the training set)")
+        for k in (2, 1, 0):
+            pool = buckets[k]
+            pick.shuffle(pool)
+            add(f"share{k}", pool[:a.per_group])
+            print(f"  share{k}: {len(splits[f'share{k}'])} questions "
+                  f"(pool {len(pool)})")
 
     for spec in a.arms:
         name, path = spec.split("=", 1)

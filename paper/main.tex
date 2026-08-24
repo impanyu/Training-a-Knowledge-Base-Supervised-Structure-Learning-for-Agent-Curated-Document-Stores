@@ -50,22 +50,21 @@ about which structure a question will need. We treat the knowledge base as a
 \emph{non-parametric model} trained on (question, answer) pairs: a
 \emph{curator} agent answers a supervised question against the current
 store, is shown the gold answer, then edits the store. The store carries
-forward, and we evaluate the curated store with a test set. We evaluate on
-two contamination-free benchmarks: KBGym, a fictional-universe generator we
+forward, and we evaluate the curated store with a test set, on two
+contamination-free benchmarks: KBGym, a fictional-universe generator we
 release, and PhantomWiki. Generalization is probed with four question groups
 of decreasing overlap with the training set: the trained questions
 themselves, and unseen questions sharing both of their keys with training,
-one key, or neither. The curated store outperforms the untrained store and
-GraphRAG on all four groups, and the margin grows with overlap --- from
-parity where no key was shared, through $+0.167$ F1 where both were, to
-$31\%$ fewer actions at higher accuracy on the trained questions --- while
-matching HippoRAG's gains with $1{,}913$ links against its $196{,}112$: per
-point of corpus covered, $1.6\times$ the action saving and $1.8\times$ the
-accuracy gain. What bounds the reach is index coverage, not the method:
-accuracy rises steadily with the share of the corpus the indexes cover, and
-coverage grows linearly in new training questions --- a hundred reach
-$27.6\%$ --- so training on more questions widens coverage, and with it the
-generalization.
+one key, or neither. The curated store's advantage grows with overlap ---
+from parity where no key was shared, through $+0.176$ F1 where both keys
+were, to $25\%$ fewer actions at $+0.294$ F1 on the trained questions, the
+one cell significant on both benchmarks --- while matching HippoRAG's gains
+with $1{,}913$ links against its $196{,}112$: per point of corpus covered,
+$1.5\times$ the action saving and $2.1\times$ the accuracy gain. What bounds
+the reach is index coverage, not the method: accuracy rises steadily with
+the share of the corpus the indexes cover, and coverage grows linearly in
+new training questions --- a hundred reach $27.6\%$ --- so training on more
+questions widens coverage, and with it the generalization.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -117,13 +116,13 @@ held-out performance is the loss. The contrast with offline construction
 no notion of what will be asked, while (question, answer) pairs are our
 labels and structure is optimized against verified answers. The advantage
 this buys is measurable and it is one of efficiency, not of ceiling. Per
-point of corpus indexed, supervised curation returns $1.6\times$ the action
-saving and $1.8\times$ the accuracy of an unsupervised entity index that
+point of corpus indexed, supervised curation returns $1.5\times$ the action
+saving and $2.1\times$ the accuracy of an unsupervised entity index that
 covers everything, because it spends its structure where questions actually
 go: $1{,}913$ links against $196{,}112$, and $94\%$ of ours point at a
 document that genuinely belongs under its key. And the structure generalizes, on the endpoint where generalization is
-available to it: questions the store never saw gain $+0.167$ F1 when both of
-their keys were indexed during training and $+0.100$ when one was, decaying
+available to it: questions the store never saw gain $+0.176$ F1 when both of
+their keys were indexed during training and $+0.059$ when one was, decaying
 to zero when neither was. That decay is indexed by \emph{coverage}, not by
 question novelty, so it recedes as training continues. Our absolute numbers
 trail the unsupervised baseline only because a hundred training questions
@@ -619,28 +618,32 @@ How far does built structure reach? A train/test split answers that with a
 single number, which conflates two very different failures: a store that
 memorized its training questions and a store that generalizes but was never
 given enough of the corpus to cover the test set. We separate them by
-constructing four question groups that differ only in how much of the
-question the training set touched. \kbgym{} is generated, so the full
-instance pool of every template is available: from it we sample, for the six
-two-slot trained templates, thirty questions whose \emph{both} keys appeared
-in some training question, thirty with exactly one, and thirty with neither,
-plus thirty of the training questions themselves. All four groups are then
+constructing four question groups that differ in how much of the question
+the training set touched. \kbgym{} is generated, so the full instance pool
+of every template is available, and the groups are \emph{stratified}: all
+four draw from the six two-slot trained templates with identical
+per-template quotas (34 questions each), so no group can be easier by
+composition. The anchor group is every two-slot training question itself;
+the other three mirror its template mix exactly with unseen questions whose
+keys the training set touched twice, once, or not at all. All four are
 examined on the same frozen store, by the same reader, under the same
-budget. The groups are \emph{not} matched in intrinsic difficulty ---
-bucketing by key overlap also shifts the template mix, and the untrained
-store's own F1 drifts from $0.60$ to $0.83$ across them for that reason
-alone --- so the table reads \emph{vertically}: every comparison is an arm
-against B1 on the same thirty questions, and the gradient lives in those
-paired differences, not in the absolute rows.
+budget. One residual asymmetry survives stratification --- trained
+questions name the popular keys, whose member sets are larger --- so the
+untrained store's own F1 still varies across groups ($0.62$--$0.79$) and
+the table reads \emph{vertically}: each arm against B1 on the same
+thirty-four questions, the gradient living in those paired differences.
 
 Table~\ref{tab:gradient} is the result and Fig.~\ref{fig:learning} its
-training-time version. The step saving is real and it is narrow. On the
-questions the store trained on, the reader spends $31\%$ fewer actions
-($\rho = 0.686$, CI $[0.52, 0.84]$) at higher accuracy than on the untrained
-flat store. One step away --- same template, both keys indexed, different
-question --- the saving is gone ($\rho = 0.935$, CI spanning $1$), and it
-does not return. Coverage of the keys is therefore \emph{not} what buys the
-saving; having answered that exact question before is.
+training-time version, and on the stratified probe the decay is monotone
+on both endpoints. On the questions the store trained on, the reader
+spends $25\%$ fewer actions ($\rho = 0.747$, CI $[0.64, 0.87]$) at
+$+0.294$ F1 over the untrained flat store. One step away --- same
+template, both keys indexed, different question --- the accuracy gain
+drops to $+0.176$ and the step saving loses significance ($\rho = 0.879$,
+CI $[0.71, 1.09]$); at one key $+0.059$ and $\rho = 0.98$; at none,
+nothing ($-0.029$, $\rho = 1.02$). Accuracy decays with key coverage;
+the step saving, significant only where the exact question was trained,
+decays faster still.
 
 \textbf{Two epochs, two different gains.} Fig.~\ref{fig:learning}a--b
 separates them. Across epoch~1, where each question is seen once, the
@@ -661,10 +664,11 @@ serving repeat traffic gets more passes over the keys that matter, for free.
 Splitting each group by whether the flat store exhausted its budget
 separates two effects that the pooled $\rho$ hides. Where B1 runs out of
 actions, the trained store both finishes sooner and answers better, and this
-persists past the exact key: F1 rises $0.30 \to 0.50$ on the trained
-questions, $0.18 \to 0.55$ at two keys covered, and $0.00 \to 0.60$ at one.
-Where B1 already finishes comfortably, the trained store is slightly
-\emph{slower} off the trained set ($\rho = 1.08$ and $1.17$), because its
+persists past the exact key and decays with it: F1 rises $0.08 \to 0.77$
+on the trained questions, $0.12 \to 0.88$ at two keys covered,
+$0.14 \to 0.50$ at one, and only $0.12 \to 0.25$ at none. Where B1
+already finishes comfortably, the trained store is slightly \emph{slower}
+off the trained set ($\rho$ between $1.08$ and $1.20$), because its
 indexes occupy retrieval slots on questions that did not need them. Built
 structure transfers as accuracy on questions the flat store cannot finish,
 and as step savings only on the questions it was trained on. Reporting one
@@ -684,19 +688,18 @@ align with \kbgym{}'s:
 \toprule
 $\rho$ (F1) & trained on & one key & neither \\
 \midrule
-\kbgym{} & 0.686$^{*}$ \emph{(0.800)} & 1.032 \emph{(0.867)} & 0.904$^{*}$ \emph{(0.833)} \\
+\kbgym{} & 0.747$^{*}$ \emph{(0.912)} & 0.977 \emph{(0.706)} & 1.016 \emph{(0.765)} \\
 PhantomWiki & 0.769$^{*}$ \emph{(0.880)} & 0.914 \emph{(0.807)} & 1.029 \emph{(0.718)} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 The trained group is the only cell significant on both benchmarks
-(CIs $[0.52,0.84]$ and $[0.68,0.86]$), and accuracy rises on both
-($0.700 \to 0.800$ and $0.728 \to 0.880$). The two middle cells disagree in
-their ordering across benchmarks, which falsifies the monotone decay E2 was
-designed to test: there is no reliable partial transfer in the step
-endpoint, only a saving where the question was trained and none where it was
-not. On PhantomWiki the
+(CIs $[0.64,0.87]$ and $[0.68,0.86]$), and accuracy rises on both
+($0.618 \to 0.912$ and $0.728 \to 0.880$). Neither benchmark shows a
+significant step saving off the trained set: partial transfer lives in the
+accuracy endpoint, while the step endpoint pays out only where the exact
+question was trained. On PhantomWiki the
 uncovered group is worse than neutral --- F1 falls $0.765 \to 0.718$ --- as
 indexes for other keys occupy retrieval slots that question needed. Coverage
 is not merely absent outside the trained set; it is mildly costly, which is
@@ -709,11 +712,12 @@ comparison below is \kbgym{}-only.
 
 \textbf{Coverage is the currency.}\label{sec:res-perlink}
 B3 answers in fewer actions and at higher F1 than we do, from $100\%$
-coverage against our $27.6\%$: it indexes every entity in the corpus, while a
-hundred training questions name a quarter of it. Its $\rho$ holds between
-$0.71$ and $0.78$ in all four groups; ours beats it where our indexes exist
-($0.686$ against $0.777$ on the trained group) and falls back to the flat
-store where they do not. A gradient defined by what training touched is in
+coverage against our $27.6\%$: it indexes every entity in the corpus, while
+a hundred training questions name a quarter of it. Its $\rho$ holds
+between $0.70$ and $0.81$ in all four groups --- flat, because every group
+meets the same fully-indexed store --- while ours tracks what training
+touched, matching B3's accuracy where both keys were covered and falling
+back to the flat store where neither was. A gradient defined by what training touched is in
 any case a property of our arm alone, so the comparison that treats both
 fairly divides each arm's gain by the coverage that produced it.
 
@@ -727,23 +731,25 @@ at the level of questions rather than documents, $78$ of $302$ ($25.8\%$)
 have their entire support set reachable from some index in one read. Both
 offline arms sit at $100\%$ on every one of these readings, by construction.
 
-Pooled over all 120 probe questions, B1 answers in $9.8$ actions at F1
-$0.725$. B3, indexing the whole corpus, reaches $7.3$ actions and $0.908$;
-our store, indexing $27.6\%$ of it, reaches $8.7$ and $0.817$. Per point of
-corpus coverage that is $0.039$ actions saved and $+0.0033$ F1 for us
-against $0.025$ and $+0.0018$ for B3 --- $1.6\times$ and $1.8\times$ more per
-point covered. The accuracy ratio is robust to how the probe is composed
-($1.7$--$2.2\times$ on each group taken alone); the action ratio is not, and
-inverts to $0.6\times$ if the trained group is dropped, so it is worth
-whatever a deployment's overlap with its training questions makes it worth. B2, which also covers everything, returns $0.003$ actions and
-\emph{negative} F1 per point: coverage alone is not the mechanism, and
-community summaries are the wrong structure regardless of how much of the
-corpus they span. What separates us from B3 is therefore not the quality of
-the structure but how much of the corpus carries any.
+Pooled over all 136 probe questions, B1 answers in $9.8$ actions at F1
+$0.706$. B3, indexing the whole corpus, reaches $7.5$ actions and $0.919$;
+our store, indexing $27.6\%$ of it, reaches $8.9$ and $0.831$. Per point
+of corpus coverage that is $0.035$ actions saved and $+0.0045$ F1 for us
+against $0.023$ and $+0.0021$ for B3 --- $1.5\times$ and $2.1\times$ more
+per point covered. Both ratios concentrate where training touched the
+keys: on the two key-covered groups alone the accuracy ratio is
+$3.6\times$ and $5.4\times$, at one key it falls below $1$, and at none
+ours is negative --- so the per-point advantage is worth whatever a
+deployment's overlap with its training distribution makes it worth. B2,
+which also covers everything, returns \emph{negative} actions and F1 per
+point: coverage alone is not the mechanism, and community summaries are
+the wrong structure regardless of how much of the corpus they span. What
+separates us from B3 is therefore not the quality of the structure but
+how much of the corpus carries any.
 
 \begin{table}[!t]
 \caption{What a point of corpus coverage buys. Each arm's gain over the
-untrained flat store, pooled over all 120 probe questions, divided by the
+untrained flat store, pooled over all 136 probe questions, divided by the
 share of the corpus its indexes reach. The offline arms index everything;
 ours indexes the part its training questions named.}
 \label{tab:percoverage}
@@ -756,9 +762,9 @@ ours indexes the part its training questions named.}
 Store & coverage & actions / pt & F1 / pt \\
 \midrule
 B1 flat & 0\% & --- & --- \\
-B2 GraphRAG & 100\% & $0.003$ & $-0.0002$ \\
-B3 HippoRAG2 & 100\% & $0.025$ & $+0.0018$ \\
-Ours (trained) & 27.6\% & $\mathbf{0.039}$ & $\mathbf{+0.0033}$ \\
+B2 GraphRAG & 100\% & $-0.002$ & $-0.0003$ \\
+B3 HippoRAG2 & 100\% & $0.023$ & $+0.0021$ \\
+Ours (trained) & 27.6\% & $\mathbf{0.035}$ & $\mathbf{+0.0045}$ \\
 \bottomrule
 \end{tabular*}
 \end{table}
@@ -791,10 +797,12 @@ think this protocol is actually for.
 
 \begin{table}[!t]
 \caption{The key-coverage gradient. Groups differ in how much of the
-question the training set touched and are not difficulty-matched, so
-compare within a column: each arm against B1 on the same questions. $\rho$ = actions relative to the
-untrained flat store on the same questions, so lower is cheaper;
-$^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. $n=30$ per group,
+question the training set touched, stratified so all four share one
+template mix; residual key-popularity differences remain, so compare
+within a column: each arm against B1 on the same questions. $\rho$ =
+actions relative to the untrained flat store on the same questions, so
+lower is cheaper; $^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding
+$1$. $n=34$ per group,
 identical reader, action set and budget $M{=}15$. HippoRAG2 is absent
 because it indexes the whole corpus, so all four groups meet the same store
 and the gradient cannot separate them; it is compared in
@@ -810,13 +818,13 @@ Store & trained on & both keys & one key & neither \\
 \midrule
 \multicolumn{5}{@{}l}{\emph{$\rho$: actions relative to B1}}\\
 \quad B1 flat & 1.000 & 1.000 & 1.000 & 1.000 \\
-\quad B2 GraphRAG & 0.909 & 0.984 & 1.036 & 0.947 \\
-\quad Ours (trained) & \textbf{0.686}$^{*}$ & \textbf{0.935} & \textbf{1.032} & \textbf{0.904}$^{*}$ \\
+\quad B2 GraphRAG & 0.918 & 1.154 & \textbf{0.972} & 1.047 \\
+\quad Ours (trained) & \textbf{0.747}$^{*}$ & \textbf{0.879} & 0.977 & \textbf{1.016} \\
 \addlinespace[2pt]
 \multicolumn{5}{@{}l}{\emph{F1}}\\
-\quad B1 flat & 0.700 & 0.600 & 0.767 & \textbf{0.833} \\
-\quad B2 GraphRAG & 0.633 & 0.567 & 0.833 & 0.800 \\
-\quad Ours (trained) & \textbf{0.800} & \textbf{0.767} & \textbf{0.867} & \textbf{0.833} \\
+\quad B1 flat & 0.618 & 0.765 & 0.647 & \textbf{0.794} \\
+\quad B2 GraphRAG & 0.618 & 0.676 & \textbf{0.706} & 0.706 \\
+\quad Ours (trained) & \textbf{0.912} & \textbf{0.941} & \textbf{0.706} & 0.765 \\
 \bottomrule
 \end{tabular*}
 \end{table}
@@ -838,7 +846,7 @@ artifact of more questions terminating early. These two epochs are not a
 controlled store contrast, though: the store evolves \emph{during} epoch~1,
 so the epoch label mixes store state with question order. The controlled
 version is the \emph{trained} column of Table~\ref{tab:gradient}, which
-gives a larger saving ($\rho = 0.686$) precisely because it removes that
+gives a larger saving ($\rho = 0.747$) precisely because it removes that
 mixing.
 
 \begin{figure*}[!t]
