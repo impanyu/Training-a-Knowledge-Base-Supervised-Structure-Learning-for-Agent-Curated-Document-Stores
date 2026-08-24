@@ -49,24 +49,23 @@ it unsupervised --- a whole corpus indexed at uniform effort, with no signal
 about which structure a question will need. We treat the knowledge base as a
 \emph{non-parametric model} trained on (question, answer) pairs: a training
 agent answers a supervised question against the current store, is shown the
-gold answer, then edits the store. The store carries forward, and an
-unchanged reader is later examined on a frozen snapshot under a fixed action
-budget, so every effect we report belongs to the structure training left
-behind. That supervision is what makes the structure cheap. On trained
-questions the reader spends $31\%$ fewer actions at higher accuracy,
-reproduced on an official PhantomWiki generation whose questions we did not
-write; per point of corpus indexed the store returns $1.6\times$ the action
-saving and $1.8\times$ the accuracy of an unsupervised entity index covering
-everything, using $1{,}913$ links against its $196{,}112$. To measure how
-far this reaches we introduce a \emph{key-coverage gradient}, a probe
-varying how much of a question the training set touched, replacing a split's
-pass/fail with a decay curve. Generalization proves endpoint-dependent:
-accuracy carries to unseen questions ($+0.167$ F1 where both of a question's
-keys were indexed, $+0.100$ where one was, zero where neither) while the
-action saving stays on trained questions. Because the decay is indexed by
-coverage, not novelty, more training extends it --- coverage grows linearly
-in new questions and flattens only once training repeats them, so at a
-hundred questions the store is undertrained, not saturated.
+gold answer, then edits the store. The store carries forward, and we test
+the curated store with a test set. That supervision is what makes the
+structure cheap. On trained questions the reader spends $31\%$ fewer actions
+at higher accuracy, reproduced on an official PhantomWiki generation whose
+questions we did not write; per point of corpus indexed the store returns
+$1.6\times$ the action saving and $1.8\times$ the accuracy of an
+unsupervised entity index covering everything, using $1{,}913$ links against
+its $196{,}112$. To measure how far this reaches we introduce a
+\emph{key-coverage gradient}, a probe varying how much of a question the
+training set touched, replacing a split's pass/fail with a decay curve.
+Generalization proves endpoint-dependent: accuracy carries to unseen
+questions ($+0.167$ F1 where both of a question's keys were indexed,
+$+0.100$ where one was, zero where neither) while the action saving stays on
+trained questions. Because the decay is indexed by coverage, not novelty,
+more training extends it --- coverage grows linearly in new questions and
+flattens only once training repeats them, so at a hundred questions the
+store is undertrained, not saturated.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -790,9 +789,10 @@ think this protocol is actually for.
 question the training set touched. $\rho$ = actions relative to the
 untrained flat store on the same questions, so lower is cheaper;
 $^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. $n=30$ per group,
-identical reader, action set and budget $M{=}15$. B3 indexes the whole
-corpus, for which all four groups are the same store, and is compared
-separately in Table~\ref{tab:percoverage}.}
+identical reader, action set and budget $M{=}15$. HippoRAG2 is absent
+because it indexes the whole corpus, so all four groups meet the same store
+and the gradient cannot separate them; it is compared in
+Table~\ref{tab:percoverage} instead.}
 \label{tab:gradient}
 \centering
 \scriptsize
