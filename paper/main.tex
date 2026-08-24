@@ -622,8 +622,13 @@ instance pool of every template is available: from it we sample, for the six
 two-slot trained templates, thirty questions whose \emph{both} keys appeared
 in some training question, thirty with exactly one, and thirty with neither,
 plus thirty of the training questions themselves. All four groups are then
-examined on the same frozen store, by the same reader, under the same budget
---- only coverage varies.
+examined on the same frozen store, by the same reader, under the same
+budget. The groups are \emph{not} matched in intrinsic difficulty ---
+bucketing by key overlap also shifts the template mix, and the untrained
+store's own F1 drifts from $0.60$ to $0.83$ across them for that reason
+alone --- so the table reads \emph{vertically}: every comparison is an arm
+against B1 on the same thirty questions, and the gradient lives in those
+paired differences, not in the absolute rows.
 
 Table~\ref{tab:gradient} is the result and Fig.~\ref{fig:learning} its
 training-time version. The step saving is real and it is narrow. On the
@@ -782,8 +787,9 @@ two readings are complementary, and the online one is the deployment we
 think this protocol is actually for.
 
 \begin{table}[!t]
-\caption{The key-coverage gradient. Groups differ only in how much of the
-question the training set touched. $\rho$ = actions relative to the
+\caption{The key-coverage gradient. Groups differ in how much of the
+question the training set touched and are not difficulty-matched, so
+compare within a column: each arm against B1 on the same questions. $\rho$ = actions relative to the
 untrained flat store on the same questions, so lower is cheaper;
 $^{*}$ marks a bootstrap 95\% CI on $\rho$ excluding $1$. $n=30$ per group,
 identical reader, action set and budget $M{=}15$. HippoRAG2 is absent
