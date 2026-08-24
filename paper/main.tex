@@ -47,9 +47,9 @@ Systems that instead let an agent curate one never measure what curation
 does to the store, and the offline pipelines that do build structure build
 it unsupervised --- a whole corpus indexed at uniform effort, with no signal
 about which structure a question will need. We treat the knowledge base as a
-\emph{non-parametric model} and (question, answer) pairs as its labels. A
-training agent answers a supervised question against the current store, is
-shown the gold, then edits the store; the store carries forward, and an
+\emph{non-parametric model} trained on (question, answer) pairs: a training
+agent answers a supervised question against the current store, is shown the
+gold answer, then edits the store. The store carries forward, and an
 unchanged reader is later examined on a frozen snapshot under a fixed action
 budget, so every effect we report belongs to the structure training left
 behind. That supervision is what makes the structure cheap. On trained
