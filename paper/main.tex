@@ -51,24 +51,19 @@ about which structure a question will need. We treat the knowledge base as a
 agent answers a supervised question against the current store, is shown the
 gold answer, then edits the store. The store carries forward, and we test
 the curated store with a test set. We evaluate on two contamination-free
-universes: KBGym, the generator we release, and an official PhantomWiki
-generation whose questions we did not write. On questions the store trained
-on, the reader answers with $31\%$ fewer actions \emph{and} $+0.100$ F1 ---
-both at once, where offline construction trades one against the other:
-GraphRAG saves $9\%$ of the actions but falls below the untrained store's
-accuracy. The advantage is efficiency per unit of structure: $1{,}913$ links
-reaching $27.6\%$ of the corpus return $1.6\times$ the action saving and
-$1.8\times$ the accuracy, per point of corpus indexed, of an entity index
-that spends $196{,}112$ links covering all of it. A \emph{key-coverage
-gradient} --- a probe varying how much of a question the training set
-touched --- replaces a split's pass/fail with a decay curve: accuracy
-carries to unseen questions ($+0.167$ F1 where both of a question's keys
-were indexed, $+0.100$ where one was, zero where neither) while the action
-saving stays on trained questions. Because that decay is indexed by
-coverage, not question novelty, the limit is training volume rather than
-method: coverage grows linearly at $0.25$ points per new question and
-flattens only once training repeats them, so a hundred questions leaves the
-store undertrained, and every further question widens the reach.
+benchmarks: KBGym, a fictional-universe generator we release, and
+PhantomWiki. On the questions it trained on, the curated store answers with
+$31\%$ fewer actions and higher accuracy than the untrained store, on both
+benchmarks --- where the offline baselines (GraphRAG, HippoRAG) trade one
+for the other. It is also far cheaper: $1{,}913$ links against the strongest
+baseline's $196{,}112$, returning $1.6\times$ the action saving and
+$1.8\times$ the accuracy gain per point of corpus covered. A
+\emph{key-coverage gradient} probe shows the accuracy gain carrying to
+questions the store never saw, in proportion to how much of the question its
+indexes cover. The binding limit is index coverage, not method: a hundred
+training questions cover $27.6\%$ of the corpus and coverage grows linearly
+in new questions, so a larger training set widens the indexed share and with
+it every gain above.
 \end{abstract}
 
 \begin{IEEEkeywords}
