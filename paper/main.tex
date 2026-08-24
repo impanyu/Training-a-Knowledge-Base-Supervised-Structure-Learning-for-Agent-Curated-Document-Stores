@@ -51,21 +51,25 @@ about which structure a question will need. We treat the knowledge base as a
 agent answers a supervised question against the current store, is shown the
 gold answer, then edits the store. The store carries forward, and we test
 the curated store with a test set. That supervision is what makes the
-structure cheap. On trained questions the reader spends $31\%$ fewer actions
-at higher accuracy, reproduced on an official PhantomWiki generation whose
-questions we did not write; per point of corpus indexed the store returns
-$1.6\times$ the action saving and $1.8\times$ the accuracy of an
-unsupervised entity index covering everything, using $1{,}913$ links against
-its $196{,}112$. To measure how far this reaches we introduce a
-\emph{key-coverage gradient}, a probe varying how much of a question the
-training set touched, replacing a split's pass/fail with a decay curve.
-Generalization proves endpoint-dependent: accuracy carries to unseen
-questions ($+0.167$ F1 where both of a question's keys were indexed,
-$+0.100$ where one was, zero where neither) while the action saving stays on
-trained questions. Because the decay is indexed by coverage, not novelty,
-more training extends it --- coverage grows linearly in new questions and
-flattens only once training repeats them, so at a hundred questions the
-store is undertrained, not saturated.
+structure cheap. We evaluate on two contamination-free universes: KBGym, the
+generator we release, and an official PhantomWiki generation whose questions
+we did not write. On questions the store trained on, the reader answers with
+$31\%$ fewer actions \emph{and} $+0.100$ F1 --- both at once, where offline
+construction trades one against the other: GraphRAG saves $9\%$ of the
+actions but falls below the untrained store's accuracy. The advantage is
+efficiency per unit of structure: $1{,}913$ links reaching $27.6\%$ of the
+corpus return $1.6\times$ the action saving and $1.8\times$ the accuracy,
+per point of corpus indexed, of an entity index that spends $196{,}112$
+links covering all of it. A \emph{key-coverage gradient} --- a probe varying
+how much of a question the training set touched --- replaces a split's
+pass/fail with a decay curve: accuracy carries to unseen questions ($+0.167$
+F1 where both of a question's keys were indexed, $+0.100$ where one was,
+zero where neither) while the action saving stays on trained questions.
+Because that decay is indexed by coverage, not question novelty, the limit
+is training volume rather than method: coverage grows linearly at $0.25$
+points per new question and flattens only once training repeats them, so a
+hundred questions leaves the store undertrained, and every further question
+widens the reach.
 \end{abstract}
 
 \begin{IEEEkeywords}
