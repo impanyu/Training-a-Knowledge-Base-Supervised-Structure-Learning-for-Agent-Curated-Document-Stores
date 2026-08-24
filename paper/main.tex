@@ -47,11 +47,11 @@ Systems that instead let an agent curate one never measure what curation
 does to the store, and the offline pipelines that do build structure build
 it unsupervised --- a whole corpus indexed at uniform effort, with no signal
 about which structure a question will need. We treat the knowledge base as a
-\emph{non-parametric model} trained on (question, answer) pairs: a training
-agent answers a supervised question against the current store, is shown the
-gold answer, then edits the store. The store carries forward, and we
-evaluate the curated store with a test set. We evaluate on two
-contamination-free benchmarks: KBGym, a fictional-universe generator we
+\emph{non-parametric model} trained on (question, answer) pairs: a
+\emph{curator} agent answers a supervised question against the current
+store, is shown the gold answer, then edits the store. The store carries
+forward, and we evaluate the curated store with a test set. We evaluate on
+two contamination-free benchmarks: KBGym, a fictional-universe generator we
 release, and PhantomWiki. Generalization is probed with four question groups
 of decreasing overlap with the training set: the trained questions
 themselves, and unseen questions sharing both of their keys with training,
@@ -87,7 +87,7 @@ downstream answer accuracy, never the store~\cite{llmwiki-rar,llmwiki-stream}.
 
 We study the store directly, under the oldest framing machine learning has:
 \emph{train/test}. The knowledge base is the model. Supervised questions arrive one at
-a time; a training agent answers each from the current store, is graded, and then, in
+a time; a curator agent answers each from the current store, is graded, and then, in
 an explicit consolidation phase, edits the store's structure so that the question's
 \emph{class} becomes easier for a future reader. Evaluation freezes the store and
 examines an independent reader with no gold access and a fixed action budget on
@@ -267,7 +267,7 @@ Our protocol adds the missing measurement layer.
 \draw[arr] (exam) -- (out);
 \end{tikzpicture}
 
-\caption{The train/test protocol. A training agent consumes supervised QA pairs,
+\caption{The train/test protocol. A curator consumes supervised QA pairs,
 answering each from the current store (gold revealed only after its single answer)
 and consolidating verified reasoning into structure. Evaluation freezes the store and
 examines an independent budgeted reader on held-out questions; the hypothesis
@@ -329,7 +329,7 @@ is the query volume after which curation has paid for itself.
 
 The correspondence to supervised learning is exact: the store configuration
 is the parameter vector, one iteration is one optimization step, the
-training agent is the optimizer, and held-out reader performance is the
+curator is the optimizer, and held-out reader performance is the
 loss. Because training forward passes and test readers use identical tools,
 budgets and the single-shot answer rule, the generalization gap is well
 defined --- and Sec.~\ref{sec:res-grad} refines it from a train/test
@@ -514,7 +514,7 @@ in itself.
 \subsection{Baselines}
 All baselines are \emph{unsupervised}: structure is induced from the corpus
 alone, with no access to questions or answers --- the defining contrast with
-our trainer, for which gold answers are labels. They differ from us and from
+our curator, for which gold answers are labels. They differ from us and from
 each other \emph{only} in how the store is prepared; reader, test sets and
 budgets are identical. \textbf{B1, flat store}: the untrained store
 (= epoch~0), no structure, no build cost. \textbf{B2,
@@ -542,7 +542,7 @@ an API call, including merges, whose verdicts are recorded rather than
 recomputed. This is not only convenient: when an API outage killed a run 100
 iterations in, the store was recovered from its trace in under two minutes.
 
-\textbf{Models and budgets.} Trainer and reader are gpt-5-mini (temperature
+\textbf{Models and budgets.} Curator and reader are gpt-5-mini (temperature
 0.3, low reasoning effort, 12k completion tokens per turn) with tool-forced
 decisions and static schemas; the \texttt{gpt-5-mini} alias resolved to
 snapshot \texttt{gpt-5-mini-2025-08-07}, which we record because the alias
@@ -1002,7 +1002,7 @@ accuracy stops being well defined and the honest alternative is prequential.
 
 \textbf{Threats to validity.} Template-rendered language is simpler than
 natural prose and may flatter lexical matching; the PhantomWiki arm, whose
-generator we do not control, is the partial answer. Reader and trainer share
+generator we do not control, is the partial answer. Reader and curator share
 a model family (\texttt{gpt-5-mini-2025-08-07}), so structure tuned by one
 may suit the other's habits --- though a stronger reader is the harder test
 for us, not the easier one, since the better it is at recovering a set by
