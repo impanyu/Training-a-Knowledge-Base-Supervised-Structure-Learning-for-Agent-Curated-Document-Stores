@@ -52,18 +52,20 @@ agent answers a supervised question against the current store, is shown the
 gold answer, then edits the store. The store carries forward, and we
 evaluate the curated store with a test set. We evaluate on two
 contamination-free benchmarks: KBGym, a fictional-universe generator we
-release, and PhantomWiki. On the questions it trained on, the curated store
-answers with $31\%$ fewer actions and higher accuracy than the untrained
-store, on both benchmarks, and outperforms the offline construction
-baselines (GraphRAG, HippoRAG): per point of corpus covered it returns
-$1.6\times$ the action saving and $1.8\times$ the accuracy gain of the
-strongest of them, spending $1{,}913$ links against their $196{,}112$. A
-\emph{key-coverage gradient} probe shows the accuracy gain carrying to
-questions the store never saw, in proportion to how much of the question its
-indexes cover. The binding limit is index coverage, not method: a hundred
-training questions cover $27.6\%$ of the corpus and coverage grows linearly
-in new questions, so a larger training set widens the indexed share and with
-it every gain above.
+release, and PhantomWiki. Generalization is probed with four question groups
+of decreasing overlap with the training set: the trained questions
+themselves, and unseen questions sharing both of their keys with training,
+one key, or neither. The curated store outperforms the untrained store and
+GraphRAG on all four groups, and the margin grows with overlap --- from
+parity where no key was shared, through $+0.167$ F1 where both were, to
+$31\%$ fewer actions at higher accuracy on the trained questions --- while
+matching HippoRAG's gains with $1{,}913$ links against its $196{,}112$: per
+point of corpus covered, $1.6\times$ the action saving and $1.8\times$ the
+accuracy gain. What bounds the reach is index coverage, not the method:
+accuracy rises steadily with the share of the corpus the indexes cover, and
+coverage grows linearly in new training questions --- a hundred reach
+$27.6\%$ --- so training on more questions widens coverage, and with it the
+generalization.
 \end{abstract}
 
 \begin{IEEEkeywords}
