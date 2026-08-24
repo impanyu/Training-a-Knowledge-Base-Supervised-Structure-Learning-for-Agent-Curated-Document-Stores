@@ -42,30 +42,32 @@ hfyu@unl.edu}}
 \maketitle
 
 \begin{abstract}
-Retrieval-augmented generation treats the document store as a frozen input,
-and the systems that instead let an agent curate one never measure what
-curation does to the store. We invert the framing: \emph{the knowledge base
-is the model}. A training agent answers a supervised question against the
-current store, is shown the gold, then edits the store; an unchanged reader
-is later examined on a frozen snapshot under a fixed action budget. Where
-offline graph construction is unsupervised, (question, answer) pairs are our
-labels --- and that supervision is what makes the structure cheap. Per point
-of corpus indexed it returns $1.6\times$ the action saving and $1.8\times$
-the accuracy of an unsupervised entity index covering everything, using
-$1{,}913$ links against its $196{,}112$. On questions the store trained on,
-an unchanged reader spends $31\%$ fewer actions at higher accuracy, and the
-result reproduces on an official PhantomWiki generation whose questions we
-did not write. To measure how far this reaches we introduce a
+Retrieval-augmented generation treats the document store as a frozen input.
+Systems that instead let an agent curate one never measure what curation
+does to the store, and the offline pipelines that do build structure build
+it unsupervised --- a whole corpus indexed at uniform effort, with no signal
+about which structure a question will need. We invert the framing:
+\emph{the knowledge base is the model}, and (question, answer) pairs are its
+labels. A training agent answers a supervised question against the current
+store, is shown the gold, then edits the store; the store carries forward,
+and an unchanged reader is later examined on a frozen snapshot under a fixed
+action budget, so every effect we report belongs to the structure training
+left behind. That supervision is what makes the structure cheap. On
+trained questions the reader spends $31\%$ fewer actions at higher accuracy,
+reproduced on an official PhantomWiki generation whose questions we did not
+write; per point of corpus indexed the store returns
+$1.6\times$ the action saving and $1.8\times$ the accuracy of an
+unsupervised entity index covering everything, using $1{,}913$ links against
+its $196{,}112$. To measure how far this reaches we introduce a
 \emph{key-coverage gradient}, a probe varying how much of a question the
-training set touched, replacing a train/test split's pass/fail with a decay
-curve. Generalization proves endpoint-dependent: accuracy carries to unseen
+training set touched, replacing a split's pass/fail with a decay curve.
+Generalization proves endpoint-dependent: accuracy carries to unseen
 questions ($+0.167$ F1 where both of a question's keys were indexed,
 $+0.100$ where one was, zero where neither) while the action saving stays on
-trained questions. Because that decay is indexed by coverage rather than by
-novelty, more training extends it --- and the store is undertrained, not
-saturated: coverage grows linearly in new questions and stops the moment
-training repeats them, so a hundred questions reach a quarter of the corpus
-and four times as many would close the gap.
+trained questions. Because the decay is indexed by coverage, not
+novelty, more training extends it --- coverage grows linearly in new
+questions and flattens only once training repeats them, so at a hundred
+questions the store is undertrained, not saturated.
 \end{abstract}
 
 \begin{IEEEkeywords}
