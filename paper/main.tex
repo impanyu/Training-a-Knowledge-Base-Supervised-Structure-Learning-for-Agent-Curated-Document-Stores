@@ -42,10 +42,9 @@ hfyu@unl.edu}}
 \maketitle
 
 \begin{abstract}
-Retrieval-augmented generation treats the document store as a frozen input.
-Systems that instead let an agent curate one never measure what curation
-does to the store, and the offline pipelines that do build structure build
-it unsupervised --- a whole corpus indexed at uniform effort, with no signal
+Retrieval-augmented generation treats the document store as a frozen input,
+and the offline pipelines that do build structure over it build it
+unsupervised --- a whole corpus indexed at uniform effort, with no signal
 about which structure a question will need. We treat the knowledge base as a
 \emph{non-parametric model} trained on (question, answer) pairs: a
 \emph{curator} agent answers a supervised question against the current
