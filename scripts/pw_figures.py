@@ -110,51 +110,88 @@ def trajectory():
 learning()
 trajectory()
 
+
+PURPLE = "#9A5EA8"
+
+def _load_snap(path, pos):
+    st = json.load(open(path))["store"]["nodes"]
+    return [nd for nd in st if nd["id"] in pos]
+
+def _draw_net(ax, nodes, pos, edge_lw=0.30, dot=0.5):
+    deg = {}
+    for nd in nodes:
+        for t in nd.get("links", []):
+            deg[nd["id"]] = deg.get(nd["id"], 0) + 1
+    for nd in nodes:
+        x0, y0 = pos[nd["id"]]
+        for t in nd.get("links", []):
+            if t in pos:
+                ax.plot([x0, pos[t][0]], [y0, pos[t][1]], color=GREEN,
+                        lw=edge_lw, alpha=0.45, zorder=1)
+    orig = [n for n in nodes if n.get("flag") != "authored"]
+    auth = [n for n in nodes if n.get("flag") == "authored"]
+    ax.scatter([pos[n["id"]][0] for n in orig], [pos[n["id"]][1] for n in orig],
+               s=dot, color=BLUE, alpha=0.35, lw=0, zorder=2)
+    if auth:
+        ax.scatter([pos[n["id"]][0] for n in auth],
+                   [pos[n["id"]][1] for n in auth],
+                   s=[3 + 1.2 * deg.get(n["id"], 0) for n in auth],
+                   color=VERM, lw=0, zorder=3)
+    ax.set_xticks([]); ax.set_yticks([]); ax.grid(False)
+    for sp in ax.spines.values():
+        sp.set_visible(True); sp.set_color("0.8")
+    return len(auth)
+
 def network():
-    import json as _json
-    pos = {k: v for k, v in _json.load(open("/tmp/pwnet_pos.json")).items()}
-    ann = _json.load(open("/tmp/pwnet_annot.json"))
-    PURPLE = "#9A5EA8"
-    snaps = [("iteration 0", "runs/pw1_main/snaps/kb_0.json"),
-             ("end of epoch 1 (iter 150)", "runs/pw1_main/snaps/kb_150.json"),
-             ("final store (iter 200)", "runs/pw1_main/kb_epoch_2.json")]
-    fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
-    for ax, (title, path) in zip(axes, snaps):
-        st = json.load(open(path))["store"]
-        nodes = st["nodes"]
-        deg = {}
-        for nd in nodes:
-            for t in nd.get("links", []):
-                deg[nd["id"]] = deg.get(nd["id"], 0) + 1
-        for nd in nodes:
-            if nd["id"] not in pos: continue
-            x0, y0 = pos[nd["id"]]
-            for t in nd.get("links", []):
-                if t in pos:
-                    ax.plot([x0, pos[t][0]], [y0, pos[t][1]], color=GREEN,
-                            lw=0.3, alpha=0.45, zorder=1)
-        orig = [n for n in nodes if n.get("flag") != "authored" and n["id"] in pos]
-        auth = [n for n in nodes if n.get("flag") == "authored" and n["id"] in pos]
-        ax.scatter([pos[n["id"]][0] for n in orig], [pos[n["id"]][1] for n in orig],
-                   s=0.5, color=BLUE, alpha=0.35, lw=0, zorder=2)
-        if auth:
-            ax.scatter([pos[n["id"]][0] for n in auth],
-                       [pos[n["id"]][1] for n in auth],
-                       s=[3 + 1.2 * deg.get(n["id"], 0) for n in auth],
-                       color=VERM, lw=0, zorder=3)
-        ax.set_xticks([]); ax.set_yticks([]); ax.grid(False)
-        for sp in ax.spines.values(): sp.set_visible(True); sp.set_color("0.8")
-        ax.set_title(title, fontsize=8)
-    # annotate verified indexes on the final panel
-    ax = axes[2]
-    for nid, meta in ann.items():
+    pos = json.load(open("/tmp/pwnet_pos.json"))
+    annot = json.load(open("/tmp/pwnet_annot.json"))
+    fig = plt.figure(figsize=(7.0, 5.2))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.0, 1.32],
+                          hspace=0.16, wspace=0.05)
+    SN = "runs/pw1_main/snaps"
+    slots = [(gs[0, 0], f"{SN}/kb_0.json", 0), (gs[0, 1], f"{SN}/kb_50.json", 50),
+             (gs[0, 2], f"{SN}/kb_100.json", 100), (gs[1, 0], f"{SN}/kb_150.json", 150)]
+    for cell, path, N in slots:
+        ax = fig.add_subplot(cell)
+        nodes = _load_snap(path, pos)
+        n_auth = _draw_net(ax, nodes, pos)
+        nlinks = sum(len(nd.get("links", [])) for nd in nodes)
+        ax.set_title(f"iter {N}: {nlinks} links, {n_auth} indexes", fontsize=6.5)
+
+    ax = fig.add_subplot(gs[1, 1:])
+    nodes = _load_snap("runs/pw1_main/kb_epoch_2.json", pos)
+    n_auth = _draw_net(ax, nodes, pos, edge_lw=0.22, dot=0.45)
+    nlinks = sum(len(nd.get("links", [])) for nd in nodes)
+    corners = [(0.02, 0.97, "left", "top"), (0.98, 0.97, "right", "top"),
+               (0.02, 0.04, "left", "bottom"), (0.98, 0.04, "right", "bottom")]
+    for (nid, a), (cx, cy, ha, va) in zip(annot.items(), corners):
         if nid not in pos: continue
         x, y = pos[nid]
-        for t in meta["links"]:
+        for t in a["links"]:
             if t in pos:
-                ax.scatter([pos[t][0]], [pos[t][1]], s=4, color=PURPLE, zorder=4)
-        ax.annotate(meta["text"], (x, y), fontsize=5.5, color="0.1",
-                    xytext=(x, y + 6), ha="center",
-                    arrowprops=dict(arrowstyle="-", lw=0.5, color="0.3"))
-    fig.subplots_adjust(wspace=0.05)
+                ax.plot([x, pos[t][0]], [y, pos[t][1]], color=PURPLE,
+                        lw=0.85, alpha=1.0, zorder=5, solid_capstyle="round")
+        ax.scatter([x], [y], s=52, facecolor="none", edgecolor=PURPLE,
+                   lw=1.2, zorder=7)
+        ax.annotate(f"{a['text']}\n{a['note']}",
+                    xy=(x, y), xycoords="data",
+                    xytext=(cx, cy), textcoords="axes fraction",
+                    fontsize=5.6, color="0.12", ha=ha, va=va, zorder=8,
+                    bbox=dict(boxstyle="round,pad=0.25", fc="white",
+                              ec=PURPLE, lw=0.55, alpha=0.95),
+                    arrowprops=dict(arrowstyle="-", color=PURPLE, lw=0.55,
+                                    alpha=0.8, shrinkA=2, shrinkB=5))
+    ax.set_title(f"iter 200: {nlinks} links, {n_auth} indexes", fontsize=6.5)
+
+    fig.legend(handles=[
+        plt.Line2D([], [], marker="o", ls="", color=BLUE, ms=3,
+                   label="document (position = semantic embedding, t-SNE)"),
+        plt.Line2D([], [], marker="o", ls="", color=VERM, ms=4,
+                   label="authored index document (size = degree)"),
+        plt.Line2D([], [], color=GREEN, lw=1, label="link"),
+        plt.Line2D([], [], color=PURPLE, lw=1.2,
+                   label="fan-out of a labelled index")],
+        loc="lower center", ncol=2, frameon=False, fontsize=6.8,
+        bbox_to_anchor=(0.5, -0.035))
+    fig.subplots_adjust(bottom=0.11, top=0.945)
     save(fig, "pw_network")

@@ -1077,7 +1077,7 @@ Ours (trained) & 12.3\% & $\mathbf{0.070}$ & $\mathbf{+0.0051}$ \\
 \centering
 \includegraphics[width=0.82\textwidth]{pw_learning.pdf}
 \caption{PhantomWiki learning curves (mirror of Fig.~\ref{fig:learning}).
-Six frozen snapshots of epoch~1, examined on the stratified probe.
+Six frozen snapshots of training, examined on the stratified probe.
 \emph{(a, b)} Cost and accuracy per question group against training
 iteration: the trained group's accuracy climbs $0.72 \to 0.88$ while the
 uncovered group stays where it began. \emph{(c, d)} The same runs pooled
@@ -1105,12 +1105,13 @@ coverage a 150-question training set buys on this corpus.}
 \centering
 \includegraphics[width=0.86\textwidth]{pw_network.pdf}
 \caption{The document network the agent built on PhantomWiki (mirror of
-Fig.~\ref{fig:network}): the store at iteration~0, at the end of epoch~1,
-and the final store with verified indexes annotated --- every link each
-labelled index carries points at a document that genuinely belongs under
-its key, resolved against the universe. The same shape emerges on the
-external benchmark: hub indexes fan out over the semantic space, and every
-link is index-mediated.}
+Fig.~\ref{fig:network}): the store at four points in training, and the
+final store at two-thirds width with four verified indexes labelled ---
+a single-entity hub, an attribute index, a one-hop and a two-hop relation,
+every link of each pointing at a document that genuinely belongs under its
+key, resolved against the universe. The same shape emerges on the external
+benchmark: hub indexes fan out over the semantic space into a navigation
+layer.}
 \label{fig:pw-network}
 \end{figure*}
 
