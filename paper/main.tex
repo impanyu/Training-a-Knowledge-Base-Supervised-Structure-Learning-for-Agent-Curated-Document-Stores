@@ -700,7 +700,10 @@ HippoRAG's $7.24$ at $0.870$ and GraphRAG's $7.77$ at $0.843$ --- ahead of
 every baseline in absolute terms --- from $12.3\%$ coverage ($287$
 indexes, $683$ links) against their $100\%$, which per point of coverage
 is $9\times$ the action saving and $11\times$ the accuracy gain of
-HippoRAG.
+HippoRAG. The full PhantomWiki suite --- gradient and per-coverage tables,
+learning curves, store trajectory, network map and per-family index quality,
+mirroring every \kbgym{} figure and table --- is in
+Appendix~\ref{app:pw}.
 
 \textbf{Coverage is the currency.}\label{sec:res-perlink}
 B3 answers in fewer actions and at higher F1 than we do, from $100\%$
@@ -1009,6 +1012,143 @@ template's instance pool --- though the three-point form replicates on
 PhantomWiki with all baselines. Single
 seed; single agent by design; no support-set diagnostics on the external
 arm; grading is token-F1 against short golds.
+
+
+\appendices
+\section{PhantomWiki: The Full Suite}\label{app:pw}
+
+Every \kbgym{} figure and table has a PhantomWiki mirror, produced by the
+same scripts from the same protocol run (200 iterations over the official
+questions; stratified probe with equal per-template quotas, $n{=}32$ per
+group). The store the run produced holds $287$ authored documents and
+$683$ links reaching $12.3\%$ of the $3{,}400$ source documents.
+
+\begin{table}[!ht]
+\caption{PhantomWiki key-coverage gradient (mirror of
+Table~\ref{tab:gradient}). $\rho$ = actions relative to the untrained flat
+store on the same questions; $^{*}$ marks a bootstrap 95\% CI excluding
+$1$. $n=32$ per group; HippoRAG2 indexes the whole corpus and is compared
+in Table~\ref{tab:pw-percoverage}.}
+\label{tab:pw-gradient}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrr@{}}
+\toprule
+Store & trained on & one key & neither \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{$\rho$: actions relative to B1}}\\
+\quad B1 flat & 1.000 & 1.000 & 1.000 \\
+\quad B2 GraphRAG & 1.023 & 0.935 & \textbf{0.949} \\
+\quad Ours (trained) & \textbf{0.802}$^{*}$ & \textbf{0.884}$^{*}$ & 1.014 \\
+\addlinespace[2pt]
+\multicolumn{4}{@{}l}{\emph{F1}}\\
+\quad B1 flat & 0.750 & 0.844 & 0.875 \\
+\quad B2 GraphRAG & 0.778 & 0.844 & \textbf{0.906} \\
+\quad Ours (trained) & \textbf{0.875} & \textbf{0.906} & 0.875 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{table}[!ht]
+\caption{What a point of corpus coverage buys on PhantomWiki (mirror of
+Table~\ref{tab:percoverage}). Each arm's gain over the untrained flat
+store, pooled over the 96 probe questions, divided by the share of the
+corpus its indexes reach.}
+\label{tab:pw-percoverage}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrr@{}}
+\toprule
+Store & coverage & actions / pt & F1 / pt \\
+\midrule
+B1 flat & 0\% & --- & --- \\
+B2 GraphRAG & 100\% & $0.002$ & $+0.0002$ \\
+B3 HippoRAG2 & 100\% & $0.008$ & $+0.0005$ \\
+Ours (trained) & 12.3\% & $\mathbf{0.070}$ & $\mathbf{+0.0051}$ \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{figure*}[!ht]
+\centering
+\includegraphics[width=0.82\textwidth]{pw_learning.pdf}
+\caption{PhantomWiki learning curves (mirror of Fig.~\ref{fig:learning}).
+Six frozen snapshots of epoch~1, examined on the stratified probe.
+\emph{(a, b)} Cost and accuracy per question group against training
+iteration: the trained group's accuracy climbs $0.72 \to 0.88$ while the
+uncovered group stays where it began. \emph{(c, d)} The same runs pooled
+against the share of the corpus the store's indexes reach; the last point
+is the epoch-2 store. As on \kbgym{}, cost falls and accuracy rises with
+coverage.}
+\label{fig:pw-learning}
+\end{figure*}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.92\columnwidth]{pw_trajectory.pdf}
+\caption{PhantomWiki store trajectory (mirror of
+Fig.~\ref{fig:trajectory}). \emph{(a)} The index-document and net-added
+curves coincide: on the external benchmark too, the agent adds access
+structure and essentially never rewrites source documents ($+287$
+documents, $+8.5\%$), and link growth flattens after the epoch boundary.
+\emph{(b)} Final out-degree. The layer is sparser than \kbgym{}'s ---
+median~1, mean~2.3, $32\%$ empty stubs --- consistent with the lower
+coverage a 150-question training set buys on this corpus.}
+\label{fig:pw-trajectory}
+\end{figure}
+
+\begin{figure*}[!ht]
+\centering
+\includegraphics[width=0.86\textwidth]{pw_network.pdf}
+\caption{The document network the agent built on PhantomWiki (mirror of
+Fig.~\ref{fig:network}): the store at iteration~0, at the end of epoch~1,
+and the final store with verified indexes annotated --- every link each
+labelled index carries points at a document that genuinely belongs under
+its key, resolved against the universe. The same shape emerges on the
+external benchmark: hub indexes fan out over the semantic space, and every
+link is index-mediated.}
+\label{fig:pw-network}
+\end{figure*}
+
+\begin{table}[!ht]
+\caption{PhantomWiki index construction quality, by the kind of key the
+index is built on, scored by resolving each key's true member set from the
+universe statements (mirror of Table~\ref{tab:idxquality}). $18$ indexes
+whose key names a relation outside the resolver (in-laws, birth-date
+groups) are unscored; $91$ are empty stubs.}
+\label{tab:pw-idxquality}
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrrrr@{}}
+\toprule
+Key the index is built on & $n$ & deg. & prec. & recall \\
+\midrule
+attribute: hobby / occupation & 50 & 2.3 & 98\% & 79\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``People whose hobby is biology''}} \\[1pt]
+single-entity hub & 81 & 5.1 & 95\% & 90\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Lila Petry''}} \\[1pt]
+relation, one-hop & 22 & 2.1 & 89\% & 89\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Parents of Ella Saari''}} \\[1pt]
+relation, two-hop and deeper & 25 & 3.0 & 97\% & 85\% \\
+\multicolumn{5}{@{}l}{\quad\emph{``Cousins of Marilyn Nicolas''}} \\
+\midrule
+all scored indexes & 178 & 3.6 & 95\% & 85\% \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+As on \kbgym{}, precision is high everywhere and depth is not the failure
+mode --- two-hop-and-deeper relations score $97\%$ precision against
+one-hop's $89\%$ --- while the binding limit is again how much structure
+exists at all: a third of the authored documents are stubs that were opened
+and never filled, the direct image of the backward budget meeting larger
+member sets.
 
 \begin{thebibliography}{00}
 \bibitem{llmwiki-rar} Retrieval as reasoning: self-evolving agent-native retrieval
