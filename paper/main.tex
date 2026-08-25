@@ -673,8 +673,9 @@ people who designed the method. The PhantomWiki arm answers that: its
 universe (3{,}403 documents from 405 articles) and every one of its
 questions come from a generator we do not control, and the protocol runs
 unchanged (200 iterations, 14.9M tokens). Its questions carry at most one
-key, so the gradient there has three points rather than four, and they
-align with \kbgym{}'s:
+key, so its stratified probe has three points rather than four (equal
+per-template quotas from the official questions, $n{=}32$ per group), and
+the decay aligns with \kbgym{}'s:
 
 \begin{center}\small
 \begin{tabular}{lccc}
@@ -682,26 +683,24 @@ align with \kbgym{}'s:
 $\rho$ (F1) & trained on & one key & neither \\
 \midrule
 \kbgym{} & 0.747$^{*}$ \emph{(0.912)} & 0.977 \emph{(0.706)} & 1.016 \emph{(0.765)} \\
-PhantomWiki & 0.769$^{*}$ \emph{(0.880)} & 0.914 \emph{(0.807)} & 1.029 \emph{(0.718)} \\
+PhantomWiki & 0.802$^{*}$ \emph{(0.875)} & 0.884$^{*}$ \emph{(0.906)} & 1.014 \emph{(0.875)} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The trained group is the only cell significant on both benchmarks
-(CIs $[0.64,0.87]$ and $[0.68,0.86]$), and accuracy rises on both
-($0.618 \to 0.912$ and $0.728 \to 0.880$). Neither benchmark shows a
-significant step saving off the trained set: partial transfer lives in the
-accuracy endpoint, while the step endpoint pays out only where the exact
-question was trained. On PhantomWiki the
-uncovered group is worse than neutral --- F1 falls $0.765 \to 0.718$ --- as
-indexes for other keys occupy retrieval slots that question needed. Coverage
-is not merely absent outside the trained set; it is mildly costly, which is
-the sharpest argument for extending it rather than accepting a quarter of
-the corpus. The full four-point gradient is unavailable on this arm because
-constructing one requires enumerating a template's entire instance pool and
-PhantomWiki ships the questions its generator produced rather than the pool
-behind them; the arm also carries no offline-construction baselines, so the
-comparison below is \kbgym{}-only.
+The trained group is significant on both benchmarks (CIs $[0.64,0.87]$ and
+$[0.69,0.93]$) with accuracy rising on both ($0.618 \to 0.912$ and
+$0.750 \to 0.875$), and the decay is monotone on both: at one key the
+gain halves ($+0.062$ F1, $\rho = 0.884$, the one place a step saving
+survives off the trained set, CI $[0.78,0.99]$), and at no keys both
+endpoints sit exactly at the flat store. The offline baselines run on this
+arm too, and the pattern from \kbgym{} repeats more sharply: pooled over
+the probe our store answers in $7.16$ actions at F1 $0.885$ against
+HippoRAG's $7.24$ at $0.870$ and GraphRAG's $7.77$ at $0.843$ --- ahead of
+every baseline in absolute terms --- from $12.3\%$ coverage ($287$
+indexes, $683$ links) against their $100\%$, which per point of coverage
+is $9\times$ the action saving and $11\times$ the accuracy gain of
+HippoRAG.
 
 \textbf{Coverage is the currency.}\label{sec:res-perlink}
 B3 answers in fewer actions and at higher F1 than we do, from $100\%$
@@ -1004,8 +1003,10 @@ generator we do not control, is the partial answer. Reader and curator share
 a model family (\texttt{gpt-5-mini-2025-08-07}), so structure tuned by one
 may suit the other's habits --- though a stronger reader is the harder test
 for us, not the easier one, since the better it is at recovering a set by
-searching the less an index adds. The four-point gradient is \kbgym{}-only:
-it needs a generator that can enumerate a template's instance pool. Single
+searching the less an index adds. The \emph{four-point} gradient is
+\kbgym{}-only --- its share-2 group needs a generator that can enumerate a
+template's instance pool --- though the three-point form replicates on
+PhantomWiki with all baselines. Single
 seed; single agent by design; no support-set diagnostics on the external
 arm; grading is token-F1 against short golds.
 
