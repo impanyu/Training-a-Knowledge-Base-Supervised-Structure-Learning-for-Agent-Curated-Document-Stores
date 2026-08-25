@@ -35,8 +35,8 @@ CURVE = [("exact", "trained on this question", VERM, "o", "-"),
          ("share1", "one key seen", BLUE, "^", "--"),
          ("share0", "neither key seen", "0.45", "v", ":")]
 ITERS = [0, 20, 40, 60, 80, 100]
-MIN_ROWS = 120  # all four groups complete: kb.test fills splits in order,
-                # so a partial file has some groups at n=0 and others at n=30        # epoch 1 only: epoch 2
+MIN_ROWS = 136  # all four groups complete: kb.test fills splits in order,
+                # so a partial file has some groups at n=0 and others at n=34        # epoch 1 only: epoch 2
                                         # repeats the same questions
                                         # and adds no new keys
 
@@ -68,7 +68,7 @@ def gradient_and_coverage():
     for split, label, color, marker, ls in CURVE:
         xs, ys, fs = [], [], []
         for N in ITERS:
-            p = f"runs/curve_{N}/test_log.jsonl"
+            p = f"runs/grad2_curve_{N}/test_log.jsonl"
             if not os.path.exists(p):
                 continue
             allrows = [json.loads(l) for l in open(p)]
@@ -89,7 +89,7 @@ def gradient_and_coverage():
     # --- bottom row: pooled, against coverage, with the offline arms
     xs, ys, fs = [], [], []
     for N in ITERS:
-        p = f"runs/curve_{N}/test_log.jsonl"
+        p = f"runs/grad2_curve_{N}/test_log.jsonl"
         if not os.path.exists(p):
             continue
         rows = [json.loads(l) for l in open(p)]
@@ -106,7 +106,7 @@ def gradient_and_coverage():
         r = [json.loads(l) for l in open(p)]
         return sum(x["steps"] for x in r) / len(r), sum(x["f1"] for x in r) / len(r)
 
-    final = arm("grad_trained")          # epoch-2 store, 27.6% coverage
+    final = arm("grad2_trained")          # epoch-2 store, 27.6% coverage
     if final:
         xs.append(27.6); ys.append(final[0]); fs.append(final[1])
     for ax, vals, j in ((b_s, ys, 0), (b_f, fs, 1)):

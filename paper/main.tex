@@ -604,13 +604,13 @@ because it was pre-registered, not because it carries weight.
 \caption{Six frozen snapshots from epoch~1, read two ways. The reader,
 action set, budget and questions are identical at every point, so the only
 thing varying is the store. \emph{(a, b)} Cost and accuracy per question
-group against training iteration: the trained group improves while the three
-untrained groups do not, and the ordering is already visible within a single
-epoch. \emph{(c, d)} The same runs pooled, against the share of the corpus
-the store's indexes reach --- the quantity training actually buys. Accuracy
-rises steadily with coverage; cost falls more noisily. Coverage reaches
-$24.8\%$ by the end of the epoch, and the second epoch (Sec.~E2) adds the
-remaining cost saving without adding accuracy.}
+group against training iteration: the two key-covered groups improve while
+the two uncovered ones do not --- gains track key coverage, not question
+identity. \emph{(c, d)} The same runs pooled, against the share of the
+corpus the store's indexes reach --- the quantity training actually buys.
+Cost falls and accuracy rises with coverage; the last point is the epoch-2
+store. Coverage reaches $24.8\%$ by the end of epoch~1; the second pass
+(Sec.~E2) then converts that structure into most of the accuracy gain.}
 \label{fig:learning}
 \end{figure*}
 
@@ -641,18 +641,20 @@ where the exact question was trained, decays faster.
 
 \textbf{Two epochs, two different gains.} Fig.~\ref{fig:learning}a--b
 separates them. Across epoch~1, where each question is seen once, the
-trained group's accuracy moves almost all the way it is going to move
-($0.633 \to 0.800$) while cost barely does ($9.20 \to 8.30$ actions). Across
-epoch~2, where the same hundred questions are curated a second time, cost
-falls the rest of the way ($8.30 \to 6.57$) and accuracy does not move at
-all. The second pass does not change what the store can answer; it changes
-how quickly. Nor does it work by completing indexes left half-built ---
-mean out-degree is flat across the epoch ($6.79$ to $6.67$) and the empty
-count barely moves ($45$ to $43$) --- it works by adding $45$ more indexes
-aimed at the same questions. The saving we report therefore reflects two
-curation passes over a question, not one, which is a real qualification on
-the headline number and a direct argument for the online setting: a store
-serving repeat traffic gets more passes over the keys that matter, for free.
+trained group's \emph{cost} moves most of the way it is going to move
+($10.35 \to 8.59$ actions) while accuracy barely does ($0.735 \to 0.765$).
+Across epoch~2, where the same hundred questions are curated a second
+time, accuracy jumps ($0.765 \to 0.912$ on the trained group,
+$0.853 \to 0.941$ one step out) while cost only edges further
+($8.59 \to 8.00$). The first pass builds the navigation that makes
+answers cheaper; the second pass is what makes them \emph{right} --- and
+it does not work by completing indexes left half-built (mean out-degree is
+flat across the epoch, $6.79$ to $6.67$, and the empty count barely moves,
+$45$ to $43$) but by adding $45$ more indexes aimed at the same questions.
+The gains we report therefore reflect two curation passes over a question,
+not one, which is a real qualification on the headline numbers and a
+direct argument for the online setting: a store serving repeat traffic
+gets more passes over the keys that matter, for free.
 
 \textbf{The transfer radius depends on which endpoint you ask about.}
 Splitting each group by whether the flat store exhausted its budget
