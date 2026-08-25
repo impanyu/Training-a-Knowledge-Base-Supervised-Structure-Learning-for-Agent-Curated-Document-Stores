@@ -45,8 +45,8 @@ hfyu@unl.edu}}
 Retrieval-augmented generation treats the document store as a frozen input,
 and the offline pipelines that do build structure over it build it
 unsupervised --- a whole corpus indexed at uniform effort, with no signal
-about which structure a question will need. We treat the knowledge base as a
-\emph{non-parametric model} trained on (question, answer) pairs: a
+about which structure a question will need. We instead treat the knowledge
+base as a \emph{non-parametric model} trained on (question, answer) pairs: a
 \emph{curator} agent answers a supervised question against the current
 store, is shown the gold answer, then edits the store. The store carries
 forward, and we evaluate the curated store with a test set, on two
